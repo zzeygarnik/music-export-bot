@@ -26,9 +26,11 @@ def log_event(
     Append one event line to logs/events.jsonl.
     Token is never included — only user_id hash and username.
 
-    Actions:  auth_ok, auth_fail, export_liked, export_playlist,
-              export_by_link, export_error
-    Results:  success, error
+    Actions:  auth_ok, auth_fail,
+              export_liked, export_playlist, export_by_link, export_error,
+              sc_search (single track: track_count=1, detail=title),
+              sc_batch  (playlist: track_count=downloaded, detail="not_found:N", result=success|stopped)
+    Results:  success, error, stopped
     """
     _LOG_DIR.mkdir(exist_ok=True)
     event = {

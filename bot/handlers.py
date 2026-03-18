@@ -376,7 +376,7 @@ async def on_sc_batch_from_ym(call: CallbackQuery, state: FSMContext) -> None:
 
 @router.message(SCSearchFlow.sc_search_query)
 async def on_sc_search_query(message: Message, state: FSMContext) -> None:
-    user_id, _ = _get_user_info(message)
+    user_id, username = _get_user_info(message)
 
     if not message.text:
         await message.answer("❌ Нужно отправить текстовый запрос.", reply_markup=sc_cancel_keyboard())
@@ -384,6 +384,7 @@ async def on_sc_search_query(message: Message, state: FSMContext) -> None:
 
     query = message.text.strip()
     status_msg = await message.answer("🔍 Ищу на SoundCloud…")
+    # username captured above for log_event in _sc_download_and_send
 
     try:
         results = await sc_downloader.search(query, max_results=5)
@@ -416,7 +417,7 @@ async def on_sc_search_query(message: Message, state: FSMContext) -> None:
             f"⏳ Найдено: <b>{best.artist} — {best.title}</b>\nСкачиваю…",
             parse_mode="HTML",
         )
-        await _sc_download_and_send(status_msg, state, best, user_id, return_to_menu=True)
+        await _sc_download_and_send(status_msg, state, best, user_id, return_to_menu=True, username=username)
     else:
         # Show top-5 for manual selection
         await state.update_data(sc_search_results=[
@@ -434,7 +435,7 @@ async def on_sc_search_query(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(SCSearchFlow.sc_search_results, F.data.startswith("sc_pick:"))
 async def on_sc_pick(call: CallbackQuery, state: FSMContext) -> None:
-    user_id, _ = _get_user_info(call)
+    user_id, username = _get_user_info(call)
     idx = int(call.data.split(":", 1)[1])
     data = await state.get_data()
     results_data = data.get("sc_search_results", [])
@@ -450,7 +451,7 @@ async def on_sc_pick(call: CallbackQuery, state: FSMContext) -> None:
         f"⏳ Скачиваю: <b>{result.artist} — {result.title}</b>…",
         parse_mode="HTML",
     )
-    await _sc_download_and_send(call.message, state, result, user_id, return_to_menu=True)
+    await _sc_download_and_send(call.message, state, result, user_id, return_to_menu=True, username=username)
 
 
 # ── SC: Cancel (back to menu) ─────────────────────────────────────────────────
@@ -559,7 +560,7 @@ async def on_sc_resume_start(call: CallbackQuery, state: FSMContext) -> None:
         reply_markup=sc_stop_keyboard(),
     )
     await state.set_state(SCBatchFlow.sc_downloading)
-    asyncio.create_task(_run_batch_download(call.message, state, call.from_user.id, tracks, 0))
+    asyncio.create_task(_run_batch_download(call.message, state, call.from_user.id, call.from_user.username, tracks, 0))
 
 
 @router.callback_query(SCBatchFlow.sc_resume_choice, F.data == "sc_resume:seek")
@@ -628,7 +629,7 @@ async def on_sc_resume_confirm(call: CallbackQuery, state: FSMContext) -> None:
         reply_markup=sc_stop_keyboard(),
     )
     await state.set_state(SCBatchFlow.sc_downloading)
-    asyncio.create_task(_run_batch_download(call.message, state, call.from_user.id, tracks, start_idx))
+    asyncio.create_task(_run_batch_download(call.message, state, call.from_user.id, call.from_user.username, tracks, start_idx))
 
 
 @router.callback_query(SCBatchFlow.sc_resume_confirm, F.data == "sc_resume:retry")
@@ -790,11 +791,13 @@ async def _sc_download_and_send(
     result: SCResult,
     user_id: int,
     return_to_menu: bool = True,
+    username: str | None = None,
 ) -> None:
     try:
         path, meta = await sc_downloader.download(result.url, user_id)
     except Exception as e:
         log.warning("SC download failed user=%s url=%s: %s", user_id, result.url, e)
+        log_event(user_id, username, "sc_search", "error", detail="download_failed")
         await msg.edit_text(
             "❌ Не удалось скачать трек. Возможно, трек доступен только по подписке Go+.",
             reply_markup=sc_cancel_keyboard(),
@@ -807,12 +810,15 @@ async def _sc_download_and_send(
             title=meta.get("title") or result.title,
             performer=meta.get("artist") or result.artist,
         )
+        log_event(user_id, username, "sc_search", "success",
+                  track_count=1, detail=f"{result.artist} — {result.title}")
         try:
             await msg.delete()
         except Exception:
             pass
     except Exception as e:
         log.exception("SC send_audio failed user=%s: %s", user_id, e)
+        log_event(user_id, username, "sc_search", "error", detail="send_failed")
         await msg.edit_text("❌ Не удалось отправить файл.", reply_markup=sc_cancel_keyboard())
         return
     finally:
@@ -830,6 +836,7 @@ async def _run_batch_download(
     progress_msg: Message,
     state: FSMContext,
     user_id: int,
+    username: str | None,
     tracks: list[dict],
     start_idx: int,
 ) -> None:
@@ -838,6 +845,7 @@ async def _run_batch_download(
 
     total = len(tracks)
     not_found: list[str] = []
+    downloaded_count = 0
 
     for i, track in enumerate(tracks[start_idx:], start=start_idx + 1):
         if cancel_event.is_set():
@@ -873,6 +881,7 @@ async def _run_batch_download(
                 performer=meta.get("artist") or artist,
             )
             sent = True
+            downloaded_count += 1
         except Exception as e:
             log.warning("SC batch send_audio failed '%s': %s", query, e)
             not_found.append(f"{artist} — {title}")
@@ -892,6 +901,10 @@ async def _run_batch_download(
                 pass
 
     _cancel_events.pop(user_id, None)
+
+    batch_result = "stopped" if cancel_event.is_set() else "success"
+    log_event(user_id, username, "sc_batch", batch_result,
+              track_count=downloaded_count, detail=f"not_found:{len(not_found)}")
 
     summary = "⛔ Скачивание остановлено." if cancel_event.is_set() else "✅ Плейлист скачан!"
     if not_found:
