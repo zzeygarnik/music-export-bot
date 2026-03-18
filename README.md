@@ -117,10 +117,38 @@ Mounting the source directory as a volume means **code updates apply on containe
 
 ### 📊 Dashboard
 
+**Local:**
 ```bash
 streamlit run dashboard.py
 # Open http://localhost:8501
 ```
+
+**TrueNAS Custom App (recommended — reads the same logs as the bot):**
+
+First, create a helper script `start_dashboard.sh` in the project root:
+```sh
+#!/bin/sh
+exec streamlit run /app/dashboard.py --server.port=8501 --server.address=0.0.0.0
+```
+
+Make it executable on TrueNAS:
+```bash
+sudo chmod +x /mnt/.../music-export-bot/start_dashboard.sh
+```
+
+Then create a second Custom App in TrueNAS UI:
+
+| Field | Value |
+|---|---|
+| Image | `music-export-bot` |
+| Tag | `latest` |
+| Pull Policy | `Never` |
+| Entrypoint | `/bin/sh` |
+| Command | `/app/start_dashboard.sh` |
+| Host Port → Container Port | `8501 → 8501 TCP` |
+| Host Path | `/mnt/.../music-export-bot` → `/app` |
+
+Open at `http://your-nas-ip:8501`
 
 Shows per-user export history, track counts, and action stats from `logs/events.jsonl`.
 
@@ -251,10 +279,38 @@ sudo docker build -f Dockerfile.prod -t music-export-bot:latest .
 
 ### 📊 Дашборд
 
+**Локально:**
 ```bash
 streamlit run dashboard.py
 # Открыть http://localhost:8501
 ```
+
+**TrueNAS Custom App (рекомендуется — читает те же логи что и бот):**
+
+Создай вспомогательный скрипт `start_dashboard.sh` в корне проекта:
+```sh
+#!/bin/sh
+exec streamlit run /app/dashboard.py --server.port=8501 --server.address=0.0.0.0
+```
+
+Дай права на выполнение на TrueNAS:
+```bash
+sudo chmod +x /mnt/.../music-export-bot/start_dashboard.sh
+```
+
+Создай второй Custom App в TrueNAS UI:
+
+| Поле | Значение |
+|---|---|
+| Image | `music-export-bot` |
+| Tag | `latest` |
+| Pull Policy | `Never` |
+| Entrypoint | `/bin/sh` |
+| Command | `/app/start_dashboard.sh` |
+| Host Port → Container Port | `8501 → 8501 TCP` |
+| Host Path | `/mnt/.../music-export-bot` → `/app` |
+
+Открыть по адресу `http://ip-nas:8501`
 
 Показывает историю экспортов по пользователям, количество треков и статистику действий из `logs/events.jsonl`.
 
