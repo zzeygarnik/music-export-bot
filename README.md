@@ -59,7 +59,9 @@ music-export-bot/
 ├── Dockerfile            # Development image
 ├── Dockerfile.prod       # Production image (deps only, code via volume)
 ├── docker-compose.yml    # Dev stack (bot + Redis + dashboard)
-└── docker-compose.prod.yml
+├── docker-compose.prod.yml
+├── start_all.sh          # TrueNAS: starts bot + dashboard in one container
+└── start_dashboard.sh    # TrueNAS: starts dashboard only (standalone)
 ```
 
 ### ⚙️ Configuration
@@ -123,32 +125,25 @@ streamlit run dashboard.py
 # Open http://localhost:8501
 ```
 
-**TrueNAS Custom App (recommended — reads the same logs as the bot):**
+**TrueNAS Custom App — unified container (bot + dashboard):**
 
-First, create a helper script `start_dashboard.sh` in the project root:
-```sh
-#!/bin/sh
-exec streamlit run /app/dashboard.py --server.port=8501 --server.address=0.0.0.0
-```
+`start_all.sh` starts the Streamlit dashboard in the background and the bot in the foreground — both in the same container.
 
-Make it executable on TrueNAS:
-```bash
-sudo chmod +x /mnt/.../music-export-bot/start_dashboard.sh
-```
-
-Then create a second Custom App in TrueNAS UI:
+In your bot Custom App, change the entrypoint:
 
 | Field | Value |
 |---|---|
 | Image | `music-export-bot` |
 | Tag | `latest` |
 | Pull Policy | `Never` |
+| Restart Policy | `Unless Stopped` |
 | Entrypoint | `/bin/sh` |
-| Command | `/app/start_dashboard.sh` |
+| Command | `/app/start_all.sh` |
+| Env: `BOT_TOKEN` | your token |
 | Host Port → Container Port | `8501 → 8501 TCP` |
 | Host Path | `/mnt/.../music-export-bot` → `/app` |
 
-Open at `http://your-nas-ip:8501`
+Open dashboard at `http://your-nas-ip:8501`
 
 Shows per-user export history, track counts, and action stats from `logs/events.jsonl`.
 
@@ -220,7 +215,9 @@ music-export-bot/
 ├── Dockerfile            # Dev-образ
 ├── Dockerfile.prod       # Prod-образ (только зависимости, код через volume)
 ├── docker-compose.yml    # Dev-стек (бот + Redis + дашборд)
-└── docker-compose.prod.yml
+├── docker-compose.prod.yml
+├── start_all.sh          # TrueNAS: запускает бот + дашборд в одном контейнере
+└── start_dashboard.sh    # TrueNAS: запускает только дашборд (отдельный контейнер)
 ```
 
 ### ⚙️ Конфигурация
@@ -285,32 +282,25 @@ streamlit run dashboard.py
 # Открыть http://localhost:8501
 ```
 
-**TrueNAS Custom App (рекомендуется — читает те же логи что и бот):**
+**TrueNAS Custom App — единый контейнер (бот + дашборд):**
 
-Создай вспомогательный скрипт `start_dashboard.sh` в корне проекта:
-```sh
-#!/bin/sh
-exec streamlit run /app/dashboard.py --server.port=8501 --server.address=0.0.0.0
-```
+`start_all.sh` запускает Streamlit-дашборд фоном и бот форграундом — оба в одном контейнере.
 
-Дай права на выполнение на TrueNAS:
-```bash
-sudo chmod +x /mnt/.../music-export-bot/start_dashboard.sh
-```
-
-Создай второй Custom App в TrueNAS UI:
+В настройках Custom App бота измени точку входа:
 
 | Поле | Значение |
 |---|---|
 | Image | `music-export-bot` |
 | Tag | `latest` |
 | Pull Policy | `Never` |
+| Restart Policy | `Unless Stopped` |
 | Entrypoint | `/bin/sh` |
-| Command | `/app/start_dashboard.sh` |
+| Command | `/app/start_all.sh` |
+| Env: `BOT_TOKEN` | твой токен |
 | Host Port → Container Port | `8501 → 8501 TCP` |
 | Host Path | `/mnt/.../music-export-bot` → `/app` |
 
-Открыть по адресу `http://ip-nas:8501`
+Открыть дашборд по адресу `http://ip-nas:8501`
 
 Показывает историю экспортов по пользователям, количество треков и статистику действий из `logs/events.jsonl`.
 
