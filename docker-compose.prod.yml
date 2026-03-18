@@ -1,0 +1,33 @@
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - /mnt/Storage/zgrnk_data/music-bot/music-export-bot/redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  bot:
+    build: .
+    image: music-export-bot:latest
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - /mnt/Storage/zgrnk_data/music-bot/music-export-bot/logs:/app/logs
+    environment:
+      BOT_TOKEN: ${BOT_TOKEN}
+      REDIS_URL: redis://redis:6379/0
+
+  dashboard:
+    image: music-export-bot:latest
+    command: streamlit run dashboard.py --server.port=8501 --server.address=0.0.0.0
+    ports:
+      - "8501:8501"
+    volumes:
+      - /mnt/Storage/zgrnk_data/music-bot/music-export-bot/logs:/app/logs
+    restart: unless-stopped
