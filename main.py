@@ -2,12 +2,13 @@ import asyncio
 import logging
 
 from aiogram import Bot, Dispatcher
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from config import settings
 from bot.handlers import router
-from bot.middleware import ThrottlingMiddleware, CallbackAnswerMiddleware
+from bot.middleware import ThrottlingMiddleware, StaleButtonMiddleware, CallbackAnswerMiddleware
 
 log = logging.getLogger(__name__)
 
@@ -36,10 +37,12 @@ async def main() -> None:
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
 
-    bot = Bot(token=settings.BOT_TOKEN)
+    session = AiohttpSession(timeout=600)  # 10 min — SC download via proxy can be slow
+    bot = Bot(token=settings.BOT_TOKEN, session=session)
     dp = Dispatcher(storage=_build_storage())
     dp.message.middleware(ThrottlingMiddleware(rate_limit=0.7))
     dp.callback_query.middleware(ThrottlingMiddleware(rate_limit=0.7))
+    dp.callback_query.middleware(StaleButtonMiddleware())
     dp.callback_query.middleware(CallbackAnswerMiddleware())
     dp.include_router(router)
 

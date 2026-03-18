@@ -1,4 +1,4 @@
-# 🎵 Yandex Music Export Bot
+# 🎵 Music Export Bot
 
 ![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python&logoColor=white)
 ![aiogram](https://img.shields.io/badge/aiogram-3.13-2CA5E0?logo=telegram&logoColor=white)
@@ -6,7 +6,7 @@
 ![Streamlit](https://img.shields.io/badge/Dashboard-Streamlit-FF4B4B?logo=streamlit&logoColor=white)
 ![Redis](https://img.shields.io/badge/Redis-Optional-DC382D?logo=redis&logoColor=white)
 
-Telegram bot that exports your Yandex Music library — liked tracks, playlists, or shared links — into a clean `.txt` file. Self-hosted, containerized, ready for TrueNAS or any Linux server.
+Telegram bot with two modes: **export your Yandex Music library to `.txt`** and **download tracks from SoundCloud as `.mp3`**. Self-hosted, containerized, ready for TrueNAS or any Linux server.
 
 [ 🇬🇧 English](#-english) | [ 🇷🇺 Русский](#-русский)
 
@@ -16,26 +16,43 @@ Telegram bot that exports your Yandex Music library — liked tracks, playlists,
 
 ### ✨ Features
 
+**Yandex Music → .txt export**
 - Export **liked tracks** in one tap
 - Export **any playlist** from your library
 - Export by **shared `lk.` link** (e.g. `music.yandex.ru/playlists/lk.UUID`)
 - OAuth token — stored in session RAM only, never written to disk
 - **Session** or **single-use** token retention modes
+- After playlist export — inline button to download the same tracks from SoundCloud
+
+**SoundCloud → .mp3 download**
+- **Single track search**: fuzzy match (rapidfuzz) — auto-download if confidence ≥ 80%, otherwise show top-5 for manual selection
+- **Batch playlist download**: authorize with Yandex Music → pick playlist → download all tracks sequentially
+  - Resume from any track (fuzzy search inside playlist)
+  - Progress updates after each track
+  - ⛔ Stop button at any time
+  - Tracks not found on SoundCloud are collected and shown at the end
+
+**General**
 - Streamlit dashboard with usage statistics
 - Redis FSM storage with graceful fallback to MemoryStorage
-- Throttling middleware — no spam, no double exports
+- Throttling + stale-button guard middleware
 
 ### 🔄 User Flow
 
 ```
 /start
-  → Choose service       (Yandex Music)
-  → Choose retention     (⚡ Session | 🔒 Single export)
-  → Enter OAuth token
-  → Choose export type:
-     ├─ Liked tracks      → .txt file
-     ├─ My playlists      → pick playlist → .txt file
-     └─ By link           → paste link → .txt file
+  → Choose service
+     ├─ 🎵 Yandex Music
+     │    → Choose retention  (⚡ Session | 🔒 Single export)
+     │    → Enter OAuth token
+     │    → Choose export type:
+     │       ├─ Liked tracks   → .txt file  [+ "📥 Download from SoundCloud" button]
+     │       ├─ My playlists   → pick → .txt file  [+ SC button]
+     │       └─ By link        → paste link → .txt file  [+ SC button]
+     │
+     └─ ☁️ SoundCloud
+          ├─ 🔍 Find track     → type query → mp3
+          └─ 📥 Download playlist → YM OAuth → pick playlist → mp3 × N
 ```
 
 ### 🗂️ Project Structure
@@ -43,13 +60,14 @@ Telegram bot that exports your Yandex Music library — liked tracks, playlists,
 ```
 music-export-bot/
 ├── bot/
-│   ├── handlers.py       # aiogram handlers + FSM logic
-│   ├── states.py         # ExportFlow FSM states
-│   ├── keyboards.py      # Inline keyboards
-│   └── middleware.py     # ThrottlingMiddleware + CallbackAnswerMiddleware
+│   ├── handlers.py       # aiogram handlers + FSM logic (YM + SC)
+│   ├── states.py         # ExportFlow + SCSearchFlow + SCBatchFlow
+│   ├── keyboards.py      # Inline keyboards (YM + SC)
+│   └── middleware.py     # Throttling + StaleButton + CallbackAnswer
 ├── core/
-│   ├── base_source.py    # AbstractMusicSource (extensible to Spotify etc.)
-│   └── ym_source.py      # Yandex Music source + batch fetch
+│   ├── base_source.py    # AbstractMusicSource (extensible)
+│   ├── ym_source.py      # Yandex Music source + batch fetch
+│   └── sc_downloader.py  # yt-dlp wrapper: search() + download()
 ├── utils/
 │   ├── export.py         # Async .txt writer
 │   └── event_log.py      # Event logging → logs/events.jsonl
@@ -71,16 +89,19 @@ Create a `.env` file in the project root:
 ```env
 BOT_TOKEN=your_telegram_bot_token
 REDIS_URL=redis://localhost:6379/0   # optional, MemoryStorage used if unavailable
+SC_PROXY=http://user:pass@host:port  # required on servers where SoundCloud is blocked
 ```
+
+> **Note on `SC_PROXY`:** SoundCloud may be blocked by your ISP or country-level filtering (DPI). Set this to an HTTP or SOCKS5 proxy outside the restricted region. Format: `http://login:password@ip:port` or `socks5://login:password@ip:port`. Leave empty if SoundCloud is accessible directly.
 
 **Getting a Yandex Music OAuth token** (the bot explains this to users automatically):
 
-1. Open this URL in your browser:
+1. Open in your browser:
    ```
    https://oauth.yandex.ru/authorize?response_type=token&client_id=23cabbbdc6cd418abb4b39c32c41195d
    ```
 2. Log in with your Yandex account
-3. Copy the `access_token` value from the redirect URL
+3. Copy the `access_token` value from the redirect URL (between `#access_token=` and the first `&`)
 
 ### 🚀 Deployment
 
@@ -94,16 +115,15 @@ docker compose up --build
 
 **TrueNAS Custom App (production):**
 
-Since Docker Hub may be blocked, build the image locally or on the server using a mirror:
+> If Docker Hub is blocked, add a mirror to `/etc/docker/daemon.json` first:
+> `"registry-mirrors": ["https://mirror.gcr.io"]`
 
 ```bash
-# On TrueNAS — add mirror to /etc/docker/daemon.json first:
-# "registry-mirrors": ["https://mirror.gcr.io"]
-
-sudo docker build -f Dockerfile.prod -t music-export-bot:latest .
+# Build on TrueNAS via SSH:
+sudo docker build -f /path/to/music-export-bot/Dockerfile.prod -t music-export-bot:latest /path/to/music-export-bot/
 ```
 
-Then create a Custom App in TrueNAS UI:
+Create a Custom App in TrueNAS UI:
 
 | Field | Value |
 |---|---|
@@ -113,9 +133,10 @@ Then create a Custom App in TrueNAS UI:
 | Restart Policy | `Unless Stopped` |
 | Env: `BOT_TOKEN` | your token |
 | Env: `REDIS_URL` | `redis://your-nas-ip:6379/0` |
+| Env: `SC_PROXY` | `http://login:password@ip:port` |
 | Host Path | `/mnt/.../music-export-bot` → `/app` |
 
-Mounting the source directory as a volume means **code updates apply on container restart** — no rebuild needed.
+Mounting the source directory as a volume means **code updates apply on container restart** — no rebuild needed (unless `requirements.txt` or `Dockerfile.prod` changes).
 
 ### 📊 Dashboard
 
@@ -129,23 +150,13 @@ streamlit run dashboard.py
 
 `start_all.sh` starts the Streamlit dashboard in the background and the bot in the foreground — both in the same container.
 
-In your bot Custom App, change the entrypoint:
-
 | Field | Value |
 |---|---|
-| Image | `music-export-bot` |
-| Tag | `latest` |
-| Pull Policy | `Never` |
-| Restart Policy | `Unless Stopped` |
 | Entrypoint | `/bin/sh` |
 | Command | `/app/start_all.sh` |
-| Env: `BOT_TOKEN` | your token |
 | Host Port → Container Port | `8501 → 8501 TCP` |
-| Host Path | `/mnt/.../music-export-bot` → `/app` |
 
 Open dashboard at `http://your-nas-ip:8501`
-
-Shows per-user export history, track counts, and action stats from `logs/events.jsonl`.
 
 ### 📦 Tech Stack
 
@@ -153,6 +164,9 @@ Shows per-user export history, track counts, and action stats from `logs/events.
 |---|---|
 | Bot framework | [aiogram 3](https://docs.aiogram.dev/) (async FSM) |
 | Yandex Music API | [yandex-music](https://github.com/MarshalX/yandex-music-api) 2.x |
+| SoundCloud downloader | [yt-dlp](https://github.com/yt-dlp/yt-dlp) |
+| Fuzzy matching | [rapidfuzz](https://github.com/rapidfuzz/RapidFuzz) |
+| Audio processing | ffmpeg (in Docker image) |
 | FSM storage | Redis / MemoryStorage fallback |
 | Dashboard | [Streamlit](https://streamlit.io/) + pandas |
 | Containerization | Docker |
@@ -172,26 +186,43 @@ Shows per-user export history, track counts, and action stats from `logs/events.
 
 ### ✨ Возможности
 
+**Яндекс Музыка → экспорт в .txt**
 - Экспорт **лайкнутых треков** в один клик
 - Экспорт **любого плейлиста** из библиотеки
 - Экспорт по **`lk.`-ссылке** (например `music.yandex.ru/playlists/lk.UUID`)
-- OAuth-токен хранится только в памяти сессии — никогда не пишется на диск
+- OAuth-токен хранится только в памяти — никогда не пишется на диск
 - Два режима хранения токена: **на весь сеанс** или **только один экспорт**
+- После экспорта плейлиста — inline-кнопка «📥 Скачать с SoundCloud»
+
+**SoundCloud → скачивание .mp3**
+- **Поиск трека**: fuzzy-матч (rapidfuzz) — автоскачивание при совпадении ≥ 80%, иначе — выбор из топ-5
+- **Батчевое скачивание плейлиста**: авторизация в Яндекс Музыке → выбор плейлиста → последовательное скачивание треков
+  - Возобновление с любого трека (fuzzy-поиск внутри плейлиста)
+  - Прогресс после каждого трека
+  - Кнопка ⛔ Остановить в любой момент
+  - Ненайденные треки собираются и выводятся в конце
+
+**Общее**
 - Streamlit-дашборд со статистикой использования
 - Redis FSM-хранилище с graceful fallback на MemoryStorage
-- Middleware для защиты от спама и двойного запуска экспорта
+- Middleware: throttling + защита от нажатия устаревших кнопок
 
 ### 🔄 Флоу пользователя
 
 ```
 /start
-  → Выбор сервиса        (Яндекс Музыка)
-  → Выбор retention      (⚡ На весь сеанс | 🔒 Только один экспорт)
-  → Ввод OAuth-токена
-  → Выбор типа экспорта:
-     ├─ Любимые треки     → .txt файл
-     ├─ Мои плейлисты     → выбор плейлиста → .txt файл
-     └─ По ссылке         → вставить ссылку → .txt файл
+  → Выбор сервиса
+     ├─ 🎵 Яндекс Музыка
+     │    → Выбор retention  (⚡ На весь сеанс | 🔒 Только один экспорт)
+     │    → Ввод OAuth-токена
+     │    → Выбор типа экспорта:
+     │       ├─ Любимые треки  → .txt файл  [+ кнопка «📥 Скачать с SoundCloud»]
+     │       ├─ Мои плейлисты  → выбор → .txt файл  [+ SC кнопка]
+     │       └─ По ссылке      → вставить ссылку → .txt файл  [+ SC кнопка]
+     │
+     └─ ☁️ SoundCloud
+          ├─ 🔍 Найти трек     → ввести запрос → mp3
+          └─ 📥 Скачать плейлист → OAuth YM → выбор плейлиста → mp3 × N
 ```
 
 ### 🗂️ Структура проекта
@@ -199,16 +230,17 @@ Shows per-user export history, track counts, and action stats from `logs/events.
 ```
 music-export-bot/
 ├── bot/
-│   ├── handlers.py       # Хендлеры aiogram + FSM-логика
-│   ├── states.py         # Состояния ExportFlow FSM
-│   ├── keyboards.py      # Inline-клавиатуры
-│   └── middleware.py     # ThrottlingMiddleware + CallbackAnswerMiddleware
+│   ├── handlers.py       # Хендлеры aiogram + FSM-логика (YM + SC)
+│   ├── states.py         # ExportFlow + SCSearchFlow + SCBatchFlow
+│   ├── keyboards.py      # Inline-клавиатуры (YM + SC)
+│   └── middleware.py     # Throttling + StaleButton + CallbackAnswer
 ├── core/
-│   ├── base_source.py    # AbstractMusicSource (расширяемо под Spotify и др.)
-│   └── ym_source.py      # Источник Яндекс Музыки + батчевый fetch
+│   ├── base_source.py    # AbstractMusicSource (расширяемо)
+│   ├── ym_source.py      # Источник Яндекс Музыки + батчевый fetch
+│   └── sc_downloader.py  # yt-dlp обёртка: search() + download()
 ├── utils/
 │   ├── export.py         # Асинхронная запись .txt
-│   └── event_log.py      # Логирование событий → logs/events.jsonl
+│   └── event_log.py      # Логирование → logs/events.jsonl
 ├── dashboard.py          # Streamlit-дашборд
 ├── main.py               # Точка входа, инициализация Redis/MemoryStorage
 ├── config.py             # Настройки через pydantic-settings + .env
@@ -216,8 +248,8 @@ music-export-bot/
 ├── Dockerfile.prod       # Prod-образ (только зависимости, код через volume)
 ├── docker-compose.yml    # Dev-стек (бот + Redis + дашборд)
 ├── docker-compose.prod.yml
-├── start_all.sh          # TrueNAS: запускает бот + дашборд в одном контейнере
-└── start_dashboard.sh    # TrueNAS: запускает только дашборд (отдельный контейнер)
+├── start_all.sh          # TrueNAS: бот + дашборд в одном контейнере
+└── start_dashboard.sh    # TrueNAS: только дашборд (отдельный контейнер)
 ```
 
 ### ⚙️ Конфигурация
@@ -227,7 +259,10 @@ music-export-bot/
 ```env
 BOT_TOKEN=токен_твоего_telegram_бота
 REDIS_URL=redis://localhost:6379/0   # опционально, без Redis — MemoryStorage
+SC_PROXY=http://login:password@ip:port  # нужен если SoundCloud заблокирован у провайдера
 ```
+
+> **Про `SC_PROXY`:** SoundCloud может блокироваться провайдером через DPI/ТСПУ. Укажи HTTP или SOCKS5 прокси вне заблокированного региона. Формат: `http://login:password@ip:port` или `socks5://login:password@ip:port`. Если SoundCloud доступен напрямую — оставь пустым.
 
 **Как получить OAuth-токен Яндекс Музыки** (бот объясняет это пользователям автоматически):
 
@@ -236,11 +271,11 @@ REDIS_URL=redis://localhost:6379/0   # опционально, без Redis — 
    https://oauth.yandex.ru/authorize?response_type=token&client_id=23cabbbdc6cd418abb4b39c32c41195d
    ```
 2. Войди в аккаунт Яндекса
-3. Скопируй значение `access_token` из URL редиректа
+3. Скопируй значение `access_token` из URL редиректа (между `#access_token=` и первым `&`)
 
 ### 🚀 Развёртывание
 
-**Docker Compose (рекомендуется для разработки):**
+**Docker Compose (для разработки):**
 
 ```bash
 cp .env.example .env  # заполни BOT_TOKEN
@@ -250,14 +285,12 @@ docker compose up --build
 
 **TrueNAS Custom App (продакшн):**
 
-Если Docker Hub заблокирован — добавь зеркало в `/etc/docker/daemon.json`:
-```json
-"registry-mirrors": ["https://mirror.gcr.io"]
-```
+> Если Docker Hub заблокирован — добавь зеркало в `/etc/docker/daemon.json`:
+> `"registry-mirrors": ["https://mirror.gcr.io"]`
 
-Затем собери образ прямо на сервере:
 ```bash
-sudo docker build -f Dockerfile.prod -t music-export-bot:latest .
+# Собрать образ на TrueNAS через SSH:
+sudo docker build -f /путь/к/music-export-bot/Dockerfile.prod -t music-export-bot:latest /путь/к/music-export-bot/
 ```
 
 Создай Custom App в TrueNAS UI:
@@ -270,9 +303,10 @@ sudo docker build -f Dockerfile.prod -t music-export-bot:latest .
 | Restart Policy | `Unless Stopped` |
 | Env: `BOT_TOKEN` | твой токен |
 | Env: `REDIS_URL` | `redis://ip-nas:6379/0` |
+| Env: `SC_PROXY` | `http://login:password@ip:port` |
 | Host Path | `/mnt/.../music-export-bot` → `/app` |
 
-Монтирование папки с кодом как volume означает — **обновления кода применяются при рестарте контейнера**, пересборка образа не нужна.
+Монтирование папки с кодом как volume — **обновления кода применяются при рестарте контейнера**, пересборка образа не нужна (если не менялись `requirements.txt` или `Dockerfile.prod`).
 
 ### 📊 Дашборд
 
@@ -282,27 +316,17 @@ streamlit run dashboard.py
 # Открыть http://localhost:8501
 ```
 
-**TrueNAS Custom App — единый контейнер (бот + дашборд):**
+**TrueNAS — единый контейнер (бот + дашборд):**
 
-`start_all.sh` запускает Streamlit-дашборд фоном и бот форграундом — оба в одном контейнере.
-
-В настройках Custom App бота измени точку входа:
+`start_all.sh` запускает Streamlit фоном и бот форграундом в одном контейнере.
 
 | Поле | Значение |
 |---|---|
-| Image | `music-export-bot` |
-| Tag | `latest` |
-| Pull Policy | `Never` |
-| Restart Policy | `Unless Stopped` |
 | Entrypoint | `/bin/sh` |
 | Command | `/app/start_all.sh` |
-| Env: `BOT_TOKEN` | твой токен |
 | Host Port → Container Port | `8501 → 8501 TCP` |
-| Host Path | `/mnt/.../music-export-bot` → `/app` |
 
-Открыть дашборд по адресу `http://ip-nas:8501`
-
-Показывает историю экспортов по пользователям, количество треков и статистику действий из `logs/events.jsonl`.
+Открыть дашборд: `http://ip-nas:8501`
 
 ### 📦 Технологии
 
@@ -310,6 +334,9 @@ streamlit run dashboard.py
 |---|---|
 | Фреймворк бота | [aiogram 3](https://docs.aiogram.dev/) (async FSM) |
 | API Яндекс Музыки | [yandex-music](https://github.com/MarshalX/yandex-music-api) 2.x |
+| Загрузчик SoundCloud | [yt-dlp](https://github.com/yt-dlp/yt-dlp) |
+| Fuzzy-матч | [rapidfuzz](https://github.com/rapidfuzz/RapidFuzz) |
+| Аудио | ffmpeg (в Docker-образе) |
 | FSM-хранилище | Redis / MemoryStorage fallback |
 | Дашборд | [Streamlit](https://streamlit.io/) + pandas |
 | Контейнеризация | Docker |
