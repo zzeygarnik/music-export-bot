@@ -9,7 +9,8 @@ _YM_OAUTH_URL = (
 
 def service_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎵 Яндекс Музыка", callback_data="service:yandex")]
+        [InlineKeyboardButton(text="🎵 Яндекс Музыка", callback_data="service:yandex")],
+        [InlineKeyboardButton(text="☁️ SoundCloud", callback_data="service:soundcloud")],
     ])
 
 
@@ -46,4 +47,67 @@ def playlists_keyboard(playlists: list[dict]) -> InlineKeyboardMarkup:
 def cancel_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="❌ Отмена", callback_data="action:cancel")]
+    ])
+
+
+# ── SoundCloud keyboards ───────────────────────────────────────────────────────
+
+def sc_menu_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔍 Найти трек", callback_data="sc:search")],
+        [InlineKeyboardButton(text="📥 Скачать плейлист", callback_data="sc:batch")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="sc:back")],
+    ])
+
+
+def sc_cancel_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="sc:cancel")]
+    ])
+
+
+def sc_results_keyboard(results: list) -> InlineKeyboardMarkup:
+    buttons = []
+    for i, r in enumerate(results):
+        mins, secs = divmod(r.duration, 60)
+        text = f"{r.artist} — {r.title} [{mins}:{secs:02d}]"
+        if len(text) > 64:
+            text = text[:61] + "..."
+        buttons.append([InlineKeyboardButton(text=text, callback_data=f"sc_pick:{i}")])
+    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="sc:cancel")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def sc_playlists_keyboard(playlists: list[dict]) -> InlineKeyboardMarkup:
+    buttons = [
+        [InlineKeyboardButton(text=p["title"], callback_data=f"sc_pl:{p['kind']}")]
+        for p in playlists
+    ]
+    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="sc:cancel")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def sc_resume_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="▶️ С начала", callback_data="sc_resume:start")],
+        [InlineKeyboardButton(text="⏩ Продолжить с...", callback_data="sc_resume:seek")],
+    ])
+
+
+def sc_resume_confirm_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Верно", callback_data="sc_resume:confirm")],
+        [InlineKeyboardButton(text="❌ Нет, ввести заново", callback_data="sc_resume:retry")],
+    ])
+
+
+def sc_stop_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⛔ Остановить", callback_data="sc:stop")]
+    ])
+
+
+def sc_offer_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📥 Скачать с SoundCloud", callback_data="sc:batch_from_ym")]
     ])

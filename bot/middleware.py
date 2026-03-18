@@ -1,9 +1,12 @@
-"""Bot-level middlewares: throttling and auto-answer for callback queries."""
+"""Bot-level middlewares: throttling, stale-button guard, auto-answer for callback queries."""
 import time
 from typing import Any, Awaitable, Callable
 
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject, Message, CallbackQuery
+
+# Callbacks older than this are considered stale and silently rejected.
+_CALLBACK_MAX_AGE_SECONDS = 300  # 5 minutes
 
 
 class ThrottlingMiddleware(BaseMiddleware):
@@ -34,6 +37,31 @@ class ThrottlingMiddleware(BaseMiddleware):
                 return  # drop silently
             self._last[user.id] = now
 
+        return await handler(event, data)
+
+
+class StaleButtonMiddleware(BaseMiddleware):
+    """
+    Reject callback queries that come from messages older than _CALLBACK_MAX_AGE_SECONDS.
+    Prevents users from pressing buttons on old bot messages mid-flow.
+    """
+
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
+        data: dict[str, Any],
+    ) -> Any:
+        if isinstance(event, CallbackQuery) and event.message:
+            msg_date = event.message.date
+            if msg_date:
+                age = time.time() - msg_date.timestamp()
+                if age > _CALLBACK_MAX_AGE_SECONDS:
+                    await event.answer(
+                        "⏳ Эта кнопка устарела. Используй последнее сообщение бота.",
+                        show_alert=True,
+                    )
+                    return
         return await handler(event, data)
 
 
