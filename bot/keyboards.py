@@ -9,8 +9,8 @@ _YM_OAUTH_URL = (
 
 def service_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎵 Яндекс Музыка", callback_data="service:yandex")],
-        [InlineKeyboardButton(text="☁️ SoundCloud", callback_data="service:soundcloud")],
+        [InlineKeyboardButton(text="📋 Экспорт в .txt  (Яндекс Музыка)", callback_data="service:yandex")],
+        [InlineKeyboardButton(text="🎵 Скачать MP3  (SoundCloud)", callback_data="service:soundcloud")],
     ])
 
 
