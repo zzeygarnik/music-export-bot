@@ -5,6 +5,9 @@
 # Secrets & internal context
 CONTEXT.md
 
+# One-time utility scripts
+get_vk_token.py
+
 # Logs
 logs/
 *.log

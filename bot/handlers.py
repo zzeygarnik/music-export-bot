@@ -9,6 +9,7 @@ from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from rapidfuzz import fuzz
 
+from config import settings
 from bot.states import ExportFlow, SCSearchFlow, SCBatchFlow
 from bot.keyboards import (
     service_keyboard,
@@ -38,6 +39,9 @@ log = logging.getLogger(__name__)
 # Cancel events for SC batch downloads keyed by user_id
 _cancel_events: dict[int, asyncio.Event] = {}
 
+# Global semaphore limiting concurrent SC batch downloads
+_batch_semaphore = asyncio.Semaphore(settings.SC_MAX_BATCH_DOWNLOADS)
+
 _TOKEN_GUIDE = (
     "🔑 Для доступа к твоей музыке нужна авторизация в Яндексе.\n\n"
     "1. Нажми кнопку <b>«Войти через Яндекс»</b> ниже\n"
@@ -60,7 +64,11 @@ _RETENTION_TEXT = (
     "<i>В обоих случаях токен хранится только в RAM — никакой записи на диск.</i>"
 )
 
-_SC_MENU_TEXT = "☁️ <b>SoundCloud</b>\n\nВыберите действие:"
+_SC_MENU_TEXT = (
+    "☁️ <b>SoundCloud — скачать MP3</b>\n\n"
+    "🔍 <b>Найти трек</b> — поиск по названию, скачать один трек\n"
+    "📥 <b>Скачать плейлист</b> — загрузить список треков из Яндекс Музыки и скачать все через SoundCloud"
+)
 
 
 def _get_user_info(event: Message | CallbackQuery) -> tuple[int, str | None]:
@@ -74,7 +82,10 @@ def _get_user_info(event: Message | CallbackQuery) -> tuple[int, str | None]:
 async def cmd_start(message: Message, state: FSMContext) -> None:
     await state.clear()
     await message.answer(
-        "👋 Привет! Я помогу экспортировать треки в текстовый файл.\n\nВыбери сервис:",
+        "👋 Привет! Что хочешь сделать?\n\n"
+        "📋 <b>Экспорт в .txt</b> — сохранить список треков из Яндекс Музыки\n"
+        "🎵 <b>Скачать MP3</b> — найти и скачать трек или плейлист через SoundCloud",
+        parse_mode="HTML",
         reply_markup=service_keyboard(),
     )
     await state.set_state(ExportFlow.choosing_service)
@@ -553,6 +564,16 @@ async def on_sc_ym_playlist_selected(call: CallbackQuery, state: FSMContext) -> 
 
 @router.callback_query(SCBatchFlow.sc_resume_choice, F.data == "sc_resume:start")
 async def on_sc_resume_start(call: CallbackQuery, state: FSMContext) -> None:
+    user_id = call.from_user.id
+    if user_id in _cancel_events:
+        await call.answer("⚠️ У тебя уже идёт скачивание.", show_alert=True)
+        return
+    if _batch_semaphore.locked():
+        await call.answer(
+            f"⏳ Бот сейчас занят ({settings.SC_MAX_BATCH_DOWNLOADS}/{settings.SC_MAX_BATCH_DOWNLOADS} загрузок). Попробуй чуть позже.",
+            show_alert=True,
+        )
+        return
     data = await state.get_data()
     tracks = data.get("sc_tracks", [])
     await call.message.edit_text(
@@ -560,7 +581,7 @@ async def on_sc_resume_start(call: CallbackQuery, state: FSMContext) -> None:
         reply_markup=sc_stop_keyboard(),
     )
     await state.set_state(SCBatchFlow.sc_downloading)
-    asyncio.create_task(_run_batch_download(call.message, state, call.from_user.id, call.from_user.username, tracks, 0))
+    asyncio.create_task(_run_batch_download(call.message, state, user_id, call.from_user.username, tracks, 0))
 
 
 @router.callback_query(SCBatchFlow.sc_resume_choice, F.data == "sc_resume:seek")
@@ -621,6 +642,16 @@ async def on_sc_resume_input(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(SCBatchFlow.sc_resume_confirm, F.data == "sc_resume:confirm")
 async def on_sc_resume_confirm(call: CallbackQuery, state: FSMContext) -> None:
+    user_id = call.from_user.id
+    if user_id in _cancel_events:
+        await call.answer("⚠️ У тебя уже идёт скачивание.", show_alert=True)
+        return
+    if _batch_semaphore.locked():
+        await call.answer(
+            f"⏳ Бот сейчас занят ({settings.SC_MAX_BATCH_DOWNLOADS}/{settings.SC_MAX_BATCH_DOWNLOADS} загрузок). Попробуй чуть позже.",
+            show_alert=True,
+        )
+        return
     data = await state.get_data()
     tracks = data.get("sc_tracks", [])
     start_idx = data.get("sc_resume_idx", 0)
@@ -629,7 +660,7 @@ async def on_sc_resume_confirm(call: CallbackQuery, state: FSMContext) -> None:
         reply_markup=sc_stop_keyboard(),
     )
     await state.set_state(SCBatchFlow.sc_downloading)
-    asyncio.create_task(_run_batch_download(call.message, state, call.from_user.id, call.from_user.username, tracks, start_idx))
+    asyncio.create_task(_run_batch_download(call.message, state, user_id, call.from_user.username, tracks, start_idx))
 
 
 @router.callback_query(SCBatchFlow.sc_resume_confirm, F.data == "sc_resume:retry")
@@ -840,6 +871,7 @@ async def _run_batch_download(
     tracks: list[dict],
     start_idx: int,
 ) -> None:
+    await _batch_semaphore.acquire()
     cancel_event = asyncio.Event()
     _cancel_events[user_id] = cancel_event
 
@@ -847,60 +879,63 @@ async def _run_batch_download(
     not_found: list[str] = []
     downloaded_count = 0
 
-    for i, track in enumerate(tracks[start_idx:], start=start_idx + 1):
-        if cancel_event.is_set():
-            break
+    try:
+        for i, track in enumerate(tracks[start_idx:], start=start_idx + 1):
+            if cancel_event.is_set():
+                break
 
-        artist = track.get("artist", "")
-        title = track.get("title", "")
-        query = f"{artist} {title}"
+            artist = track.get("artist", "")
+            title = track.get("title", "")
+            query = f"{artist} {title}"
 
-        try:
-            results = await sc_downloader.search(query, max_results=1)
-        except Exception as e:
-            log.warning("SC batch search failed '%s': %s", query, e)
-            not_found.append(f"{artist} — {title}")
-            continue
-
-        if not results:
-            not_found.append(f"{artist} — {title}")
-            continue
-
-        try:
-            path, meta = await sc_downloader.download(results[0].url, user_id)
-        except Exception as e:
-            log.warning("SC batch download failed '%s': %s", query, e)
-            not_found.append(f"{artist} — {title}")
-            continue
-
-        sent = False
-        try:
-            await progress_msg.answer_audio(
-                audio=FSInputFile(path, filename=f"{artist} - {title}.mp3"),
-                title=meta.get("title") or title,
-                performer=meta.get("artist") or artist,
-            )
-            sent = True
-            downloaded_count += 1
-        except Exception as e:
-            log.warning("SC batch send_audio failed '%s': %s", query, e)
-            not_found.append(f"{artist} — {title}")
-        finally:
             try:
-                os.remove(path)
-            except OSError:
-                pass
+                results = await sc_downloader.search(query, max_results=1)
+            except Exception as e:
+                log.warning("SC batch search failed '%s': %s", query, e)
+                not_found.append(f"{artist} — {title}")
+                continue
 
-        if sent:
+            if not results:
+                not_found.append(f"{artist} — {title}")
+                continue
+
             try:
-                await progress_msg.edit_text(
-                    f"⏳ {i}/{total} — {artist} — {title}",
-                    reply_markup=sc_stop_keyboard(),
+                path, meta = await sc_downloader.download(results[0].url, user_id)
+            except Exception as e:
+                log.warning("SC batch download failed '%s': %s", query, e)
+                not_found.append(f"{artist} — {title}")
+                continue
+
+            sent = False
+            try:
+                await progress_msg.answer_audio(
+                    audio=FSInputFile(path, filename=f"{artist} - {title}.mp3"),
+                    title=meta.get("title") or title,
+                    performer=meta.get("artist") or artist,
                 )
-            except Exception:
-                pass
+                sent = True
+                downloaded_count += 1
+            except Exception as e:
+                log.warning("SC batch send_audio failed '%s': %s", query, e)
+                not_found.append(f"{artist} — {title}")
+            finally:
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
 
-    _cancel_events.pop(user_id, None)
+            if sent:
+                try:
+                    await progress_msg.edit_text(
+                        f"⏳ {i}/{total} — {artist} — {title}",
+                        reply_markup=sc_stop_keyboard(),
+                    )
+                except Exception:
+                    pass
+
+    finally:
+        _cancel_events.pop(user_id, None)
+        _batch_semaphore.release()
 
     batch_result = "stopped" if cancel_event.is_set() else "success"
     log_event(user_id, username, "sc_batch", batch_result,
