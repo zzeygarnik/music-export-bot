@@ -31,6 +31,7 @@ Telegram bot with two modes: **export your Yandex Music library to `.txt`** and 
   - Progress updates after each track
   - ⛔ Stop button at any time
   - Tracks not found on SoundCloud are collected and shown at the end
+  - Concurrency limit: max simultaneous batch downloads across all users (configurable via `SC_MAX_BATCH_DOWNLOADS`)
 
 **General**
 - Streamlit dashboard with usage statistics
@@ -41,8 +42,8 @@ Telegram bot with two modes: **export your Yandex Music library to `.txt`** and 
 
 ```
 /start
-  → Choose service
-     ├─ 🎵 Yandex Music
+  → What do you want to do?
+     ├─ 📋 Export to .txt  (Yandex Music)
      │    → Choose retention  (⚡ Session | 🔒 Single export)
      │    → Enter OAuth token
      │    → Choose export type:
@@ -50,7 +51,7 @@ Telegram bot with two modes: **export your Yandex Music library to `.txt`** and 
      │       ├─ My playlists   → pick → .txt file  [+ SC button]
      │       └─ By link        → paste link → .txt file  [+ SC button]
      │
-     └─ ☁️ SoundCloud
+     └─ 🎵 Download MP3  (SoundCloud)
           ├─ 🔍 Find track     → type query → mp3
           └─ 📥 Download playlist → YM OAuth → pick playlist → mp3 × N
 ```
@@ -90,6 +91,7 @@ Create a `.env` file in the project root:
 BOT_TOKEN=your_telegram_bot_token
 REDIS_URL=redis://localhost:6379/0   # optional, MemoryStorage used if unavailable
 SC_PROXY=http://user:pass@host:port  # required on servers where SoundCloud is blocked
+SC_MAX_BATCH_DOWNLOADS=2             # max concurrent SC batch downloads across all users (default: 2)
 ```
 
 > **Note on `SC_PROXY`:** SoundCloud may be blocked by your ISP or country-level filtering (DPI). Set this to an HTTP or SOCKS5 proxy outside the restricted region. Format: `http://login:password@ip:port` or `socks5://login:password@ip:port`. Leave empty if SoundCloud is accessible directly.
@@ -201,6 +203,7 @@ Open dashboard at `http://your-nas-ip:8501`
   - Прогресс после каждого трека
   - Кнопка ⛔ Остановить в любой момент
   - Ненайденные треки собираются и выводятся в конце
+  - Ограничение параллельности: максимум одновременных батч-загрузок на всех пользователей задаётся через `SC_MAX_BATCH_DOWNLOADS`
 
 **Общее**
 - Streamlit-дашборд со статистикой использования
@@ -211,8 +214,8 @@ Open dashboard at `http://your-nas-ip:8501`
 
 ```
 /start
-  → Выбор сервиса
-     ├─ 🎵 Яндекс Музыка
+  → Что хочешь сделать?
+     ├─ 📋 Экспорт в .txt  (Яндекс Музыка)
      │    → Выбор retention  (⚡ На весь сеанс | 🔒 Только один экспорт)
      │    → Ввод OAuth-токена
      │    → Выбор типа экспорта:
@@ -220,7 +223,7 @@ Open dashboard at `http://your-nas-ip:8501`
      │       ├─ Мои плейлисты  → выбор → .txt файл  [+ SC кнопка]
      │       └─ По ссылке      → вставить ссылку → .txt файл  [+ SC кнопка]
      │
-     └─ ☁️ SoundCloud
+     └─ 🎵 Скачать MP3  (SoundCloud)
           ├─ 🔍 Найти трек     → ввести запрос → mp3
           └─ 📥 Скачать плейлист → OAuth YM → выбор плейлиста → mp3 × N
 ```
@@ -258,8 +261,9 @@ music-export-bot/
 
 ```env
 BOT_TOKEN=токен_твоего_telegram_бота
-REDIS_URL=redis://localhost:6379/0   # опционально, без Redis — MemoryStorage
+REDIS_URL=redis://localhost:6379/0      # опционально, без Redis — MemoryStorage
 SC_PROXY=http://login:password@ip:port  # нужен если SoundCloud заблокирован у провайдера
+SC_MAX_BATCH_DOWNLOADS=2                # макс. одновременных батч-загрузок SC (по умолчанию: 2)
 ```
 
 > **Про `SC_PROXY`:** SoundCloud может блокироваться провайдером через DPI/ТСПУ. Укажи HTTP или SOCKS5 прокси вне заблокированного региона. Формат: `http://login:password@ip:port` или `socks5://login:password@ip:port`. Если SoundCloud доступен напрямую — оставь пустым.
