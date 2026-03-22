@@ -15,7 +15,7 @@ def service_keyboard() -> InlineKeyboardMarkup:
             icon_custom_emoji_id="5870801517140775623",
         )],
         [InlineKeyboardButton(
-            text="Скачать MP3  (SoundCloud / YouTube Music)",
+            text="Скачать MP3  (SoundCloud / YouTube)",
             callback_data="service:soundcloud",
             icon_custom_emoji_id="6039802767931871481",
         )],
@@ -93,7 +93,7 @@ def sc_menu_keyboard() -> InlineKeyboardMarkup:
             icon_custom_emoji_id="6037397706505195857",
         )],
         [InlineKeyboardButton(
-            text="По ссылке  (SC / YouTube Music)",
+            text="По ссылке  (SC / YouTube)",
             callback_data="sc:url",
             icon_custom_emoji_id="6042011682497106307",
         )],

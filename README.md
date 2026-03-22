@@ -24,9 +24,9 @@ Telegram bot with two modes: **export your Yandex Music library to `.txt`** and 
 - **Session** or **single-use** token retention modes
 - After playlist export — inline button to download the same tracks from SoundCloud
 
-**SoundCloud / YouTube Music → .mp3 download**
+**SoundCloud / YouTube → .mp3 download**
 - **Single track search**: fuzzy match (rapidfuzz) — auto-download if confidence ≥ 80%, otherwise show top-5 for manual selection
-- **Download by URL**: paste any SoundCloud or YouTube Music link — track downloads immediately, playlist starts batch download
+- **Download by URL**: paste any SoundCloud or YouTube link — track downloads immediately, playlist starts batch download
 - **Batch playlist download**: authorize with Yandex Music → pick playlist → download all tracks via SoundCloud
   - Resume from any track (fuzzy search inside playlist)
   - Progress updates after each track
@@ -54,7 +54,7 @@ Telegram bot with two modes: **export your Yandex Music library to `.txt`** and 
      │       ├─ My playlists   → pick → .txt file  [+ SC button]
      │       └─ By link        → paste link → .txt file  [+ SC button]
      │
-     └─ 🎵 Download MP3  (SoundCloud / YouTube Music)
+     └─ 🎵 Download MP3  (SoundCloud / YouTube)
           ├─ 🔍 Find track        → type query → mp3  [+ "Download more" button]
           ├─ 🔗 By URL            → paste SC or YTM link → mp3 (track) or mp3 × N (playlist)
           └─ 📥 Download playlist → YM OAuth → pick playlist → mp3 × N
@@ -200,9 +200,9 @@ Open dashboard at `http://your-nas-ip:8501`
 - Два режима хранения токена: **на весь сеанс** или **только один экспорт**
 - После экспорта плейлиста — inline-кнопка «📥 Скачать с SoundCloud»
 
-**SoundCloud / YouTube Music → скачивание .mp3**
+**SoundCloud / YouTube → скачивание .mp3**
 - **Поиск трека**: fuzzy-матч (rapidfuzz) — автоскачивание при совпадении ≥ 80%, иначе — выбор из топ-5
-- **Скачивание по ссылке**: вставь ссылку на трек или плейлист SoundCloud / YouTube Music — трек скачается сразу, плейлист запустит батч
+- **Скачивание по ссылке**: вставь ссылку на трек или плейлист SoundCloud / YouTube — трек скачается сразу, плейлист запустит батч
 - **Батчевое скачивание плейлиста**: авторизация в Яндекс Музыке → выбор плейлиста → последовательное скачивание через SoundCloud
   - Возобновление с любого трека (fuzzy-поиск внутри плейлиста)
   - Прогресс после каждого трека
@@ -230,7 +230,7 @@ Open dashboard at `http://your-nas-ip:8501`
      │       ├─ Мои плейлисты  → выбор → .txt файл  [+ SC кнопка]
      │       └─ По ссылке      → вставить ссылку → .txt файл  [+ SC кнопка]
      │
-     └─ 🎵 Скачать MP3  (SoundCloud / YouTube Music)
+     └─ 🎵 Скачать MP3  (SoundCloud / YouTube)
           ├─ 🔍 Найти трек        → ввести запрос → mp3  [+ кнопка «Скачать ещё»]
           ├─ 🔗 По ссылке         → вставить ссылку SC/YTM → mp3 (трек) или mp3 × N (плейлист)
           └─ 📥 Скачать плейлист → OAuth YM → выбор плейлиста → mp3 × N
