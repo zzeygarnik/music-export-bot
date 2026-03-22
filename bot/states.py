@@ -14,6 +14,7 @@ class SCSearchFlow(StatesGroup):
     sc_menu = State()
     sc_search_query = State()
     sc_search_results = State()    # waiting for user to choose from top-5
+    sc_url_input = State()         # waiting for SC/YouTube URL
 
 
 class SCBatchFlow(StatesGroup):

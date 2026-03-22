@@ -26,6 +26,7 @@ from bot.keyboards import (
     sc_resume_confirm_keyboard,
     sc_stop_keyboard,
     sc_offer_keyboard,
+    sc_after_download_keyboard,
 )
 from core.ym_source import YandexMusicSource
 from core import sc_downloader
@@ -66,8 +67,17 @@ _RETENTION_TEXT = (
 
 _SC_MENU_TEXT = (
     '<tg-emoji emoji-id="5778672437122045013">☁️</tg-emoji> <b>SoundCloud — скачать MP3</b>\n\n'
-    '<tg-emoji emoji-id="6037397706505195857">🔍</tg-emoji> <b>Найти трек</b> — поиск по названию, скачать один трек\n'
-    '<tg-emoji emoji-id="6039802767931871481">📥</tg-emoji> <b>Скачать плейлист</b> — загрузить список треков из Яндекс Музыки и скачать все через SoundCloud'
+    '<tg-emoji emoji-id="6037397706505195857">🔍</tg-emoji> <b>Найти трек</b> — поиск по названию\n'
+    '<tg-emoji emoji-id="6042011682497106307">🔗</tg-emoji> <b>По ссылке</b> — трек или плейлист по ссылке SoundCloud / YouTube Music\n'
+    '<tg-emoji emoji-id="6039802767931871481">📥</tg-emoji> <b>Скачать плейлист из Яндекс Музыки</b> — выгрузить плейлист YM и скачать через SoundCloud'
+)
+
+_SC_URL_TEXT = (
+    '<tg-emoji emoji-id="6042011682497106307">🔗</tg-emoji> <b>Скачать по ссылке</b>\n\n'
+    'Поддерживаются:\n'
+    '• <b>SoundCloud</b> — трек или плейлист\n'
+    '• <b>YouTube Music</b> — трек или плейлист\n\n'
+    'Отправь ссылку:'
 )
 
 
@@ -342,12 +352,35 @@ async def on_playlist_back(call: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(SCSearchFlow.sc_menu, F.data == "sc:search")
 async def on_sc_search(call: CallbackQuery, state: FSMContext) -> None:
+    await state.update_data(sc_input_mode="search")
     await call.message.edit_text(
         "🔍 Введи запрос для поиска трека:\n\n<i>Например: Linkin Park Numb</i>",
         parse_mode="HTML",
         reply_markup=sc_cancel_keyboard(),
     )
     await state.set_state(SCSearchFlow.sc_search_query)
+
+
+@router.callback_query(SCSearchFlow.sc_menu, F.data == "sc:url")
+async def on_sc_url(call: CallbackQuery, state: FSMContext) -> None:
+    await state.update_data(sc_input_mode="url")
+    await call.message.edit_text(_SC_URL_TEXT, parse_mode="HTML", reply_markup=sc_cancel_keyboard())
+    await state.set_state(SCSearchFlow.sc_url_input)
+
+
+@router.callback_query(SCSearchFlow.sc_menu, F.data == "sc:search_again")
+async def on_sc_search_again(call: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    if data.get("sc_input_mode") == "url":
+        await call.message.edit_text(_SC_URL_TEXT, parse_mode="HTML", reply_markup=sc_cancel_keyboard())
+        await state.set_state(SCSearchFlow.sc_url_input)
+    else:
+        await call.message.edit_text(
+            "🔍 Введи запрос для поиска трека:\n\n<i>Например: Linkin Park Numb</i>",
+            parse_mode="HTML",
+            reply_markup=sc_cancel_keyboard(),
+        )
+        await state.set_state(SCSearchFlow.sc_search_query)
 
 
 @router.callback_query(SCSearchFlow.sc_menu, F.data == "sc:batch")
@@ -475,6 +508,59 @@ async def on_sc_pick(call: CallbackQuery, state: FSMContext) -> None:
         parse_mode="HTML",
     )
     await _sc_download_and_send(call.message, state, result, user_id, return_to_menu=True, username=username)
+
+
+# ── SC: Download by URL ───────────────────────────────────────────────────────
+
+@router.message(SCSearchFlow.sc_url_input)
+async def on_sc_url_input(message: Message, state: FSMContext) -> None:
+    user_id, username = _get_user_info(message)
+
+    if not message.text or not message.text.strip().startswith("http"):
+        await message.answer("❌ Нужно отправить ссылку (должна начинаться с http).",
+                             reply_markup=sc_cancel_keyboard())
+        return
+
+    url = message.text.strip()
+    status_msg = await message.answer("⏳ Получаю информацию по ссылке…")
+
+    try:
+        info = await sc_downloader.extract_url_info(url)
+    except Exception as e:
+        log.warning("SC URL extract failed user=%s url=%s: %s", user_id, url, e)
+        await status_msg.edit_text(
+            "❌ Не удалось получить информацию. Проверь ссылку и попробуй ещё раз.",
+            reply_markup=sc_cancel_keyboard(),
+        )
+        return
+
+    if info["type"] == "track":
+        result = info["result"]
+        await status_msg.edit_text(
+            f"⏳ Скачиваю: <b>{result.artist} — {result.title}</b>…",
+            parse_mode="HTML",
+        )
+        await _sc_download_and_send(status_msg, state, result, user_id,
+                                    return_to_menu=True, username=username)
+    else:
+        entries = info["entries"]
+        title = info["title"]
+        if not entries:
+            await status_msg.edit_text(
+                "😔 Плейлист пуст или не удалось загрузить треки.",
+                reply_markup=sc_cancel_keyboard(),
+            )
+            return
+        # Store tracks with direct URLs — batch will skip search step
+        tracks = [{"url": e.url, "artist": e.artist, "title": e.title} for e in entries]
+        await state.update_data(sc_tracks=tracks)
+        await status_msg.edit_text(
+            f'<tg-emoji emoji-id="6039802767931871481">📥</tg-emoji> '
+            f'Найдено <b>{len(tracks)}</b> треков в плейлисте «{title}».\n\nС какого трека начать?',
+            parse_mode="HTML",
+            reply_markup=sc_resume_keyboard(),
+        )
+        await state.set_state(SCBatchFlow.sc_resume_choice)
 
 
 # ── SC: Cancel (back to menu) ─────────────────────────────────────────────────
@@ -710,6 +796,7 @@ _STATE_HINTS = {
     SCSearchFlow.sc_menu: "Нажми кнопку в меню SoundCloud.",
     SCSearchFlow.sc_search_query: "Введи название трека для поиска на SoundCloud.",
     SCSearchFlow.sc_search_results: "Выбери трек из результатов или нажми «Назад».",
+    SCSearchFlow.sc_url_input: "Отправь ссылку на трек или плейлист (SoundCloud или YouTube Music).",
     SCBatchFlow.sc_ym_token: "Отправь токен Яндекс Музыки.",
     SCBatchFlow.sc_ym_playlist: "Выбери плейлист из списка выше.",
     SCBatchFlow.sc_resume_choice: "Выбери, с какого трека начать скачивание.",
@@ -871,7 +958,7 @@ async def _sc_download_and_send(
             pass
 
     if return_to_menu and await state.get_state() is not None:
-        await msg.answer(_SC_MENU_TEXT, parse_mode="HTML", reply_markup=sc_menu_keyboard())
+        await msg.answer("✅ Готово! Скачать ещё?", reply_markup=sc_after_download_keyboard())
         await state.set_state(SCSearchFlow.sc_menu)
 
 
@@ -900,23 +987,34 @@ async def _run_batch_download(
             title = track.get("title", "")
             query = f"{artist} {title}"
 
-            try:
-                results = await sc_downloader.search(query, max_results=1)
-            except Exception as e:
-                log.warning("SC batch search failed '%s': %s", query, e)
-                not_found.append(f"{artist} — {title}")
-                continue
+            direct_url = track.get("url")
+            if direct_url:
+                # URL-sourced playlist — download directly without search
+                try:
+                    path, meta = await sc_downloader.download(direct_url, user_id)
+                except Exception as e:
+                    log.warning("SC batch URL download failed '%s': %s", direct_url, e)
+                    not_found.append(f"{artist} — {title}")
+                    continue
+            else:
+                # YM-sourced playlist — search on SoundCloud first
+                try:
+                    results = await sc_downloader.search(query, max_results=1)
+                except Exception as e:
+                    log.warning("SC batch search failed '%s': %s", query, e)
+                    not_found.append(f"{artist} — {title}")
+                    continue
 
-            if not results:
-                not_found.append(f"{artist} — {title}")
-                continue
+                if not results:
+                    not_found.append(f"{artist} — {title}")
+                    continue
 
-            try:
-                path, meta = await sc_downloader.download(results[0].url, user_id)
-            except Exception as e:
-                log.warning("SC batch download failed '%s': %s", query, e)
-                not_found.append(f"{artist} — {title}")
-                continue
+                try:
+                    path, meta = await sc_downloader.download(results[0].url, user_id)
+                except Exception as e:
+                    log.warning("SC batch download failed '%s': %s", query, e)
+                    not_found.append(f"{artist} — {title}")
+                    continue
 
             sent = False
             try:
