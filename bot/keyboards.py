@@ -15,7 +15,7 @@ def service_keyboard() -> InlineKeyboardMarkup:
             icon_custom_emoji_id="5870801517140775623",
         )],
         [InlineKeyboardButton(
-            text="Скачать MP3  (SoundCloud)",
+            text="Скачать MP3  (SoundCloud / YouTube Music)",
             callback_data="service:soundcloud",
             icon_custom_emoji_id="6039802767931871481",
         )],
