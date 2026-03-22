@@ -107,6 +107,18 @@ async def on_service_soundcloud(call: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(SCSearchFlow.sc_menu)
 
 
+@router.callback_query(ExportFlow.choosing_retention, F.data == "retention:back")
+async def on_retention_back(call: CallbackQuery, state: FSMContext) -> None:
+    await call.message.edit_text(
+        '👋 Привет! Что хочешь сделать?\n\n'
+        '<tg-emoji emoji-id="5870801517140775623">📋</tg-emoji> <b>Экспорт в .txt</b> — сохранить список треков из Яндекс Музыки\n'
+        '<tg-emoji emoji-id="6039802767931871481">🎵</tg-emoji> <b>Скачать MP3</b> — найти и скачать трек или плейлист через SoundCloud',
+        parse_mode="HTML",
+        reply_markup=service_keyboard(),
+    )
+    await state.set_state(ExportFlow.choosing_service)
+
+
 # ── Token retention choice ────────────────────────────────────────────────────
 
 @router.callback_query(ExportFlow.choosing_retention, F.data.in_({"retention:session", "retention:single"}))

@@ -34,6 +34,7 @@ def retention_keyboard() -> InlineKeyboardMarkup:
             callback_data="retention:single",
             icon_custom_emoji_id="6037243349675544634",
         )],
+        [InlineKeyboardButton(text="Назад", callback_data="retention:back")],
     ])
 
 
@@ -72,7 +73,7 @@ def playlists_keyboard(playlists: list[dict]) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text=p["title"], callback_data=f"playlist:{p['kind']}")]
         for p in playlists
     ]
-    buttons.append([InlineKeyboardButton(text="◁ Назад", callback_data="export:back")])
+    buttons.append([InlineKeyboardButton(text="Назад", callback_data="export:back")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
@@ -96,13 +97,13 @@ def sc_menu_keyboard() -> InlineKeyboardMarkup:
             callback_data="sc:batch",
             icon_custom_emoji_id="6039802767931871481",
         )],
-        [InlineKeyboardButton(text="◁ Назад", callback_data="sc:back")],
+        [InlineKeyboardButton(text="Назад", callback_data="sc:back")],
     ])
 
 
 def sc_cancel_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="◁ Назад", callback_data="sc:cancel")]
+        [InlineKeyboardButton(text="Назад", callback_data="sc:cancel")]
     ])
 
 
@@ -114,7 +115,7 @@ def sc_results_keyboard(results: list) -> InlineKeyboardMarkup:
         if len(text) > 64:
             text = text[:61] + "..."
         buttons.append([InlineKeyboardButton(text=text, callback_data=f"sc_pick:{i}")])
-    buttons.append([InlineKeyboardButton(text="◁ Назад", callback_data="sc:cancel")])
+    buttons.append([InlineKeyboardButton(text="Назад", callback_data="sc:cancel")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
@@ -123,7 +124,7 @@ def sc_playlists_keyboard(playlists: list[dict]) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text=p["title"], callback_data=f"sc_pl:{p['kind']}")]
         for p in playlists
     ]
-    buttons.append([InlineKeyboardButton(text="◁ Назад", callback_data="sc:cancel")])
+    buttons.append([InlineKeyboardButton(text="Назад", callback_data="sc:cancel")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
