@@ -93,7 +93,12 @@ def sc_menu_keyboard() -> InlineKeyboardMarkup:
             icon_custom_emoji_id="6037397706505195857",
         )],
         [InlineKeyboardButton(
-            text="Скачать плейлист",
+            text="По ссылке  (SC / YouTube Music)",
+            callback_data="sc:url",
+            icon_custom_emoji_id="6042011682497106307",
+        )],
+        [InlineKeyboardButton(
+            text="Скачать плейлист из Яндекс Музыки",
             callback_data="sc:batch",
             icon_custom_emoji_id="6039802767931871481",
         )],
@@ -171,4 +176,16 @@ def sc_offer_keyboard() -> InlineKeyboardMarkup:
             callback_data="sc:batch_from_ym",
             icon_custom_emoji_id="6039802767931871481",
         )]
+    ])
+
+
+def sc_after_download_keyboard() -> InlineKeyboardMarkup:
+    """Shown after a single track is successfully downloaded."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="Скачать ещё",
+            callback_data="sc:search_again",
+            icon_custom_emoji_id="6039802767931871481",
+        )],
+        [InlineKeyboardButton(text="В меню SC", callback_data="sc:cancel")],
     ])
