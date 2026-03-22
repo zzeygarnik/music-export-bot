@@ -68,7 +68,7 @@ _RETENTION_TEXT = (
 _SC_MENU_TEXT = (
     '<tg-emoji emoji-id="5778672437122045013">☁️</tg-emoji> <b>SoundCloud — скачать MP3</b>\n\n'
     '<tg-emoji emoji-id="6037397706505195857">🔍</tg-emoji> <b>Найти трек</b> — поиск по названию\n'
-    '<tg-emoji emoji-id="6042011682497106307">🔗</tg-emoji> <b>По ссылке</b> — трек или плейлист по ссылке SoundCloud / YouTube Music\n'
+    '<tg-emoji emoji-id="6042011682497106307">🔗</tg-emoji> <b>По ссылке</b> — трек или плейлист по ссылке SoundCloud / YouTube\n'
     '<tg-emoji emoji-id="6039802767931871481">📥</tg-emoji> <b>Скачать плейлист из Яндекс Музыки</b> — выгрузить плейлист YM и скачать через SoundCloud'
 )
 
@@ -76,7 +76,7 @@ _SC_URL_TEXT = (
     '<tg-emoji emoji-id="6042011682497106307">🔗</tg-emoji> <b>Скачать по ссылке</b>\n\n'
     'Поддерживаются:\n'
     '• <b>SoundCloud</b> — трек или плейлист\n'
-    '• <b>YouTube Music</b> — трек или плейлист\n\n'
+    '• <b>YouTube</b> — трек или плейлист\n\n'
     'Отправь ссылку:'
 )
 
@@ -94,7 +94,7 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
     await message.answer(
         '👋 Привет! Что хочешь сделать?\n\n'
         '<tg-emoji emoji-id="5870801517140775623">📋</tg-emoji> <b>Экспорт в .txt</b> — сохранить список треков из Яндекс Музыки\n'
-        '<tg-emoji emoji-id="6039802767931871481">🎵</tg-emoji> <b>Скачать MP3</b> — поиск по названию, скачивание по ссылке (SoundCloud / YouTube Music), или батч-скачивание плейлиста',
+        '<tg-emoji emoji-id="6039802767931871481">🎵</tg-emoji> <b>Скачать MP3</b> — поиск по названию, скачивание по ссылке (SoundCloud / YouTube), или батч-скачивание плейлиста',
         parse_mode="HTML",
         reply_markup=service_keyboard(),
     )
@@ -796,7 +796,7 @@ _STATE_HINTS = {
     SCSearchFlow.sc_menu: "Нажми кнопку в меню SoundCloud.",
     SCSearchFlow.sc_search_query: "Введи название трека для поиска на SoundCloud.",
     SCSearchFlow.sc_search_results: "Выбери трек из результатов или нажми «Назад».",
-    SCSearchFlow.sc_url_input: "Отправь ссылку на трек или плейлист (SoundCloud или YouTube Music).",
+    SCSearchFlow.sc_url_input: "Отправь ссылку на трек или плейлист (SoundCloud или YouTube).",
     SCBatchFlow.sc_ym_token: "Отправь токен Яндекс Музыки.",
     SCBatchFlow.sc_ym_playlist: "Выбери плейлист из списка выше.",
     SCBatchFlow.sc_resume_choice: "Выбери, с какого трека начать скачивание.",
