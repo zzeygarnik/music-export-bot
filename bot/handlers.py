@@ -94,7 +94,7 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
     await message.answer(
         '👋 Привет! Что хочешь сделать?\n\n'
         '<tg-emoji emoji-id="5870801517140775623">📋</tg-emoji> <b>Экспорт в .txt</b> — сохранить список треков из Яндекс Музыки\n'
-        '<tg-emoji emoji-id="6039802767931871481">🎵</tg-emoji> <b>Скачать MP3</b> — найти и скачать трек или плейлист через SoundCloud',
+        '<tg-emoji emoji-id="6039802767931871481">🎵</tg-emoji> <b>Скачать MP3</b> — поиск по названию, скачивание по ссылке (SoundCloud / YouTube Music), или батч-скачивание плейлиста',
         parse_mode="HTML",
         reply_markup=service_keyboard(),
     )

@@ -24,14 +24,17 @@ Telegram bot with two modes: **export your Yandex Music library to `.txt`** and 
 - **Session** or **single-use** token retention modes
 - After playlist export — inline button to download the same tracks from SoundCloud
 
-**SoundCloud → .mp3 download**
+**SoundCloud / YouTube Music → .mp3 download**
 - **Single track search**: fuzzy match (rapidfuzz) — auto-download if confidence ≥ 80%, otherwise show top-5 for manual selection
-- **Batch playlist download**: authorize with Yandex Music → pick playlist → download all tracks sequentially
+- **Download by URL**: paste any SoundCloud or YouTube Music link — track downloads immediately, playlist starts batch download
+- **Batch playlist download**: authorize with Yandex Music → pick playlist → download all tracks via SoundCloud
   - Resume from any track (fuzzy search inside playlist)
   - Progress updates after each track
   - ⛔ Stop button at any time
-  - Tracks not found on SoundCloud are collected and shown at the end
+  - Tracks not found are collected and shown at the end
   - Concurrency limit: max simultaneous batch downloads across all users (configurable via `SC_MAX_BATCH_DOWNLOADS`)
+- **Download more** button after every single track — returns to the last used mode (search or URL)
+- **Auto-retry**: one automatic retry on network error before giving up
 
 **General**
 - Streamlit dashboard with usage statistics
@@ -51,8 +54,9 @@ Telegram bot with two modes: **export your Yandex Music library to `.txt`** and 
      │       ├─ My playlists   → pick → .txt file  [+ SC button]
      │       └─ By link        → paste link → .txt file  [+ SC button]
      │
-     └─ 🎵 Download MP3  (SoundCloud)
-          ├─ 🔍 Find track     → type query → mp3
+     └─ 🎵 Download MP3  (SoundCloud / YouTube Music)
+          ├─ 🔍 Find track        → type query → mp3  [+ "Download more" button]
+          ├─ 🔗 By URL            → paste SC or YTM link → mp3 (track) or mp3 × N (playlist)
           └─ 📥 Download playlist → YM OAuth → pick playlist → mp3 × N
 ```
 
@@ -196,14 +200,17 @@ Open dashboard at `http://your-nas-ip:8501`
 - Два режима хранения токена: **на весь сеанс** или **только один экспорт**
 - После экспорта плейлиста — inline-кнопка «📥 Скачать с SoundCloud»
 
-**SoundCloud → скачивание .mp3**
+**SoundCloud / YouTube Music → скачивание .mp3**
 - **Поиск трека**: fuzzy-матч (rapidfuzz) — автоскачивание при совпадении ≥ 80%, иначе — выбор из топ-5
-- **Батчевое скачивание плейлиста**: авторизация в Яндекс Музыке → выбор плейлиста → последовательное скачивание треков
+- **Скачивание по ссылке**: вставь ссылку на трек или плейлист SoundCloud / YouTube Music — трек скачается сразу, плейлист запустит батч
+- **Батчевое скачивание плейлиста**: авторизация в Яндекс Музыке → выбор плейлиста → последовательное скачивание через SoundCloud
   - Возобновление с любого трека (fuzzy-поиск внутри плейлиста)
   - Прогресс после каждого трека
   - Кнопка ⛔ Остановить в любой момент
   - Ненайденные треки собираются и выводятся в конце
-  - Ограничение параллельности: максимум одновременных батч-загрузок на всех пользователей задаётся через `SC_MAX_BATCH_DOWNLOADS`
+  - Ограничение параллельности задаётся через `SC_MAX_BATCH_DOWNLOADS`
+- Кнопка **"Скачать ещё"** после каждого одиночного скачивания — возвращает в последний режим (поиск или ссылка)
+- **Авто-повтор**: одна автоматическая попытка при сетевой ошибке перед отказом
 
 **Общее**
 - Streamlit-дашборд со статистикой использования
@@ -223,8 +230,9 @@ Open dashboard at `http://your-nas-ip:8501`
      │       ├─ Мои плейлисты  → выбор → .txt файл  [+ SC кнопка]
      │       └─ По ссылке      → вставить ссылку → .txt файл  [+ SC кнопка]
      │
-     └─ 🎵 Скачать MP3  (SoundCloud)
-          ├─ 🔍 Найти трек     → ввести запрос → mp3
+     └─ 🎵 Скачать MP3  (SoundCloud / YouTube Music)
+          ├─ 🔍 Найти трек        → ввести запрос → mp3  [+ кнопка «Скачать ещё»]
+          ├─ 🔗 По ссылке         → вставить ссылку SC/YTM → mp3 (трек) или mp3 × N (плейлист)
           └─ 📥 Скачать плейлист → OAuth YM → выбор плейлиста → mp3 × N
 ```
 
