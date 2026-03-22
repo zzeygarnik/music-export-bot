@@ -37,7 +37,10 @@ async def main() -> None:
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
 
-    session = AiohttpSession(timeout=600)  # 10 min — SC download via proxy can be slow
+    session = AiohttpSession(
+        proxy=settings.SC_PROXY or None,
+        timeout=600,  # 10 min — SC download via proxy can be slow
+    )
     bot = Bot(token=settings.BOT_TOKEN, session=session)
     dp = Dispatcher(storage=_build_storage())
     dp.message.middleware(ThrottlingMiddleware(rate_limit=0.7))
