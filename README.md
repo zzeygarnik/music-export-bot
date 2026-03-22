@@ -94,7 +94,7 @@ SC_PROXY=http://user:pass@host:port  # required on servers where SoundCloud is b
 SC_MAX_BATCH_DOWNLOADS=2             # max concurrent SC batch downloads across all users (default: 2)
 ```
 
-> **Note on `SC_PROXY`:** SoundCloud may be blocked by your ISP or country-level filtering (DPI). Set this to an HTTP or SOCKS5 proxy outside the restricted region. Format: `http://login:password@ip:port` or `socks5://login:password@ip:port`. Leave empty if SoundCloud is accessible directly.
+> **Note on `SC_PROXY`:** Used as a proxy for **both** the Telegram API connection and SoundCloud downloads. If Telegram is blocked in your country (e.g. via DPI/TSPU), this variable is required — without it the bot won't connect to Telegram at all. Format: `http://login:password@ip:port` or `socks5://login:password@ip:port`. Leave empty if both Telegram and SoundCloud are accessible directly. Requires `aiohttp-socks` (already included in `requirements.txt`).
 
 **Getting a Yandex Music OAuth token** (the bot explains this to users automatically):
 
@@ -266,7 +266,7 @@ SC_PROXY=http://login:password@ip:port  # нужен если SoundCloud заб�
 SC_MAX_BATCH_DOWNLOADS=2                # макс. одновременных батч-загрузок SC (по умолчанию: 2)
 ```
 
-> **Про `SC_PROXY`:** SoundCloud может блокироваться провайдером через DPI/ТСПУ. Укажи HTTP или SOCKS5 прокси вне заблокированного региона. Формат: `http://login:password@ip:port` или `socks5://login:password@ip:port`. Если SoundCloud доступен напрямую — оставь пустым.
+> **Про `SC_PROXY`:** Используется как прокси **одновременно** для подключения к Telegram API и для скачивания с SoundCloud. Если Telegram заблокирован у провайдера (DPI/ТСПУ) — эта переменная обязательна, без неё бот не подключится к Telegram вообще. Формат: `http://login:password@ip:port` или `socks5://login:password@ip:port`. Если Telegram и SoundCloud доступны напрямую — оставь пустым. Требует `aiohttp-socks` (уже включён в `requirements.txt`).
 
 **Как получить OAuth-токен Яндекс Музыки** (бот объясняет это пользователям автоматически):
 
