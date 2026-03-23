@@ -10,12 +10,12 @@ _YM_OAUTH_URL = (
 def service_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
-            text="Экспорт в .txt  (Яндекс Музыка)",
+            text="Экспорт треков в .txt",
             callback_data="service:yandex",
             icon_custom_emoji_id="5870801517140775623",
         )],
         [InlineKeyboardButton(
-            text="Скачать MP3  (SoundCloud / YouTube)",
+            text="Скачать MP3",
             callback_data="service:soundcloud",
             icon_custom_emoji_id="6039802767931871481",
         )],
@@ -187,5 +187,17 @@ def sc_after_download_keyboard() -> InlineKeyboardMarkup:
             callback_data="sc:search_again",
             icon_custom_emoji_id="6039802767931871481",
         )],
-        [InlineKeyboardButton(text="В меню SC", callback_data="sc:cancel")],
+        [InlineKeyboardButton(text="Назад", callback_data="sc:cancel")],
+    ])
+
+
+def sc_batch_token_keyboard() -> InlineKeyboardMarkup:
+    """Token guide keyboard for SC batch flow — includes a Back button."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="Войти через Яндекс",
+            url=_YM_OAUTH_URL,
+            icon_custom_emoji_id="5963103826075456248",
+        )],
+        [InlineKeyboardButton(text="Назад", callback_data="sc:cancel")],
     ])

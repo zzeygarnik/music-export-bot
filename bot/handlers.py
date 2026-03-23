@@ -27,6 +27,7 @@ from bot.keyboards import (
     sc_stop_keyboard,
     sc_offer_keyboard,
     sc_after_download_keyboard,
+    sc_batch_token_keyboard,
 )
 from core.ym_source import YandexMusicSource
 from core import sc_downloader
@@ -66,7 +67,7 @@ _RETENTION_TEXT = (
 )
 
 _SC_MENU_TEXT = (
-    '<tg-emoji emoji-id="5778672437122045013">☁️</tg-emoji> <b>SoundCloud — скачать MP3</b>\n\n'
+    '<tg-emoji emoji-id="5778672437122045013">☁️</tg-emoji> <b>Скачать MP3</b>\n\n'
     '<tg-emoji emoji-id="6037397706505195857">🔍</tg-emoji> <b>Найти трек</b> — поиск по названию\n'
     '<tg-emoji emoji-id="6042011682497106307">🔗</tg-emoji> <b>По ссылке</b> — трек или плейлист по ссылке SoundCloud / YouTube\n'
     '<tg-emoji emoji-id="6039802767931871481">📥</tg-emoji> <b>Скачать плейлист из Яндекс Музыки</b> — выгрузить плейлист YM и скачать через SoundCloud'
@@ -92,9 +93,7 @@ def _get_user_info(event: Message | CallbackQuery) -> tuple[int, str | None]:
 async def cmd_start(message: Message, state: FSMContext) -> None:
     await state.clear()
     await message.answer(
-        '👋 Привет! Что хочешь сделать?\n\n'
-        '<tg-emoji emoji-id="5870801517140775623">📋</tg-emoji> <b>Экспорт в .txt</b> — сохранить список треков из Яндекс Музыки\n'
-        '<tg-emoji emoji-id="6039802767931871481">🎵</tg-emoji> <b>Скачать MP3</b> — поиск по названию, скачивание по ссылке (SoundCloud / YouTube), или батч-скачивание плейлиста',
+        '👋 Привет! Что хочешь сделать?',
         parse_mode="HTML",
         reply_markup=service_keyboard(),
     )
@@ -120,9 +119,7 @@ async def on_service_soundcloud(call: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(ExportFlow.choosing_retention, F.data == "retention:back")
 async def on_retention_back(call: CallbackQuery, state: FSMContext) -> None:
     await call.message.edit_text(
-        '👋 Привет! Что хочешь сделать?\n\n'
-        '<tg-emoji emoji-id="5870801517140775623">📋</tg-emoji> <b>Экспорт в .txt</b> — сохранить список треков из Яндекс Музыки\n'
-        '<tg-emoji emoji-id="6039802767931871481">🎵</tg-emoji> <b>Скачать MP3</b> — найти и скачать трек или плейлист через SoundCloud',
+        '👋 Привет! Что хочешь сделать?',
         parse_mode="HTML",
         reply_markup=service_keyboard(),
     )
@@ -390,7 +387,7 @@ async def on_sc_batch_menu(call: CallbackQuery, state: FSMContext) -> None:
         "Для выбора плейлиста нужна авторизация в Яндекс Музыке.\n\n" + _TOKEN_GUIDE,
         parse_mode="HTML",
         disable_web_page_preview=True,
-        reply_markup=token_guide_keyboard(),
+        reply_markup=sc_batch_token_keyboard(),
     )
     await state.set_state(SCBatchFlow.sc_ym_token)
 
@@ -611,11 +608,7 @@ async def on_sc_ym_token(message: Message, state: FSMContext) -> None:
         )
         return
 
-    if not playlists:
-        await status_msg.edit_text(
-            "😔 Плейлисты не найдены.\n\nНажми /start чтобы начать заново.",
-        )
-        return
+    playlists = [{"kind": "liked", "title": "❤️ Любимые треки"}] + playlists
 
     await state.update_data(sc_ym_token=token, sc_playlists=playlists)
     await status_msg.edit_text("📋 Выбери плейлист:", reply_markup=sc_playlists_keyboard(playlists))
@@ -635,7 +628,11 @@ async def on_sc_ym_playlist_selected(call: CallbackQuery, state: FSMContext) -> 
     await call.message.edit_text(f"⏳ Загружаю треки из «{title}»…")
 
     try:
-        tracks = await YandexMusicSource(token).get_playlist_tracks(playlist_id)
+        source = YandexMusicSource(token)
+        if playlist_id == "liked":
+            tracks = await source.get_liked_tracks()
+        else:
+            tracks = await source.get_playlist_tracks(playlist_id)
     except Exception as e:
         log.exception("SC batch playlist load failed user=%s: %s", user_id, e)
         await call.message.edit_text(
