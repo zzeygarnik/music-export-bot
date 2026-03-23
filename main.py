@@ -9,6 +9,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from config import settings
 from bot.handlers import router
 from bot.middleware import ThrottlingMiddleware, StaleButtonMiddleware, CallbackAnswerMiddleware
+from utils import db
 
 log = logging.getLogger(__name__)
 
@@ -36,6 +37,14 @@ async def main() -> None:
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
+
+    if settings.POSTGRES_URL:
+        try:
+            db.init_pool(settings.POSTGRES_URL)
+        except Exception as e:
+            log.error("Failed to connect to PostgreSQL: %s — event logging will be unavailable", e)
+    else:
+        log.warning("POSTGRES_URL not set — event logging disabled")
 
     session = AiohttpSession(
         proxy=settings.SC_PROXY or None,

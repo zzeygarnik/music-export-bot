@@ -2,37 +2,48 @@
 Streamlit dashboard for music-export-bot.
 Run: streamlit run dashboard.py
 
-Reads logs/events.jsonl — the file accumulates across all bot restarts,
-so all stats here are all-time totals.
+Reads from PostgreSQL — events and batch_live tables.
 """
-import json
+import os
 import time
-from pathlib import Path
 from datetime import datetime, date, timedelta
 
+import psycopg2
+import psycopg2.extras
 import streamlit as st
 import pandas as pd
 
-LOG_FILE = Path("logs/events.jsonl")
 REFRESH_INTERVAL = 10
+_PG_DSN = os.environ.get("POSTGRES_URL", "")
 
 st.set_page_config(page_title="Music Export Bot", page_icon="🎵", layout="wide")
 st.title("🎵 Music Export Bot — Dashboard")
 st.caption("Статистика накапливается за всё время работы бота (лог-файл сохраняется между перезапусками)")
 
 
+@st.cache_resource
+def _get_pg_conn():
+    return psycopg2.connect(_PG_DSN)
+
+
+def _query(sql: str, params=None) -> list[dict]:
+    try:
+        conn = _get_pg_conn()
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(sql, params)
+            return [dict(r) for r in cur.fetchall()]
+    except Exception as e:
+        st.error(f"DB error: {e}")
+        return []
+
+
+def load_live() -> dict:
+    rows = _query("SELECT * FROM batch_live")
+    return {r["user_hash"]: r for r in rows}
+
+
 def load_events() -> pd.DataFrame:
-    if not LOG_FILE.exists():
-        return pd.DataFrame()
-    rows = []
-    with open(LOG_FILE, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                try:
-                    rows.append(json.loads(line))
-                except json.JSONDecodeError:
-                    pass
+    rows = _query("SELECT * FROM events ORDER BY ts ASC")
     if not rows:
         return pd.DataFrame()
     df = pd.DataFrame(rows)
@@ -41,6 +52,48 @@ def load_events() -> pd.DataFrame:
 
 
 df = load_events()
+live_data = load_live()
+
+# ── Live batch progress ────────────────────────────────────────────────────────
+running_batches = {k: v for k, v in live_data.items() if v.get("status") == "running"}
+finished_batches = {k: v for k, v in live_data.items() if v.get("status") in ("done", "stopped")}
+
+if running_batches:
+    st.subheader("🔴 Активная загрузка")
+    for batch in running_batches.values():
+        total = batch.get("total", 1) or 1
+        current_idx = batch.get("current_idx", 0)
+        downloaded = batch.get("downloaded", 0)
+        failed = batch.get("failed", [])
+        progress = min(current_idx / total, 1.0)
+
+        col_info, col_failed = st.columns([3, 1])
+        with col_info:
+            st.markdown(f"**{batch.get('user_label', '?')}** · началось в {batch.get('started_at', '—')}")
+            st.progress(progress, text=f"⏳ {current_idx}/{total} — **{batch.get('current_track', '—')}**")
+            st.caption(f"✅ Скачано: {downloaded}   ❌ Не найдено: {len(failed)}")
+        with col_failed:
+            if failed:
+                with st.expander(f"Не найдено ({len(failed)})", expanded=False):
+                    for t in failed:
+                        st.write(f"• {t}")
+    st.divider()
+elif finished_batches:
+    last = max(finished_batches.values(), key=lambda x: str(x.get("finished_at", "")))
+    status_label = "✅ Завершена" if last.get("status") == "done" else "⛔ Остановлена"
+    failed = last.get("failed") or []
+    with st.expander(
+        f"{status_label} — {last.get('user_label', '?')} · {last.get('finished_at', '—')} "
+        f"· скачано {last.get('downloaded', 0)}/{last.get('total', 0)}",
+        expanded=False,
+    ):
+        if failed:
+            st.markdown(f"**Не найдено на SoundCloud ({len(failed)}):**")
+            for t in failed:
+                st.write(f"• {t}")
+        else:
+            st.write("Все треки найдены и скачаны!")
+    st.divider()
 
 # ── Auto-refresh toggle ───────────────────────────────────────────────────────
 col_title, col_refresh = st.columns([5, 1])
@@ -233,6 +286,8 @@ all_action_labels = {
     **ym_action_labels,
     "sc_search": "🔍 SC поиск",
     "sc_batch": "📥 SC батч",
+    "sc_track_fail": "❌ SC трек не найден",
+    "yms_load": "🔗 Загрузка плейлиста по ссылке",
 }
 
 period = st.radio("Период", ["Сегодня", "7 дней", "Всё время"], horizontal=True, index=2)
