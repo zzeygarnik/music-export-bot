@@ -1,6 +1,8 @@
 import asyncio
 import logging
 import os
+import re
+from datetime import datetime
 
 import aiofiles
 from aiogram import Router, F
@@ -10,7 +12,7 @@ from aiogram.fsm.context import FSMContext
 from rapidfuzz import fuzz
 
 from config import settings
-from bot.states import ExportFlow, SCSearchFlow, SCBatchFlow
+from bot.states import ExportFlow, SCSearchFlow, SCBatchFlow, YMShareFlow
 from bot.keyboards import (
     service_keyboard,
     retention_keyboard,
@@ -26,14 +28,23 @@ from bot.keyboards import (
     sc_resume_confirm_keyboard,
     sc_stop_keyboard,
     sc_offer_keyboard,
+    sc_offer_extended_keyboard,
     sc_after_download_keyboard,
     sc_batch_token_keyboard,
+    export_filter_cancel_keyboard,
+    export_filter_result_keyboard,
+    ym_share_token_keyboard,
+    ym_share_cancel_keyboard,
+    ym_share_actions_keyboard,
+    ym_share_back_keyboard,
+    ym_share_filter_result_keyboard,
+    ym_share_seek_confirm_keyboard,
 )
 from core.ym_source import YandexMusicSource
 from core import sc_downloader
 from core.sc_downloader import SCResult
 from utils.export import build_txt_file, cleanup
-from utils.event_log import log_event
+from utils.event_log import log_event, update_batch_live
 
 router = Router()
 log = logging.getLogger(__name__)
@@ -82,6 +93,63 @@ _SC_URL_TEXT = (
 )
 
 
+_YMS_INPUT_TEXT = (
+    '<tg-emoji emoji-id="6042011682497106307">🔗</tg-emoji> <b>Отправь ссылку или embed-код плейлиста</b>\n\n'
+    '<b>Как получить embed-код в приложении Яндекс Музыки:</b>\n'
+    '1. Открой нужный плейлист\n'
+    '2. Нажми <b>···</b> (три точки) → «Поделиться»\n'
+    '3. Выбери <b>«HTML-код для встраивания»</b>\n'
+    '4. Скопируй и отправь сюда\n\n'
+    '<b>Также принимаются прямые ссылки:</b>\n'
+    '• <code>music.yandex.ru/users/ИМЯ/playlists/НОМЕР</code>\n'
+    '• <code>music.yandex.ru/playlists/lk.UUID</code> (кнопка «Поделиться»)'
+)
+
+_RE_IFRAME_PLAYLIST = re.compile(
+    r'music\.yandex\.(ru|com)/iframe/playlist/([^/"?\s]+)/(\d+)'
+)
+
+
+def _parse_ym_share(text: str) -> str | None:
+    """
+    Extract a resolvable YM playlist URL from iframe HTML or a plain link.
+    Handles:
+      • <iframe ... src="https://music.yandex.ru/iframe/playlist/USER/KIND" ...>
+      • music.yandex.ru/users/USER/playlists/KIND  (direct link)
+      • music.yandex.ru/playlists/lk.UUID          (share link)
+    """
+    # 1. iframe src — highest priority, gives us user+kind directly
+    m = _RE_IFRAME_PLAYLIST.search(text)
+    if m:
+        username, kind = m.group(2), m.group(3)
+        return f"https://music.yandex.ru/users/{username}/playlists/{kind}"
+
+    # 2. lk. share link
+    m_lk = re.search(r'https?://music\.yandex\.(ru|com)/playlists/lk\.([a-f0-9-]+)', text)
+    if m_lk:
+        return m_lk.group(0)
+
+    # 3. Direct user playlist link
+    m_direct = re.search(
+        r'https?://music\.yandex\.(ru|com)/users/([^/\s"\']+)/playlists/(\d+)', text
+    )
+    if m_direct:
+        return m_direct.group(0)
+
+    return None
+
+
+def _filter_by_artist(tracks: list[dict], query: str, threshold: int = 70) -> list[dict]:
+    """Return tracks where any of the comma-separated artists fuzzy-matches query."""
+    q = query.strip().lower()
+    matched = []
+    for t in tracks:
+        parts = [a.strip().lower() for a in t.get("artist", "").split(",")]
+        if any(fuzz.partial_ratio(q, p) >= threshold for p in parts):
+            matched.append(t)
+    return matched
+
+
 def _get_user_info(event: Message | CallbackQuery) -> tuple[int, str | None]:
     user = event.from_user
     return user.id, user.username
@@ -116,6 +184,26 @@ async def on_service_soundcloud(call: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(SCSearchFlow.sc_menu)
 
 
+@router.callback_query(ExportFlow.choosing_service, F.data == "service:share")
+async def on_service_share(call: CallbackQuery, state: FSMContext) -> None:
+    if settings.YM_BOT_TOKEN:
+        await call.message.edit_text(
+            _YMS_INPUT_TEXT,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            reply_markup=ym_share_cancel_keyboard(),
+        )
+        await state.set_state(YMShareFlow.waiting)
+    else:
+        await call.message.edit_text(
+            "🔑 Для доступа к плейлистам нужна авторизация в Яндексе.\n\n" + _TOKEN_GUIDE,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            reply_markup=ym_share_token_keyboard(),
+        )
+        await state.set_state(YMShareFlow.token)
+
+
 @router.callback_query(ExportFlow.choosing_retention, F.data == "retention:back")
 async def on_retention_back(call: CallbackQuery, state: FSMContext) -> None:
     await call.message.edit_text(
@@ -124,6 +212,12 @@ async def on_retention_back(call: CallbackQuery, state: FSMContext) -> None:
         reply_markup=service_keyboard(),
     )
     await state.set_state(ExportFlow.choosing_service)
+
+
+@router.callback_query(ExportFlow.waiting_for_token, F.data == "retention:back")
+async def on_token_back(call: CallbackQuery, state: FSMContext) -> None:
+    await call.message.edit_text(_RETENTION_TEXT, parse_mode="HTML", reply_markup=retention_keyboard())
+    await state.set_state(ExportFlow.choosing_retention)
 
 
 # ── Token retention choice ────────────────────────────────────────────────────
@@ -780,6 +874,399 @@ async def on_sc_stop(call: CallbackQuery) -> None:
         await call.answer("Нет активного скачивания.", show_alert=True)
 
 
+# ── ExportFlow: artist filter ─────────────────────────────────────────────────
+
+@router.callback_query(F.data == "export:filter_artist")
+async def on_export_filter_artist(call: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    if not data.get("sc_tracks"):
+        await call.answer("Данные плейлиста недоступны. Введи /start чтобы начать заново.", show_alert=True)
+        return
+    try:
+        await call.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    await call.message.answer(
+        "🔍 Введи имя исполнителя для фильтрации:",
+        reply_markup=export_filter_cancel_keyboard(),
+    )
+    await state.set_state(ExportFlow.filter_input)
+
+
+@router.message(ExportFlow.filter_input)
+async def on_export_filter_input(message: Message, state: FSMContext) -> None:
+    if not message.text:
+        await message.answer("❌ Нужно отправить текст — имя исполнителя.", reply_markup=export_filter_cancel_keyboard())
+        return
+
+    query = message.text.strip()
+    data = await state.get_data()
+    tracks = data.get("sc_tracks", [])
+
+    matched = _filter_by_artist(tracks, query)
+    if not matched:
+        await message.answer(
+            f"😔 Исполнитель <b>{query}</b> не найден в плейлисте.\n\nПопробуй другое имя.",
+            parse_mode="HTML",
+            reply_markup=export_filter_cancel_keyboard(),
+        )
+        return
+
+    await state.update_data(export_filtered_tracks=matched)
+    filename = f"{query}_tracks.txt"
+    tmp_path = await build_txt_file(matched, filename)
+    try:
+        async with aiofiles.open(tmp_path, "rb") as f:
+            content = await f.read()
+        await message.answer_document(
+            document=BufferedInputFile(content, filename=filename),
+            caption=f"✅ Найдено треков исполнителя <b>{query}</b>: {len(matched)}.",
+            parse_mode="HTML",
+            reply_markup=export_filter_result_keyboard(),
+        )
+    finally:
+        await cleanup(tmp_path)
+
+    await state.set_state(ExportFlow.choosing_export_type)
+
+
+@router.callback_query(F.data == "export:back_to_menu")
+async def on_export_back_to_menu(call: CallbackQuery, state: FSMContext) -> None:
+    await call.message.edit_text(_EXPORT_MENU_TEXT, reply_markup=export_type_keyboard())
+    await state.set_state(ExportFlow.choosing_export_type)
+
+
+@router.callback_query(F.data == "export:download_filtered")
+async def on_export_download_filtered(call: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    filtered = data.get("export_filtered_tracks")
+    if not filtered:
+        await call.answer("Данные недоступны. Введи /start чтобы начать заново.", show_alert=True)
+        return
+    try:
+        await call.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    await state.update_data(sc_tracks=filtered)
+    await call.message.answer(
+        f"📥 Готов скачать <b>{len(filtered)}</b> треков с SoundCloud.\n\nС какого трека начать?",
+        parse_mode="HTML",
+        reply_markup=sc_resume_keyboard(),
+    )
+    await state.set_state(SCBatchFlow.sc_resume_choice)
+
+
+# ── YMShareFlow ────────────────────────────────────────────────────────────────
+
+@router.message(YMShareFlow.token)
+async def on_yms_token(message: Message, state: FSMContext) -> None:
+    user_id, username = _get_user_info(message)
+
+    if not message.text:
+        await message.answer("❌ Нужно отправить текст — токен из адресной строки браузера.")
+        return
+
+    token = message.text.strip()
+    if len(token) < 10:
+        await message.answer("❌ Токен выглядит слишком коротким. Отправь токен ещё раз.")
+        return
+
+    status_msg = await message.answer("⏳ Проверяю токен…")
+    try:
+        source = YandexMusicSource(token)
+        await source._get_client()
+    except Exception as e:
+        log.warning("YMShare auth failed user=%s: %s", user_id, e)
+        log_event(user_id, username, "auth_fail", "error", detail=type(e).__name__)
+        await status_msg.edit_text("❌ Не удалось авторизоваться. Отправь токен ещё раз.")
+        return
+
+    log_event(user_id, username, "auth_ok", "success")
+    await state.update_data(yms_token=token)
+    await status_msg.edit_text(
+        _YMS_INPUT_TEXT,
+        parse_mode="HTML",
+        disable_web_page_preview=True,
+        reply_markup=ym_share_cancel_keyboard(),
+    )
+    await state.set_state(YMShareFlow.waiting)
+
+
+@router.message(YMShareFlow.waiting)
+async def on_yms_waiting(message: Message, state: FSMContext) -> None:
+    user_id, username = _get_user_info(message)
+
+    if not message.text:
+        await message.answer(
+            "❌ Нужно отправить текст — ссылку или HTML-код плейлиста.",
+            reply_markup=ym_share_cancel_keyboard(),
+        )
+        return
+
+    url = _parse_ym_share(message.text)
+    if not url:
+        await message.answer(
+            "❌ Не удалось распознать плейлист.\n\n"
+            "Отправь HTML-код (‹iframe ...›) из кнопки «Поделиться» в приложении\n"
+            "или прямую ссылку вида:\n"
+            "• <code>music.yandex.ru/users/ИМЯ/playlists/НОМЕР</code>\n"
+            "• <code>music.yandex.ru/playlists/lk.UUID</code>",
+            parse_mode="HTML",
+            reply_markup=ym_share_cancel_keyboard(),
+        )
+        return
+
+    data = await state.get_data()
+    token = settings.YM_BOT_TOKEN or data.get("yms_token", "")
+
+    status_msg = await message.answer("⏳ Загружаю плейлист…")
+    try:
+        title, tracks = await YandexMusicSource(token).get_playlist_by_url(url)
+    except ValueError as e:
+        log.warning("YMShare load ValueError user=%s url=%s: %s", user_id, url[:80], e)
+        await status_msg.edit_text(
+            f"❌ {e}",
+            parse_mode="HTML",
+            reply_markup=ym_share_cancel_keyboard(),
+        )
+        return
+    except Exception as e:
+        log.exception("YMShare load failed user=%s url=%s: %s", user_id, url[:80], e)
+        await status_msg.edit_text(
+            "❌ Не удалось загрузить плейлист. Проверь ссылку и попробуй ещё раз.",
+            reply_markup=ym_share_cancel_keyboard(),
+        )
+        return
+
+    if not tracks:
+        await status_msg.edit_text(
+            "😔 Плейлист пуст или недоступен.",
+            reply_markup=ym_share_cancel_keyboard(),
+        )
+        return
+
+    log_event(user_id, username, "yms_load", "success", track_count=len(tracks), detail=title)
+    await state.update_data(yms_tracks=tracks, yms_playlist_title=title)
+    safe_title = title[:50] if title else "Плейлист"
+    await status_msg.edit_text(
+        f'✅ Загружен плейлист <b>«{safe_title}»</b> — {len(tracks)} треков.\n\nЧто делаем?',
+        parse_mode="HTML",
+        reply_markup=ym_share_actions_keyboard(),
+    )
+    await state.set_state(YMShareFlow.actions)
+
+
+@router.callback_query(YMShareFlow.actions, F.data == "yms:download_all")
+async def on_yms_download_all(call: CallbackQuery, state: FSMContext) -> None:
+    user_id = call.from_user.id
+    if user_id in _cancel_events:
+        await call.answer("⚠️ У тебя уже идёт скачивание.", show_alert=True)
+        return
+    if _batch_semaphore.locked():
+        await call.answer(
+            f"⏳ Бот сейчас занят ({settings.SC_MAX_BATCH_DOWNLOADS}/{settings.SC_MAX_BATCH_DOWNLOADS} загрузок). Попробуй чуть позже.",
+            show_alert=True,
+        )
+        return
+    data = await state.get_data()
+    tracks = data.get("yms_tracks", [])
+    await state.update_data(sc_tracks=tracks)
+    await call.message.edit_text(
+        f"📥 Готов скачать <b>{len(tracks)}</b> треков с SoundCloud.\n\nС какого трека начать?",
+        parse_mode="HTML",
+        reply_markup=sc_resume_keyboard(),
+    )
+    await state.set_state(SCBatchFlow.sc_resume_choice)
+
+
+@router.callback_query(YMShareFlow.actions, F.data == "yms:filter_artist")
+async def on_yms_filter_artist(call: CallbackQuery, state: FSMContext) -> None:
+    await call.message.edit_text(
+        "🔍 Введи имя исполнителя для фильтрации:",
+        reply_markup=ym_share_back_keyboard(),
+    )
+    await state.set_state(YMShareFlow.filter_input)
+
+
+@router.callback_query(YMShareFlow.actions, F.data == "yms:seek")
+async def on_yms_seek(call: CallbackQuery, state: FSMContext) -> None:
+    await call.message.edit_text(
+        "⏩ Введи название трека, с которого хочешь начать скачивание (или его часть):",
+        reply_markup=ym_share_back_keyboard(),
+    )
+    await state.set_state(YMShareFlow.seek_input)
+
+
+@router.callback_query(YMShareFlow.actions, F.data == "yms:back_to_input")
+async def on_yms_back_to_input(call: CallbackQuery, state: FSMContext) -> None:
+    await call.message.edit_text(
+        _YMS_INPUT_TEXT,
+        parse_mode="HTML",
+        disable_web_page_preview=True,
+        reply_markup=ym_share_cancel_keyboard(),
+    )
+    await state.set_state(YMShareFlow.waiting)
+
+
+@router.callback_query(F.data == "yms:cancel")
+async def on_yms_cancel(call: CallbackQuery, state: FSMContext) -> None:
+    await call.message.edit_text("👋 Привет! Что хочешь сделать?", reply_markup=service_keyboard())
+    await state.set_state(ExportFlow.choosing_service)
+
+
+@router.callback_query(F.data == "yms:back_to_actions")
+async def on_yms_back_to_actions(call: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    tracks = data.get("yms_tracks", [])
+    title = data.get("yms_playlist_title", "Плейлист")
+    safe_title = title[:50] if title else "Плейлист"
+    await call.message.edit_text(
+        f'✅ Плейлист <b>«{safe_title}»</b> — {len(tracks)} треков.\n\nЧто делаем?',
+        parse_mode="HTML",
+        reply_markup=ym_share_actions_keyboard(),
+    )
+    await state.set_state(YMShareFlow.actions)
+
+
+@router.message(YMShareFlow.filter_input)
+async def on_yms_filter_input(message: Message, state: FSMContext) -> None:
+    if not message.text:
+        await message.answer("❌ Нужно отправить текст — имя исполнителя.", reply_markup=ym_share_back_keyboard())
+        return
+
+    query = message.text.strip()
+    data = await state.get_data()
+    tracks = data.get("yms_tracks", [])
+
+    matched = _filter_by_artist(tracks, query)
+    if not matched:
+        await message.answer(
+            f"😔 Исполнитель <b>{query}</b> не найден в плейлисте.\n\nПопробуй другое имя.",
+            parse_mode="HTML",
+            reply_markup=ym_share_back_keyboard(),
+        )
+        return
+
+    await state.update_data(yms_filtered_tracks=matched)
+    filename = f"{query}_tracks.txt"
+    tmp_path = await build_txt_file(matched, filename)
+    try:
+        async with aiofiles.open(tmp_path, "rb") as f:
+            content = await f.read()
+        await message.answer_document(
+            document=BufferedInputFile(content, filename=filename),
+            caption=f"✅ Найдено треков исполнителя <b>{query}</b>: {len(matched)}.",
+            parse_mode="HTML",
+            reply_markup=ym_share_filter_result_keyboard(),
+        )
+    finally:
+        await cleanup(tmp_path)
+
+    await state.set_state(YMShareFlow.actions)
+
+
+@router.callback_query(F.data == "yms:download_filtered")
+async def on_yms_download_filtered(call: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    filtered = data.get("yms_filtered_tracks")
+    if not filtered:
+        await call.answer("Данные недоступны. Введи /start чтобы начать заново.", show_alert=True)
+        return
+    try:
+        await call.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    await state.update_data(sc_tracks=filtered)
+    await call.message.answer(
+        f"📥 Готов скачать <b>{len(filtered)}</b> треков с SoundCloud.\n\nС какого трека начать?",
+        parse_mode="HTML",
+        reply_markup=sc_resume_keyboard(),
+    )
+    await state.set_state(SCBatchFlow.sc_resume_choice)
+
+
+@router.message(YMShareFlow.seek_input)
+async def on_yms_seek_input(message: Message, state: FSMContext) -> None:
+    if not message.text:
+        await message.answer("❌ Нужно отправить текст — название трека.", reply_markup=ym_share_back_keyboard())
+        return
+
+    query = message.text.strip()
+    data = await state.get_data()
+    tracks = data.get("yms_tracks", [])
+
+    best_idx, best_score = 0, 0
+    for i, t in enumerate(tracks):
+        candidate = f"{t.get('artist', '')} {t.get('title', '')}".lower()
+        score = fuzz.token_sort_ratio(query.lower(), candidate)
+        if score > best_score:
+            best_score = score
+            best_idx = i
+
+    if best_score < 30:
+        await message.answer(
+            "😔 Трек не найден в плейлисте. Попробуй другое название.",
+            reply_markup=ym_share_back_keyboard(),
+        )
+        return
+
+    if best_idx + 1 >= len(tracks):
+        await message.answer(
+            "ℹ️ Это последний трек в плейлисте — нечего скачивать после него.",
+            reply_markup=ym_share_back_keyboard(),
+        )
+        return
+
+    found = tracks[best_idx]
+    nxt = tracks[best_idx + 1]
+    confirm_text = (
+        f"Найден трек <b>{best_idx + 1}/{len(tracks)}</b> — "
+        f"{found.get('artist')} — {found.get('title')}\n\n"
+        f"Начну со следующего: <b>{best_idx + 2}/{len(tracks)}</b> — "
+        f"{nxt.get('artist')} — {nxt.get('title')}\n\n"
+        f"Итого будет скачано: <b>{len(tracks) - best_idx - 1}</b> треков.\n\n"
+        "Верно?"
+    )
+    await state.update_data(yms_resume_idx=best_idx + 1)
+    await message.answer(confirm_text, parse_mode="HTML", reply_markup=ym_share_seek_confirm_keyboard())
+    await state.set_state(YMShareFlow.seek_confirm)
+
+
+@router.callback_query(YMShareFlow.seek_confirm, F.data == "yms_resume:confirm")
+async def on_yms_seek_confirm(call: CallbackQuery, state: FSMContext) -> None:
+    user_id = call.from_user.id
+    if user_id in _cancel_events:
+        await call.answer("⚠️ У тебя уже идёт скачивание.", show_alert=True)
+        return
+    if _batch_semaphore.locked():
+        await call.answer(
+            f"⏳ Бот сейчас занят ({settings.SC_MAX_BATCH_DOWNLOADS}/{settings.SC_MAX_BATCH_DOWNLOADS} загрузок). Попробуй чуть позже.",
+            show_alert=True,
+        )
+        return
+    data = await state.get_data()
+    tracks = data.get("yms_tracks", [])
+    start_idx = data.get("yms_resume_idx", 0)
+    await state.update_data(sc_tracks=tracks)
+    await call.message.edit_text(
+        f"▶️ Начинаю с трека {start_idx + 1}/{len(tracks)}…",
+        reply_markup=sc_stop_keyboard(),
+    )
+    await state.set_state(YMShareFlow.downloading)
+    asyncio.create_task(
+        _run_batch_download(call.message, state, user_id, call.from_user.username, tracks, start_idx)
+    )
+
+
+@router.callback_query(YMShareFlow.seek_confirm, F.data == "yms_resume:retry")
+async def on_yms_seek_retry(call: CallbackQuery, state: FSMContext) -> None:
+    await call.message.edit_text(
+        "⏩ Введи название трека, с которого хочешь начать скачивание:",
+        reply_markup=ym_share_back_keyboard(),
+    )
+    await state.set_state(YMShareFlow.seek_input)
+
+
 # ── Fallback handlers ─────────────────────────────────────────────────────────
 
 _STATE_HINTS = {
@@ -790,6 +1277,7 @@ _STATE_HINTS = {
     ExportFlow.choosing_playlist: "Выбери плейлист из списка выше.",
     ExportFlow.waiting_for_link: "Отправь ссылку на плейлист или нажми «Отмена».",
     ExportFlow.waiting_for_token: "Отправь токен, скопированный из адресной строки браузера.",
+    ExportFlow.filter_input: "Введи имя исполнителя для фильтрации или нажми «Назад».",
     SCSearchFlow.sc_menu: "Нажми кнопку в меню SoundCloud.",
     SCSearchFlow.sc_search_query: "Введи название трека для поиска на SoundCloud.",
     SCSearchFlow.sc_search_results: "Выбери трек из результатов или нажми «Назад».",
@@ -800,6 +1288,13 @@ _STATE_HINTS = {
     SCBatchFlow.sc_resume_input: "Введи название трека для поиска в плейлисте.",
     SCBatchFlow.sc_resume_confirm: "Подтверди начальный трек кнопкой ниже.",
     SCBatchFlow.sc_downloading: "Скачивание идёт. Нажми «⛔ Остановить» чтобы прервать.",
+    YMShareFlow.token: "Отправь токен Яндекс Музыки для авторизации.",
+    YMShareFlow.waiting: "Отправь ссылку или HTML-код плейлиста Яндекс Музыки.",
+    YMShareFlow.actions: "Выбери действие из меню выше.",
+    YMShareFlow.filter_input: "Введи имя исполнителя для фильтрации или нажми «Назад».",
+    YMShareFlow.seek_input: "Введи название трека для поиска или нажми «Назад».",
+    YMShareFlow.seek_confirm: "Подтверди начальный трек кнопкой ниже.",
+    YMShareFlow.downloading: "Скачивание идёт. Нажми «⛔ Остановить» чтобы прервать.",
 }
 
 
@@ -841,7 +1336,7 @@ async def _deliver_tracks(
         await call.message.answer_document(
             document=BufferedInputFile(content, filename=filename),
             caption=f"✅ Готово! Экспортировано треков: {len(tracks)}.",
-            reply_markup=sc_offer_keyboard() if offer_sc else None,
+            reply_markup=sc_offer_extended_keyboard() if offer_sc else None,
         )
         try:
             await call.message.delete()
@@ -888,7 +1383,7 @@ async def _deliver_tracks_msg(
         await status_msg.answer_document(
             document=BufferedInputFile(content, filename=filename),
             caption=f"✅ Готово! Экспортировано треков: {len(tracks)}.",
-            reply_markup=sc_offer_keyboard() if offer_sc else None,
+            reply_markup=sc_offer_extended_keyboard() if offer_sc else None,
         )
         try:
             await status_msg.delete()
@@ -974,6 +1469,17 @@ async def _run_batch_download(
     total = len(tracks)
     not_found: list[str] = []
     downloaded_count = 0
+    started_at = datetime.now().isoformat(timespec="seconds")
+
+    update_batch_live(user_id, username, {
+        "started_at": started_at,
+        "total": total,
+        "current_idx": start_idx,
+        "current_track": "—",
+        "downloaded": 0,
+        "failed": [],
+        "status": "running",
+    })
 
     try:
         for i, track in enumerate(tracks[start_idx:], start=start_idx + 1):
@@ -982,6 +1488,16 @@ async def _run_batch_download(
 
             artist = track.get("artist", "")
             title = track.get("title", "")
+
+            update_batch_live(user_id, username, {
+                "started_at": started_at,
+                "total": total,
+                "current_idx": i,
+                "current_track": f"{artist} — {title}",
+                "downloaded": downloaded_count,
+                "failed": not_found,
+                "status": "running",
+            })
             query = f"{artist} {title}"
 
             direct_url = track.get("url")
@@ -1047,6 +1563,20 @@ async def _run_batch_download(
     batch_result = "stopped" if cancel_event.is_set() else "success"
     log_event(user_id, username, "sc_batch", batch_result,
               track_count=downloaded_count, detail=f"not_found:{len(not_found)}")
+
+    update_batch_live(user_id, username, {
+        "started_at": started_at,
+        "finished_at": datetime.now().isoformat(timespec="seconds"),
+        "total": total,
+        "current_idx": total,
+        "current_track": "—",
+        "downloaded": downloaded_count,
+        "failed": not_found,
+        "status": "stopped" if cancel_event.is_set() else "done",
+    })
+
+    for track_name in not_found:
+        log_event(user_id, username, "sc_track_fail", "error", detail=track_name)
 
     summary = "⛔ Скачивание остановлено." if cancel_event.is_set() else "✅ Плейлист скачан!"
     if not_found:
