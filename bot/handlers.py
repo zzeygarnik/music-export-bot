@@ -452,6 +452,17 @@ async def on_sc_search(call: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(SCSearchFlow.sc_search_query)
 
 
+@router.callback_query(SCSearchFlow.sc_menu, F.data == "sc:yt_search")
+async def on_yt_search(call: CallbackQuery, state: FSMContext) -> None:
+    await state.update_data(sc_input_mode="yt_search")
+    await call.message.edit_text(
+        "🔍 Введи запрос для поиска на YouTube:\n\n<i>Например: Linkin Park Numb</i>",
+        parse_mode="HTML",
+        reply_markup=sc_cancel_keyboard(),
+    )
+    await state.set_state(SCSearchFlow.yt_search_query)
+
+
 @router.callback_query(SCSearchFlow.sc_menu, F.data == "sc:url")
 async def on_sc_url(call: CallbackQuery, state: FSMContext) -> None:
     await state.update_data(sc_input_mode="url")
@@ -462,9 +473,17 @@ async def on_sc_url(call: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(SCSearchFlow.sc_menu, F.data == "sc:search_again")
 async def on_sc_search_again(call: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
-    if data.get("sc_input_mode") == "url":
+    mode = data.get("sc_input_mode")
+    if mode == "url":
         await call.message.edit_text(_SC_URL_TEXT, parse_mode="HTML", reply_markup=sc_cancel_keyboard())
         await state.set_state(SCSearchFlow.sc_url_input)
+    elif mode == "yt_search":
+        await call.message.edit_text(
+            "🔍 Введи запрос для поиска на YouTube:\n\n<i>Например: Linkin Park Numb</i>",
+            parse_mode="HTML",
+            reply_markup=sc_cancel_keyboard(),
+        )
+        await state.set_state(SCSearchFlow.yt_search_query)
     else:
         await call.message.edit_text(
             "🔍 Введи запрос для поиска трека:\n\n<i>Например: Linkin Park Numb</i>",
@@ -586,6 +605,74 @@ async def on_sc_pick(call: CallbackQuery, state: FSMContext) -> None:
     idx = int(call.data.split(":", 1)[1])
     data = await state.get_data()
     results_data = data.get("sc_search_results", [])
+
+    if idx >= len(results_data):
+        await call.answer("Результат не найден.", show_alert=True)
+        return
+
+    r = results_data[idx]
+    result = SCResult(url=r["url"], title=r["title"], artist=r["artist"], duration=r["duration"])
+
+    await call.message.edit_text(
+        f"⏳ Скачиваю: <b>{result.artist} — {result.title}</b>…",
+        parse_mode="HTML",
+    )
+    await _sc_download_and_send(call.message, state, result, user_id, return_to_menu=True, username=username)
+
+
+# ── YouTube: Search query ─────────────────────────────────────────────────────
+
+@router.message(SCSearchFlow.yt_search_query)
+async def on_yt_search_query(message: Message, state: FSMContext) -> None:
+    user_id, username = _get_user_info(message)
+
+    if not message.text:
+        await message.answer("❌ Нужно отправить текст — название трека.", reply_markup=sc_cancel_keyboard())
+        return
+
+    query = message.text.strip()
+    status_msg = await message.answer("🔍 Ищу на YouTube…")
+
+    try:
+        results = await sc_downloader.search_youtube(query, max_results=5)
+    except Exception as e:
+        log.exception("YT search failed user=%s query=%r: %s", user_id, query, e)
+        await status_msg.edit_text("❌ Ошибка поиска. Попробуй ещё раз.", reply_markup=sc_cancel_keyboard())
+        return
+
+    if not results:
+        await status_msg.edit_text("😔 Ничего не найдено. Попробуй другой запрос.", reply_markup=sc_cancel_keyboard())
+        return
+
+    best = results[0]
+    best_score = fuzz.token_sort_ratio(query.lower(), f"{best.artist} {best.title}".lower())
+
+    if best_score >= 80:
+        await status_msg.edit_text(
+            f"⏳ Найдено: <b>{best.artist} — {best.title}</b>\nСкачиваю…",
+            parse_mode="HTML",
+        )
+        await _sc_download_and_send(status_msg, state, best, user_id, return_to_menu=True, username=username)
+    else:
+        await state.update_data(yt_search_results=[
+            {"url": r.url, "title": r.title, "artist": r.artist, "duration": r.duration}
+            for r in results
+        ])
+        await status_msg.edit_text(
+            "🔍 Точного совпадения не найдено. Выбери трек из результатов:",
+            reply_markup=sc_results_keyboard(results),
+        )
+        await state.set_state(SCSearchFlow.yt_search_results)
+
+
+# ── YouTube: Pick from search results ─────────────────────────────────────────
+
+@router.callback_query(SCSearchFlow.yt_search_results, F.data.startswith("sc_pick:"))
+async def on_yt_pick(call: CallbackQuery, state: FSMContext) -> None:
+    user_id, username = _get_user_info(call)
+    idx = int(call.data.split(":", 1)[1])
+    data = await state.get_data()
+    results_data = data.get("yt_search_results", [])
 
     if idx >= len(results_data):
         await call.answer("Результат не найден.", show_alert=True)
@@ -765,6 +852,29 @@ async def on_sc_resume_start(call: CallbackQuery, state: FSMContext) -> None:
         return
     data = await state.get_data()
     tracks = data.get("sc_tracks", [])
+    await call.message.edit_text(
+        f"▶️ Начинаю с первого трека (всего {len(tracks)})…",
+        reply_markup=sc_stop_keyboard(),
+    )
+    await state.set_state(SCBatchFlow.sc_downloading)
+    asyncio.create_task(_run_batch_download(call.message, state, user_id, call.from_user.username, tracks, 0))
+
+
+@router.callback_query(SCBatchFlow.sc_resume_choice, F.data == "sc_resume:start_reversed")
+async def on_sc_resume_start_reversed(call: CallbackQuery, state: FSMContext) -> None:
+    user_id = call.from_user.id
+    if user_id in _cancel_events:
+        await call.answer("⚠️ У тебя уже идёт скачивание.", show_alert=True)
+        return
+    if _batch_semaphore.locked():
+        await call.answer(
+            f"⏳ Бот сейчас занят ({settings.SC_MAX_BATCH_DOWNLOADS}/{settings.SC_MAX_BATCH_DOWNLOADS} загрузок). Попробуй чуть позже.",
+            show_alert=True,
+        )
+        return
+    data = await state.get_data()
+    tracks = list(reversed(data.get("sc_tracks", [])))
+    await state.update_data(sc_tracks=tracks)
     await call.message.edit_text(
         f"▶️ Начинаю с первого трека (всего {len(tracks)})…",
         reply_markup=sc_stop_keyboard(),
@@ -1282,6 +1392,8 @@ _STATE_HINTS = {
     SCSearchFlow.sc_search_query: "Введи название трека для поиска на SoundCloud.",
     SCSearchFlow.sc_search_results: "Выбери трек из результатов или нажми «Назад».",
     SCSearchFlow.sc_url_input: "Отправь ссылку на трек или плейлист (SoundCloud или YouTube).",
+    SCSearchFlow.yt_search_query: "Введи название трека для поиска на YouTube.",
+    SCSearchFlow.yt_search_results: "Выбери трек из результатов или нажми «Назад».",
     SCBatchFlow.sc_ym_token: "Отправь токен Яндекс Музыки.",
     SCBatchFlow.sc_ym_playlist: "Выбери плейлист из списка выше.",
     SCBatchFlow.sc_resume_choice: "Выбери, с какого трека начать скачивание.",
@@ -1510,24 +1622,31 @@ async def _run_batch_download(
                     not_found.append(f"{artist} — {title}")
                     continue
             else:
-                # YM-sourced playlist — search on SoundCloud first
+                # YM-sourced playlist — try SoundCloud, fallback to YouTube
+                path, meta = None, {}
+                sc_ok = False
                 try:
-                    results = await sc_downloader.search(query, max_results=1)
+                    sc_results = await sc_downloader.search(query, max_results=1)
+                    if sc_results:
+                        try:
+                            path, meta = await sc_downloader.download(sc_results[0].url, user_id)
+                            sc_ok = True
+                        except Exception as e:
+                            log.warning("SC batch download failed '%s': %s", query, e)
                 except Exception as e:
                     log.warning("SC batch search failed '%s': %s", query, e)
-                    not_found.append(f"{artist} — {title}")
-                    continue
 
-                if not results:
-                    not_found.append(f"{artist} — {title}")
-                    continue
-
-                try:
-                    path, meta = await sc_downloader.download(results[0].url, user_id)
-                except Exception as e:
-                    log.warning("SC batch download failed '%s': %s", query, e)
-                    not_found.append(f"{artist} — {title}")
-                    continue
+                if not sc_ok:
+                    try:
+                        yt_results = await sc_downloader.search_youtube(query, max_results=1)
+                        if not yt_results:
+                            not_found.append(f"{artist} — {title}")
+                            continue
+                        path, meta = await sc_downloader.download(yt_results[0].url, user_id)
+                    except Exception as e:
+                        log.warning("YT batch fallback failed '%s': %s", query, e)
+                        not_found.append(f"{artist} — {title}")
+                        continue
 
             sent = False
             try:
@@ -1581,7 +1700,7 @@ async def _run_batch_download(
     summary = "⛔ Скачивание остановлено." if cancel_event.is_set() else "✅ Плейлист скачан!"
     if not_found:
         nf_list = "\n".join(not_found[:20])
-        summary += f"\n\n❌ Не найдено на SoundCloud ({len(not_found)}):\n{nf_list}"
+        summary += f"\n\n❌ Не найдено нигде ({len(not_found)}):\n{nf_list}"
         if len(not_found) > 20:
             summary += f"\n...и ещё {len(not_found) - 20}"
 

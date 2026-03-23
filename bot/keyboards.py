@@ -94,8 +94,13 @@ def cancel_keyboard() -> InlineKeyboardMarkup:
 def sc_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
-            text="Найти трек",
+            text="Найти на SoundCloud",
             callback_data="sc:search",
+            icon_custom_emoji_id="6037397706505195857",
+        )],
+        [InlineKeyboardButton(
+            text="Найти на YouTube",
+            callback_data="sc:yt_search",
             icon_custom_emoji_id="6037397706505195857",
         )],
         [InlineKeyboardButton(
@@ -142,12 +147,17 @@ def sc_playlists_keyboard(playlists: list[dict]) -> InlineKeyboardMarkup:
 def sc_resume_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
-            text="С начала",
+            text="От первого добавленного к последнему",
+            callback_data="sc_resume:start_reversed",
+            icon_custom_emoji_id="5870801517140775623",
+        )],
+        [InlineKeyboardButton(
+            text="От последнего добавленного к первому",
             callback_data="sc_resume:start",
             icon_custom_emoji_id="5775896410780079073",
         )],
         [InlineKeyboardButton(
-            text="Продолжить с...",
+            text="Продолжить с трека...",
             callback_data="sc_resume:seek",
             icon_custom_emoji_id="5345906554510012647",
         )],
