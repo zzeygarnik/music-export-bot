@@ -39,13 +39,16 @@ Telegram bot with three modes: **export your Yandex Music library to `.txt`**, *
 - Returns a `.txt` file + option to batch-download only those tracks
 
 **SoundCloud / YouTube → .mp3 download**
-- **Single track search**: fuzzy match (rapidfuzz) — auto-download if confidence ≥ 80%, otherwise show top-5 for manual selection
+- **Search on SoundCloud**: fuzzy match (rapidfuzz) — auto-download if confidence ≥ 80%, otherwise show top-5 for manual selection
+- **Search on YouTube**: same fuzzy flow, same top-5 fallback — separate button in the menu
 - **Download by URL**: paste any SoundCloud or YouTube link — track downloads immediately, playlist starts batch download
-- **Batch playlist download**: authorize with Yandex Music → pick playlist (including **liked tracks**) → download all tracks via SoundCloud / YouTube
+- **Batch playlist download**: authorize with Yandex Music → pick playlist (including **liked tracks**) → download all tracks
+  - SoundCloud first, **automatic YouTube fallback** if track not found or download fails
+  - Choose download order: **oldest-first** (new tracks appear at top in Telegram) or **newest-first**
   - Resume from any track (fuzzy search inside playlist)
   - Progress updates after each track
   - ⛔ Stop button at any time
-  - Tracks not found are collected and shown at the end
+  - Tracks not found on either platform are collected and shown at the end
   - Each failed track is logged individually to the database
   - Concurrency limit: configurable via `SC_MAX_BATCH_DOWNLOADS`
 - **Download more** button after every single track
@@ -71,9 +74,12 @@ Telegram bot with three modes: **export your Yandex Music library to `.txt`**, *
      │          └─ Filter by artist → enter name → .txt  [+ Download filtered]
      │
      ├─ 🎵 Download MP3
-     │    ├─ 🔍 Find track      → type query → mp3  [+ Download more]
-     │    ├─ 🔗 By URL          → paste SC/YT link → mp3 or batch
-     │    └─ 📥 YM playlist     → YM OAuth → pick playlist (incl. liked) → batch mp3
+     │    ├─ 🔍 Find on SoundCloud  → type query → mp3  [+ Download more]
+     │    ├─ 🔍 Find on YouTube     → type query → mp3  [+ Download more]
+     │    ├─ 🔗 By URL              → paste SC/YT link → mp3 or batch
+     │    └─ 📥 YM playlist         → YM OAuth → pick playlist (incl. liked)
+     │                                 → choose order (oldest-first / newest-first)
+     │                                 → batch mp3  (SC → YT fallback per track)
      │
      └─ 🔗 Export playlist by link  (new)
           → Send iframe HTML or URL
@@ -96,7 +102,7 @@ music-export-bot/
 ├── core/
 │   ├── base_source.py    # AbstractMusicSource (extensible)
 │   ├── ym_source.py      # Yandex Music source + batch fetch + share link parsing
-│   └── sc_downloader.py  # yt-dlp wrapper: search() + download() + extract_url_info()
+│   └── sc_downloader.py  # yt-dlp wrapper: search() + search_youtube() + download() + extract_url_info()
 ├── utils/
 │   ├── export.py         # Async .txt writer
 │   ├── db.py             # PostgreSQL connection pool + schema creation
@@ -278,13 +284,16 @@ Open dashboard at `http://your-nas-ip:8501`
 - Возвращает `.txt` + кнопку «Скачать треки этого исполнителя»
 
 **SoundCloud / YouTube → скачивание .mp3**
-- **Поиск трека**: fuzzy-матч — автоскачивание при совпадении ≥ 80%, иначе — выбор из топ-5
+- **Поиск на SoundCloud**: fuzzy-матч — автоскачивание при совпадении ≥ 80%, иначе — выбор из топ-5
+- **Поиск на YouTube**: тот же fuzzy-флоу, та же выдача топ-5 — отдельная кнопка в меню
 - **Скачивание по ссылке**: вставь ссылку на трек или плейлист SoundCloud / YouTube
 - **Батчевое скачивание плейлиста**: авторизация в Яндекс Музыке → выбор плейлиста (включая **любимые треки**) → последовательное скачивание
+  - Сначала SoundCloud, **автоматический фолбэк на YouTube** если трек не найден или не скачался
+  - Выбор порядка: **от первого добавленного к последнему** (новые треки окажутся наверху в Telegram) или **от последнего к первому**
   - Возобновление с любого трека (fuzzy-поиск внутри плейлиста)
   - Прогресс после каждого трека
   - Кнопка ⛔ Остановить в любой момент
-  - Ненайденные треки выводятся в конце, каждый логируется отдельно в БД
+  - Ненайденные треки (нигде) выводятся в конце, каждый логируется отдельно в БД
   - Ограничение параллельности: `SC_MAX_BATCH_DOWNLOADS`
 - Кнопка **"Скачать ещё"** после каждого одиночного скачивания
 - **Авто-повтор**: одна автоматическая попытка при сетевой ошибке
@@ -309,9 +318,12 @@ Open dashboard at `http://your-nas-ip:8501`
      │          └─ Фильтр → имя исполнителя → .txt  [+ Скачать отфильтрованное]
      │
      ├─ 🎵 Скачать MP3
-     │    ├─ 🔍 Найти трек      → запрос → mp3  [+ Скачать ещё]
-     │    ├─ 🔗 По ссылке       → ссылка SC/YT → mp3 или батч
-     │    └─ 📥 Плейлист YM     → OAuth → выбор плейлиста → батч mp3
+     │    ├─ 🔍 Найти на SoundCloud  → запрос → mp3  [+ Скачать ещё]
+     │    ├─ 🔍 Найти на YouTube     → запрос → mp3  [+ Скачать ещё]
+     │    ├─ 🔗 По ссылке            → ссылка SC/YT → mp3 или батч
+     │    └─ 📥 Плейлист YM          → OAuth → выбор плейлиста
+     │                                  → выбор порядка (от первого / от последнего)
+     │                                  → батч mp3  (SC → YT фолбэк на каждый трек)
      │
      └─ 🔗 Экспорт плейлиста по ссылке  (новое)
           → Отправить iframe-код или ссылку
@@ -334,7 +346,7 @@ music-export-bot/
 ├── core/
 │   ├── base_source.py    # AbstractMusicSource (расширяемо)
 │   ├── ym_source.py      # Источник YM + батчевый fetch + парсинг share-ссылок
-│   └── sc_downloader.py  # yt-dlp обёртка: search() + download() + extract_url_info()
+│   └── sc_downloader.py  # yt-dlp обёртка: search() + search_youtube() + download() + extract_url_info()
 ├── utils/
 │   ├── export.py         # Асинхронная запись .txt
 │   ├── db.py             # Пул соединений PostgreSQL + создание схемы
