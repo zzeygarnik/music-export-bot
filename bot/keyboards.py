@@ -117,6 +117,19 @@ def sc_menu_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
+def cache_results_keyboard(results: list[dict], fallback_source: str) -> InlineKeyboardMarkup:
+    """Show cached tracks as options; last button falls back to SC or YT search."""
+    buttons = []
+    for i, r in enumerate(results):
+        text = f"{r['artist']} — {r['title']}"
+        if len(text) > 64:
+            text = text[:61] + "..."
+        buttons.append([InlineKeyboardButton(text=text, callback_data=f"cache_pick:{i}")])
+    label = "Нет, искать на SoundCloud" if fallback_source == "sc" else "Нет, искать на YouTube"
+    buttons.append([InlineKeyboardButton(text=label, callback_data="cache_miss")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
 def sc_cancel_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Назад", callback_data="sc:cancel")]
