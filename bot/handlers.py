@@ -39,12 +39,14 @@ from bot.keyboards import (
     ym_share_back_keyboard,
     ym_share_filter_result_keyboard,
     ym_share_seek_confirm_keyboard,
+    cache_results_keyboard,
 )
 from core.ym_source import YandexMusicSource
 from core import sc_downloader
 from core.sc_downloader import SCResult
 from utils.export import build_txt_file, cleanup
 from utils.event_log import log_event, update_batch_live
+from utils.db import get_cached_file_id, save_cached_file_id, search_cache_fuzzy
 
 router = Router()
 log = logging.getLogger(__name__)
@@ -137,6 +139,12 @@ def _parse_ym_share(text: str) -> str | None:
         return m_direct.group(0)
 
     return None
+
+
+def _make_cache_key(artist: str, title: str) -> str:
+    """Normalised lookup key for the track_cache table."""
+    s = f"{artist} {title}".lower()
+    return re.sub(r'[^\w\s]', '', s).strip()
 
 
 def _filter_by_artist(tracks: list[dict], query: str, threshold: int = 70) -> list[dict]:
@@ -549,8 +557,22 @@ async def on_sc_search_query(message: Message, state: FSMContext) -> None:
         return
 
     query = message.text.strip()
+
+    # ── Cache lookup ──────────────────────────────────────────────────────────
+    cache_hits = search_cache_fuzzy(query)
+    if cache_hits:
+        await state.update_data(cache_pending_query=query, cache_fallback_source="sc",
+                                cache_hits=cache_hits)
+        await state.set_state(SCSearchFlow.sc_cache_results)
+        lines = "\n".join(f"• <b>{h['artist']} — {h['title']}</b>" for h in cache_hits)
+        await message.answer(
+            f"⚡ Нашёл в кэше — это нужный трек?\n\n{lines}",
+            parse_mode="HTML",
+            reply_markup=cache_results_keyboard(cache_hits, "sc"),
+        )
+        return
+
     status_msg = await message.answer("🔍 Ищу на SoundCloud…")
-    # username captured above for log_event in _sc_download_and_send
 
     try:
         results = await sc_downloader.search(query, max_results=5)
@@ -631,6 +653,21 @@ async def on_yt_search_query(message: Message, state: FSMContext) -> None:
         return
 
     query = message.text.strip()
+
+    # ── Cache lookup ──────────────────────────────────────────────────────────
+    cache_hits = search_cache_fuzzy(query)
+    if cache_hits:
+        await state.update_data(cache_pending_query=query, cache_fallback_source="yt",
+                                cache_hits=cache_hits)
+        await state.set_state(SCSearchFlow.sc_cache_results)
+        lines = "\n".join(f"• <b>{h['artist']} — {h['title']}</b>" for h in cache_hits)
+        await message.answer(
+            f"⚡ Нашёл в кэше — это нужный трек?\n\n{lines}",
+            parse_mode="HTML",
+            reply_markup=cache_results_keyboard(cache_hits, "yt"),
+        )
+        return
+
     status_msg = await message.answer("🔍 Ищу на YouTube…")
 
     try:
@@ -686,6 +723,115 @@ async def on_yt_pick(call: CallbackQuery, state: FSMContext) -> None:
         parse_mode="HTML",
     )
     await _sc_download_and_send(call.message, state, result, user_id, return_to_menu=True, username=username)
+
+
+# ── Cache: Pick from cache results ───────────────────────────────────────────
+
+@router.callback_query(SCSearchFlow.sc_cache_results, F.data.startswith("cache_pick:"))
+async def on_cache_pick(call: CallbackQuery, state: FSMContext) -> None:
+    user_id, username = _get_user_info(call)
+    idx = int(call.data.split(":", 1)[1])
+    data = await state.get_data()
+    hits = data.get("cache_hits", [])
+
+    if idx >= len(hits):
+        await call.answer("Результат не найден.", show_alert=True)
+        return
+
+    hit = hits[idx]
+    await call.message.edit_text(
+        f"⚡ Отправляю из кэша: <b>{hit['artist']} — {hit['title']}</b>…",
+        parse_mode="HTML",
+    )
+    try:
+        await call.message.answer_audio(
+            audio=hit["file_id"],
+            title=hit["title"],
+            performer=hit["artist"],
+        )
+        log_event(user_id, username, "sc_search", "success",
+                  track_count=1, detail=f"{hit['artist']} — {hit['title']} [cache]")
+        try:
+            await call.message.delete()
+        except Exception:
+            pass
+    except Exception as e:
+        log.warning("Cache send_audio failed user=%s: %s", user_id, e)
+        await call.message.edit_text(
+            "❌ Не удалось отправить из кэша. Попробуй поискать заново.",
+            reply_markup=sc_cancel_keyboard(),
+        )
+        return
+
+    await call.message.answer("✅ Готово! Скачать ещё?", reply_markup=sc_after_download_keyboard())
+    await state.set_state(SCSearchFlow.sc_menu)
+
+
+@router.callback_query(SCSearchFlow.sc_cache_results, F.data == "cache_miss")
+async def on_cache_miss(call: CallbackQuery, state: FSMContext) -> None:
+    user_id, username = _get_user_info(call)
+    data = await state.get_data()
+    query = data.get("cache_pending_query", "")
+    source = data.get("cache_fallback_source", "sc")
+
+    if source == "sc":
+        status_msg = await call.message.edit_text("🔍 Ищу на SoundCloud…")
+        try:
+            results = await sc_downloader.search(query, max_results=5)
+        except Exception as e:
+            log.exception("SC search error user=%s: %s", user_id, e)
+            await status_msg.edit_text("❌ Ошибка поиска. Попробуй ещё раз.", reply_markup=sc_cancel_keyboard())
+            return
+        if not results:
+            await status_msg.edit_text("😔 Ничего не найдено.", reply_markup=sc_cancel_keyboard())
+            return
+        best_idx, best_score = 0, 0
+        for i, r in enumerate(results):
+            score = fuzz.token_sort_ratio(query.lower(), f"{r.artist} {r.title}".lower())
+            if score > best_score:
+                best_score, best_idx = score, i
+        if best_score >= 80:
+            best = results[best_idx]
+            await status_msg.edit_text(
+                f"⏳ Найдено: <b>{best.artist} — {best.title}</b>\nСкачиваю…", parse_mode="HTML")
+            await _sc_download_and_send(status_msg, state, best, user_id, return_to_menu=True, username=username)
+        else:
+            await state.update_data(sc_search_results=[
+                {"url": r.url, "title": r.title, "artist": r.artist, "duration": r.duration}
+                for r in results
+            ])
+            await status_msg.edit_text(
+                "🔍 Точного совпадения не найдено. Выбери трек из результатов:",
+                reply_markup=sc_results_keyboard(results),
+            )
+            await state.set_state(SCSearchFlow.sc_search_results)
+    else:
+        status_msg = await call.message.edit_text("🔍 Ищу на YouTube…")
+        try:
+            results = await sc_downloader.search_youtube(query, max_results=5)
+        except Exception as e:
+            log.exception("YT search error user=%s: %s", user_id, e)
+            await status_msg.edit_text("❌ Ошибка поиска. Попробуй ещё раз.", reply_markup=sc_cancel_keyboard())
+            return
+        if not results:
+            await status_msg.edit_text("😔 Ничего не найдено.", reply_markup=sc_cancel_keyboard())
+            return
+        best = results[0]
+        best_score = fuzz.token_sort_ratio(query.lower(), f"{best.artist} {best.title}".lower())
+        if best_score >= 80:
+            await status_msg.edit_text(
+                f"⏳ Найдено: <b>{best.artist} — {best.title}</b>\nСкачиваю…", parse_mode="HTML")
+            await _sc_download_and_send(status_msg, state, best, user_id, return_to_menu=True, username=username)
+        else:
+            await state.update_data(yt_search_results=[
+                {"url": r.url, "title": r.title, "artist": r.artist, "duration": r.duration}
+                for r in results
+            ])
+            await status_msg.edit_text(
+                "🔍 Точного совпадения не найдено. Выбери трек из результатов:",
+                reply_markup=sc_results_keyboard(results),
+            )
+            await state.set_state(SCSearchFlow.yt_search_results)
 
 
 # ── SC: Download by URL ───────────────────────────────────────────────────────
@@ -1527,6 +1673,29 @@ async def _sc_download_and_send(
     return_to_menu: bool = True,
     username: str | None = None,
 ) -> None:
+    cache_key = _make_cache_key(result.artist, result.title)
+    cached_file_id = get_cached_file_id(cache_key) if cache_key else None
+
+    if cached_file_id:
+        try:
+            await msg.answer_audio(
+                audio=cached_file_id,
+                title=result.title,
+                performer=result.artist,
+            )
+            log_event(user_id, username, "sc_search", "success",
+                      track_count=1, detail=f"{result.artist} — {result.title}")
+            try:
+                await msg.delete()
+            except Exception:
+                pass
+            if return_to_menu and await state.get_state() is not None:
+                await msg.answer("✅ Готово! Скачать ещё?", reply_markup=sc_after_download_keyboard())
+                await state.set_state(SCSearchFlow.sc_menu)
+            return
+        except Exception as e:
+            log.warning("SC send_audio (cache) failed user=%s, falling back to download: %s", user_id, e)
+
     try:
         path, meta = await sc_downloader.download(result.url, user_id)
     except Exception as e:
@@ -1539,11 +1708,14 @@ async def _sc_download_and_send(
         return
 
     try:
-        await msg.answer_audio(
+        sent_msg = await msg.answer_audio(
             audio=FSInputFile(path, filename=f"{result.artist} - {result.title}.mp3"),
             title=meta.get("title") or result.title,
             performer=meta.get("artist") or result.artist,
         )
+        if sent_msg and sent_msg.audio and cache_key:
+            save_cached_file_id(cache_key, sent_msg.audio.file_id, "manual",
+                                artist=result.artist, title=result.title)
         log_event(user_id, username, "sc_search", "success",
                   track_count=1, detail=f"{result.artist} — {result.title}")
         try:
@@ -1611,8 +1783,32 @@ async def _run_batch_download(
                 "status": "running",
             })
             query = f"{artist} {title}"
-
             direct_url = track.get("url")
+            cache_key = _make_cache_key(artist, title) if (artist or title) and not direct_url else None
+
+            # ── Cache lookup (YM-sourced tracks only) ─────────────────────────
+            if cache_key:
+                cached_file_id = get_cached_file_id(cache_key)
+                if cached_file_id:
+                    try:
+                        await progress_msg.answer_audio(
+                            audio=cached_file_id,
+                            title=title,
+                            performer=artist,
+                        )
+                        downloaded_count += 1
+                        try:
+                            await progress_msg.edit_text(
+                                f"⏳ {i}/{total} — ⚡ {artist} — {title}",
+                                reply_markup=sc_stop_keyboard(),
+                            )
+                        except Exception:
+                            pass
+                        continue
+                    except Exception as e:
+                        log.warning("SC batch send_audio (cache) failed '%s': %s", query, e)
+                        # fall through to normal download
+
             if direct_url:
                 # URL-sourced playlist — download directly without search
                 try:
@@ -1650,13 +1846,16 @@ async def _run_batch_download(
 
             sent = False
             try:
-                await progress_msg.answer_audio(
+                sent_msg = await progress_msg.answer_audio(
                     audio=FSInputFile(path, filename=f"{artist} - {title}.mp3"),
                     title=meta.get("title") or title,
                     performer=meta.get("artist") or artist,
                 )
                 sent = True
                 downloaded_count += 1
+                if sent_msg and sent_msg.audio and cache_key:
+                    save_cached_file_id(cache_key, sent_msg.audio.file_id, "batch",
+                                        artist=artist, title=title)
             except Exception as e:
                 log.warning("SC batch send_audio failed '%s': %s", query, e)
                 not_found.append(f"{artist} — {title}")

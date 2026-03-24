@@ -39,10 +39,12 @@ Telegram bot with three modes: **export your Yandex Music library to `.txt`**, *
 - Returns a `.txt` file + option to batch-download only those tracks
 
 **SoundCloud / YouTube → .mp3 download**
-- **Search on SoundCloud**: fuzzy match (rapidfuzz) — auto-download if confidence ≥ 80%, otherwise show top-5 for manual selection
-- **Search on YouTube**: same fuzzy flow, same top-5 fallback — separate button in the menu
+- **Telegram file cache**: every downloaded track is saved in PostgreSQL with its Telegram `file_id`. On the next request the bot checks the cache first — if a fuzzy match on title is found (threshold 75%), it offers the result instantly without re-downloading. Sending by `file_id` is instantaneous — Telegram serves the file from its own CDN
+- **Search on SoundCloud**: cache lookup first → fuzzy match (rapidfuzz) — auto-download if confidence ≥ 80%, otherwise show top-5 for manual selection
+- **Search on YouTube**: same cache-first flow, same top-5 fallback — separate button in the menu
 - **Download by URL**: paste any SoundCloud or YouTube link — track downloads immediately, playlist starts batch download
 - **Batch playlist download**: authorize with Yandex Music → pick playlist (including **liked tracks**) → download all tracks
+  - Cache checked per track before downloading — instant send if already cached (shown as ⚡ in progress)
   - SoundCloud first, **automatic YouTube fallback** if track not found or download fails
   - Choose download order: **oldest-first** (new tracks appear at top in Telegram) or **newest-first**
   - Resume from any track (fuzzy search inside playlist)
@@ -56,6 +58,7 @@ Telegram bot with three modes: **export your Yandex Music library to `.txt`**, *
 
 **General**
 - Streamlit dashboard with real-time batch progress and usage statistics (powered by PostgreSQL)
+- PostgreSQL stores events, live batch state, and the **track file cache** (`track_cache` table — `cache_key`, `file_id`, `artist`, `title`)
 - Redis FSM storage with graceful fallback to MemoryStorage
 - Throttling + stale-button guard middleware
 
@@ -74,8 +77,8 @@ Telegram bot with three modes: **export your Yandex Music library to `.txt`**, *
      │          └─ Filter by artist → enter name → .txt  [+ Download filtered]
      │
      ├─ 🎵 Download MP3
-     │    ├─ 🔍 Find on SoundCloud  → type query → mp3  [+ Download more]
-     │    ├─ 🔍 Find on YouTube     → type query → mp3  [+ Download more]
+     │    ├─ 🔍 Find on SoundCloud  → cache check → (⚡ instant) or search → mp3  [+ Download more]
+     │    ├─ 🔍 Find on YouTube     → cache check → (⚡ instant) or search → mp3  [+ Download more]
      │    ├─ 🔗 By URL              → paste SC/YT link → mp3 or batch
      │    └─ 📥 YM playlist         → YM OAuth → pick playlist (incl. liked)
      │                                 → choose order (oldest-first / newest-first)
@@ -284,10 +287,12 @@ Open dashboard at `http://your-nas-ip:8501`
 - Возвращает `.txt` + кнопку «Скачать треки этого исполнителя»
 
 **SoundCloud / YouTube → скачивание .mp3**
-- **Поиск на SoundCloud**: fuzzy-матч — автоскачивание при совпадении ≥ 80%, иначе — выбор из топ-5
-- **Поиск на YouTube**: тот же fuzzy-флоу, та же выдача топ-5 — отдельная кнопка в меню
+- **Кэш треков в Telegram**: каждый скачанный трек сохраняется в PostgreSQL с его Telegram `file_id`. При следующем запросе бот сначала проверяет кэш — если найдено fuzzy-совпадение по названию (порог 75%), предлагает его мгновенно без повторного скачивания. Отправка по `file_id` моментальна — Telegram отдаёт файл со своего CDN
+- **Поиск на SoundCloud**: сначала проверка кэша → fuzzy-матч — автоскачивание при совпадении ≥ 80%, иначе — выбор из топ-5
+- **Поиск на YouTube**: тот же флоу с кэшем, та же выдача топ-5 — отдельная кнопка в меню
 - **Скачивание по ссылке**: вставь ссылку на трек или плейлист SoundCloud / YouTube
 - **Батчевое скачивание плейлиста**: авторизация в Яндекс Музыке → выбор плейлиста (включая **любимые треки**) → последовательное скачивание
+  - Перед каждым треком — проверка кэша, при хите — мгновенная отправка с отметкой ⚡ в прогрессе
   - Сначала SoundCloud, **автоматический фолбэк на YouTube** если трек не найден или не скачался
   - Выбор порядка: **от первого добавленного к последнему** (новые треки окажутся наверху в Telegram) или **от последнего к первому**
   - Возобновление с любого трека (fuzzy-поиск внутри плейлиста)
@@ -300,6 +305,7 @@ Open dashboard at `http://your-nas-ip:8501`
 
 **Общее**
 - Streamlit-дашборд с живым прогрессом батча и статистикой (на PostgreSQL)
+- PostgreSQL хранит события, состояние батча и **кэш треков** (таблица `track_cache` — `cache_key`, `file_id`, `artist`, `title`)
 - Redis FSM-хранилище с graceful fallback на MemoryStorage
 - Middleware: throttling + защита от нажатия устаревших кнопок
 
@@ -318,8 +324,8 @@ Open dashboard at `http://your-nas-ip:8501`
      │          └─ Фильтр → имя исполнителя → .txt  [+ Скачать отфильтрованное]
      │
      ├─ 🎵 Скачать MP3
-     │    ├─ 🔍 Найти на SoundCloud  → запрос → mp3  [+ Скачать ещё]
-     │    ├─ 🔍 Найти на YouTube     → запрос → mp3  [+ Скачать ещё]
+     │    ├─ 🔍 Найти на SoundCloud  → проверка кэша → (⚡ мгновенно) или поиск → mp3  [+ Скачать ещё]
+     │    ├─ 🔍 Найти на YouTube     → проверка кэша → (⚡ мгновенно) или поиск → mp3  [+ Скачать ещё]
      │    ├─ 🔗 По ссылке            → ссылка SC/YT → mp3 или батч
      │    └─ 📥 Плейлист YM          → OAuth → выбор плейлиста
      │                                  → выбор порядка (от первого / от последнего)
