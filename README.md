@@ -67,6 +67,8 @@ Telegram bot with three modes: **export your Yandex Music library to `.txt`**, *
 - PostgreSQL stores events, live batch state, and the **track file_id cache** (`track_cache` table — `cache_key`, `file_id`, `artist`, `title`)
 - Redis FSM storage with graceful fallback to MemoryStorage
 - Throttling + stale-button guard middleware
+- **Batch access control** via `BATCH_ALLOWED_USERS` env var — disable for everyone, enable for all, or whitelist specific users by ID or `@username`
+- **Bot commands menu** registered on startup — `/start` appears in Telegram's command list and bottom-left button
 
 ### 🔄 User Flow
 
@@ -152,6 +154,12 @@ POSTGRES_URL=postgresql://user:password@host:5432/music_bot
 # Optional — bot-level YM token for reading public playlists without user auth
 # If set, users can share playlists without logging into Yandex Music
 YM_BOT_TOKEN=
+
+# Batch playlist download access control (default: * = everyone)
+#   ""                     — disabled for all users
+#   "*"                    — enabled for all users
+#   "123456789,@username"  — only listed Telegram user IDs or @usernames
+BATCH_ALLOWED_USERS=*
 ```
 
 > **Note on `SC_PROXY`:** If Telegram is blocked by your provider, this variable is required — without it the bot won't connect to Telegram at all. Requires `aiohttp-socks` (already in `requirements.txt`).
@@ -320,6 +328,8 @@ Open dashboard at `http://your-nas-ip:8501`
 - PostgreSQL хранит события, состояние батча и **кэш file_id треков** (таблица `track_cache` — `cache_key`, `file_id`, `artist`, `title`)
 - Redis FSM-хранилище с graceful fallback на MemoryStorage
 - Middleware: throttling + защита от нажатия устаревших кнопок
+- **Управление доступом к батчу** через env var `BATCH_ALLOWED_USERS` — отключить для всех, разрешить всем, или вайтлист по ID / `@username`
+- **Bot commands menu** регистрируется при старте — `/start` отображается в списке команд и кнопке слева снизу
 
 ### 🔄 Флоу пользователя
 
@@ -404,6 +414,12 @@ POSTGRES_URL=postgresql://user:password@host:5432/music_bot
 
 # Опционально — бот-уровневый токен YM для чтения публичных плейлистов без авторизации пользователя
 YM_BOT_TOKEN=
+
+# Управление доступом к батчевому скачиванию плейлистов (дефолт: * = все)
+#   ""                     — отключено для всех
+#   "*"                    — разрешено всем
+#   "123456789,@username"  — только перечисленные Telegram user ID или @username
+BATCH_ALLOWED_USERS=*
 ```
 
 > **Про `SC_PROXY`:** Если Telegram заблокирован у провайдера — переменная обязательна, без неё бот не подключится вообще. Требует `aiohttp-socks` (уже включён в `requirements.txt`).

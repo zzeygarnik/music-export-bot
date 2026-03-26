@@ -503,6 +503,9 @@ async def on_sc_search_again(call: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(SCSearchFlow.sc_menu, F.data == "sc:batch")
 async def on_sc_batch_menu(call: CallbackQuery, state: FSMContext) -> None:
+    if not settings.is_batch_allowed(call.from_user.id, call.from_user.username):
+        await call.answer("⛔ Скачивание плейлистов сейчас недоступно.", show_alert=True)
+        return
     await call.message.edit_text(
         "📥 <b>Скачать плейлист с SoundCloud</b>\n\n"
         "Для выбора плейлиста нужна авторизация в Яндекс Музыке.\n\n" + _TOKEN_GUIDE,
@@ -523,6 +526,9 @@ async def on_sc_back(call: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "sc:batch_from_ym")
 async def on_sc_batch_from_ym(call: CallbackQuery, state: FSMContext) -> None:
+    if not settings.is_batch_allowed(call.from_user.id, call.from_user.username):
+        await call.answer("⛔ Скачивание плейлистов сейчас недоступно.", show_alert=True)
+        return
     data = await state.get_data()
     sc_tracks = data.get("sc_tracks")
     if not sc_tracks:
@@ -1334,6 +1340,9 @@ async def on_yms_waiting(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(YMShareFlow.actions, F.data == "yms:download_all")
 async def on_yms_download_all(call: CallbackQuery, state: FSMContext) -> None:
+    if not settings.is_batch_allowed(call.from_user.id, call.from_user.username):
+        await call.answer("⛔ Скачивание плейлистов сейчас недоступно.", show_alert=True)
+        return
     user_id = call.from_user.id
     if user_id in _cancel_events:
         await call.answer("⚠️ У тебя уже идёт скачивание.", show_alert=True)
@@ -1443,6 +1452,9 @@ async def on_yms_filter_input(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "yms:download_filtered")
 async def on_yms_download_filtered(call: CallbackQuery, state: FSMContext) -> None:
+    if not settings.is_batch_allowed(call.from_user.id, call.from_user.username):
+        await call.answer("⛔ Скачивание плейлистов сейчас недоступно.", show_alert=True)
+        return
     data = await state.get_data()
     filtered = data.get("yms_filtered_tracks")
     if not filtered:
