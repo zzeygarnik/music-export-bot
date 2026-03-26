@@ -5,6 +5,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import BotCommand
 
 from config import settings
 from bot.handlers import router
@@ -58,6 +59,9 @@ async def main() -> None:
     dp.callback_query.middleware(CallbackAnswerMiddleware())
     dp.include_router(router)
 
+    await bot.set_my_commands([
+        BotCommand(command="start", description="Главное меню"),
+    ])
     log.info("Bot started")
     await dp.start_polling(bot, allowed_updates=["message", "callback_query"])
 
