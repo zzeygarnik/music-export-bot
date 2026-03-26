@@ -129,7 +129,7 @@ def search_cache_fuzzy(query: str, threshold: int = 75) -> list[dict]:
     conn = get_conn()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT cache_key, file_id, artist, title FROM track_cache WHERE title != ''")
+            cur.execute("SELECT cache_key, file_id, artist, title FROM track_cache")
             rows = cur.fetchall()
     except Exception as e:
         log.warning("track_cache fuzzy search failed: %s", e)
@@ -139,13 +139,35 @@ def search_cache_fuzzy(query: str, threshold: int = 75) -> list[dict]:
 
     q = query.lower().strip()
     scored = []
+    top_misses = []
     for cache_key, file_id, artist, title in rows:
-        title_score = fuzz.partial_ratio(q, title.lower())
-        full_score  = fuzz.token_sort_ratio(q, f"{artist} {title}".lower())
-        score = max(title_score, full_score)
+        # для старых записей без метаданных матчим по cache_key
+        if title:
+            full = f"{artist} {title}".lower()
+            score = max(
+                fuzz.partial_ratio(q, title.lower()),
+                fuzz.token_sort_ratio(q, full),
+                fuzz.token_set_ratio(q, full),
+            )
+        else:
+            score = max(
+                fuzz.token_sort_ratio(q, cache_key),
+                fuzz.token_set_ratio(q, cache_key),
+            )
         if score >= threshold:
             scored.append((score, {"cache_key": cache_key, "file_id": file_id,
                                    "artist": artist, "title": title}))
+        elif score >= 50:
+            top_misses.append((score, f"{artist} — {title}"))
+
+    if not scored and top_misses:
+        top_misses.sort(reverse=True)
+        log.info("search_cache_fuzzy: query=%r no hits (threshold=%d), top misses: %s",
+                 q, threshold, top_misses[:3])
+    elif scored:
+        log.info("search_cache_fuzzy: query=%r found %d hits", q, len(scored))
+    else:
+        log.info("search_cache_fuzzy: query=%r no hits and no near misses (rows=%d)", q, len(rows))
 
     scored.sort(key=lambda x: x[0], reverse=True)
     return [item for _, item in scored[:5]]
