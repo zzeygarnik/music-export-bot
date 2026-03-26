@@ -17,8 +17,7 @@ REFRESH_INTERVAL = 10
 _PG_DSN = os.environ.get("POSTGRES_URL", "")
 
 st.set_page_config(page_title="Music Export Bot", page_icon="🎵", layout="wide")
-st.title("🎵 Music Export Bot — Dashboard")
-st.caption("Статистика накапливается за всё время работы бота (лог-файл сохраняется между перезапусками)")
+st.title("🎵 Music Export Bot")
 
 
 @st.cache_resource
@@ -88,7 +87,7 @@ elif finished_batches:
         expanded=False,
     ):
         if failed:
-            st.markdown(f"**Не найдено на SoundCloud ({len(failed)}):**")
+            st.markdown(f"**Не найдено на SC/YouTube ({len(failed)}):**")
             for t in failed:
                 st.write(f"• {t}")
         else:
@@ -110,7 +109,6 @@ if df.empty:
     st.stop()
 
 today = date.today()
-yesterday = today - timedelta(days=1)
 week_ago = today - timedelta(days=7)
 
 df_success = df[df["result"] == "success"]
@@ -120,127 +118,100 @@ ym_exports = df_success[df_success["action"].str.startswith("export")]
 ym_exports_today = ym_exports[ym_exports["ts"].dt.date == today]
 ym_exports_week = ym_exports[ym_exports["ts"].dt.date >= week_ago]
 
-# SC events
-sc_df = df[df["action"].str.startswith("sc_")]
+# SC / YT
 sc_search_all = df[df["action"] == "sc_search"]
 sc_search_ok = sc_search_all[sc_search_all["result"] == "success"]
+yt_search_all = df[df["action"] == "yt_search"]
+yt_search_ok = yt_search_all[yt_search_all["result"] == "success"]
 sc_batch_all = df[df["action"] == "sc_batch"]
 sc_batch_ok = sc_batch_all[sc_batch_all["result"].isin(["success", "stopped"])]
 
-# ── All-time stats ────────────────────────────────────────────────────────────
-st.subheader("📊 Всё время")
-c1, c2, c3, c4, c5 = st.columns(5)
-c1.metric("YM экспортов всего", len(ym_exports))
-c2.metric("YM сегодня", len(ym_exports_today))
-c3.metric("YM за 7 дней", len(ym_exports_week))
-c4.metric("Уникальных юзеров", df["user_hash"].nunique())
-total_ym_tracks = int(df_success["track_count"].dropna().sum())
-c5.metric("YM треков экспортировано", f"{total_ym_tracks:,}")
+# ── Tabs ──────────────────────────────────────────────────────────────────────
+tab_ym, tab_sc, tab_log = st.tabs(["📊 Яндекс Музыка", "☁️ SC / YouTube", "📋 Лог событий"])
 
-st.divider()
+# ── Tab 1: YM ─────────────────────────────────────────────────────────────────
+with tab_ym:
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Экспортов всего", len(ym_exports))
+    c2.metric("Сегодня", len(ym_exports_today))
+    c3.metric("За 7 дней", len(ym_exports_week))
+    total_ym_tracks = int(df_success["track_count"].dropna().sum())
+    c4.metric("Треков экспортировано", f"{total_ym_tracks:,}")
 
-# ── Activity chart — YM exports per day ──────────────────────────────────────
-st.subheader("📈 YM экспорты по дням")
-if not ym_exports.empty:
-    by_day = (
-        ym_exports.groupby(ym_exports["ts"].dt.date)
-        .size()
-        .reset_index(name="count")
-        .rename(columns={"ts": "Дата", "count": "Экспортов"})
-    )
-    by_day["Дата"] = pd.to_datetime(by_day["Дата"])
-    st.bar_chart(by_day.set_index("Дата")["Экспортов"])
-else:
-    st.info("Нет данных для графика.")
+    st.divider()
 
-st.divider()
+    col_chart, col_breakdown = st.columns([2, 1])
 
-# ── By action breakdown (YM) ──────────────────────────────────────────────────
-col_left, col_right = st.columns(2)
+    with col_chart:
+        st.subheader("Экспорты по дням")
+        if not ym_exports.empty:
+            by_day = (
+                ym_exports.groupby(ym_exports["ts"].dt.date)
+                .size()
+                .reset_index(name="count")
+                .rename(columns={"ts": "Дата", "count": "Экспортов"})
+            )
+            by_day["Дата"] = pd.to_datetime(by_day["Дата"])
+            st.bar_chart(by_day.set_index("Дата")["Экспортов"])
+        else:
+            st.info("Нет данных для графика.")
 
-ym_action_labels = {
-    "export_liked": "❤️ Любимые треки",
-    "export_playlist": "📋 Плейлист",
-    "export_by_link": "🔗 По ссылке",
-    "auth_ok": "🔑 Авторизация (успех)",
-    "auth_fail": "❌ Авторизация (ошибка)",
-    "export_error": "⚠️ Ошибка экспорта",
-}
+    with col_breakdown:
+        st.subheader("По типу")
+        ym_action_labels = {
+            "export_liked": "❤️ Любимые",
+            "export_playlist": "📋 Плейлист",
+            "export_by_link": "🔗 По ссылке",
+        }
+        action_counts = (
+            ym_exports["action"]
+            .map(lambda x: ym_action_labels.get(x, x))
+            .value_counts()
+            .reset_index()
+        )
+        action_counts.columns = ["Тип", "Количество"]
+        if not action_counts.empty:
+            st.bar_chart(action_counts.set_index("Тип"))
+        else:
+            st.info("Нет данных.")
 
-with col_left:
-    st.subheader("По типу YM экспорта")
-    action_counts = (
-        ym_exports["action"]
-        .map(lambda x: ym_action_labels.get(x, x))
-        .value_counts()
-        .reset_index()
-    )
-    action_counts.columns = ["Тип", "Количество"]
-    if not action_counts.empty:
-        st.bar_chart(action_counts.set_index("Тип"))
-    else:
-        st.info("Нет данных.")
-
-with col_right:
-    st.subheader("Успех vs Ошибки (всё)")
-    result_counts = df["result"].value_counts().rename(
-        {"success": "✅ Успех", "error": "❌ Ошибка", "stopped": "⛔ Остановлено"}
-    )
-    st.bar_chart(result_counts)
-
-st.divider()
-
-# ── SoundCloud section ────────────────────────────────────────────────────────
-st.subheader("☁️ SoundCloud")
-
-if sc_df.empty:
-    st.info("Нет SC-событий пока. Попробуй поиск трека или скачивание плейлиста через SoundCloud.")
-else:
-    # SC top metrics
+# ── Tab 2: SC / YouTube ───────────────────────────────────────────────────────
+with tab_sc:
     sc_tracks_downloaded = int(sc_search_ok["track_count"].fillna(1).sum())
+    yt_tracks_downloaded = int(yt_search_ok["track_count"].fillna(1).sum())
     sc_batch_tracks = int(sc_batch_ok["track_count"].fillna(0).sum())
-    sc_total_tracks = sc_tracks_downloaded + sc_batch_tracks
-
-    sc_search_rate = (
-        round(len(sc_search_ok) / len(sc_search_all) * 100)
-        if len(sc_search_all) > 0 else 0
-    )
 
     sc_c1, sc_c2, sc_c3, sc_c4, sc_c5 = st.columns(5)
-    sc_c1.metric("Поисков треков", len(sc_search_all))
-    sc_c2.metric("Успешных поисков", f"{len(sc_search_ok)} ({sc_search_rate}%)")
+    sc_c1.metric("SC поисков", len(sc_search_all))
+    sc_c2.metric("YT поисков", len(yt_search_all))
     sc_c3.metric("Батч-сессий", len(sc_batch_all))
-    sc_c4.metric("Треков скачано (батч)", int(sc_batch_ok["track_count"].fillna(0).sum()))
-    sc_c5.metric("Треков всего (SC)", sc_total_tracks)
+    sc_c4.metric("Треков (батч)", sc_batch_tracks)
+    sc_c5.metric("Треков (поиск)", sc_tracks_downloaded + yt_tracks_downloaded)
 
-    # SC downloads by day
-    st.subheader("SC активность по дням")
-    sc_by_day = (
-        sc_df.groupby(sc_df["ts"].dt.date)
-        .size()
-        .reset_index(name="Событий")
-        .rename(columns={"ts": "Дата"})
-    )
-    sc_by_day["Дата"] = pd.to_datetime(sc_by_day["Дата"])
-    st.bar_chart(sc_by_day.set_index("Дата")["Событий"])
+    st.divider()
 
     sc_col1, sc_col2 = st.columns(2)
 
     with sc_col1:
-        st.subheader("Поиск треков")
-        search_result_counts = (
-            sc_search_all["result"]
-            .map({"success": "✅ Успех", "error": "❌ Ошибка"})
-            .value_counts()
-            .reset_index()
-        )
-        search_result_counts.columns = ["Результат", "Количество"]
-        if not search_result_counts.empty:
-            st.bar_chart(search_result_counts.set_index("Результат"))
+        st.subheader("Поиск SC / YT")
 
-        # Top searched tracks
+        search_combined = pd.concat([
+            sc_search_all.assign(platform="SoundCloud"),
+            yt_search_all.assign(platform="YouTube"),
+        ])
+        if not search_combined.empty:
+            by_day = (
+                search_combined.groupby([search_combined["ts"].dt.date, "platform"])
+                .size()
+                .reset_index(name="Поисков")
+                .rename(columns={"ts": "Дата"})
+            )
+            by_day["Дата"] = pd.to_datetime(by_day["Дата"])
+            pivot = by_day.pivot(index="Дата", columns="platform", values="Поисков").fillna(0)
+            st.bar_chart(pivot)
+
         top_found = (
-            sc_search_ok["detail"]
+            pd.concat([sc_search_ok, yt_search_ok])["detail"]
             .dropna()
             .value_counts()
             .head(10)
@@ -265,62 +236,64 @@ else:
 
         if not sc_batch_ok.empty:
             avg_downloaded = sc_batch_ok["track_count"].fillna(0).mean()
-            # Parse not_found count from detail field "not_found:N"
-            sc_batch_ok = sc_batch_ok.copy()
-            sc_batch_ok["not_found_count"] = (
-                sc_batch_ok["detail"]
+            sc_batch_ok_copy = sc_batch_ok.copy()
+            sc_batch_ok_copy["not_found_count"] = (
+                sc_batch_ok_copy["detail"]
                 .str.extract(r"not_found:(\d+)")
                 .astype(float)
                 .fillna(0)
             )
-            avg_not_found = sc_batch_ok["not_found_count"].mean()
+            avg_not_found = sc_batch_ok_copy["not_found_count"].mean()
             st.caption(f"Среднее скачано за сессию: **{avg_downloaded:.1f}** треков")
             st.caption(f"Среднее не найдено за сессию: **{avg_not_found:.1f}** треков")
 
-st.divider()
+# ── Tab 3: Лог событий ────────────────────────────────────────────────────────
+with tab_log:
+    all_action_labels = {
+        "export_liked": "❤️ YM: Любимые треки",
+        "export_playlist": "📋 YM: Плейлист",
+        "export_by_link": "🔗 YM: По ссылке",
+        "auth_ok": "🔑 Авторизация (успех)",
+        "auth_fail": "❌ Авторизация (ошибка)",
+        "export_error": "⚠️ Ошибка экспорта",
+        "sc_search": "🔍 SC: поиск",
+        "yt_search": "🔍 YT: поиск",
+        "sc_batch": "📥 Батч-загрузка",
+        "sc_track_fail": "❌ Трек не найден",
+        "yms_load": "🔗 Загрузка плейлиста по ссылке",
+    }
 
-# ── Recent events table ───────────────────────────────────────────────────────
-st.subheader("📋 Последние события")
+    period = st.radio("Период", ["Сегодня", "7 дней", "Всё время"], horizontal=True, index=2)
+    if period == "Сегодня":
+        df_view = df[df["ts"].dt.date == today]
+    elif period == "7 дней":
+        df_view = df[df["ts"].dt.date >= week_ago]
+    else:
+        df_view = df
 
-all_action_labels = {
-    **ym_action_labels,
-    "sc_search": "🔍 SC поиск",
-    "sc_batch": "📥 SC батч",
-    "sc_track_fail": "❌ SC трек не найден",
-    "yms_load": "🔗 Загрузка плейлиста по ссылке",
-}
+    df_view = df_view.sort_values("ts", ascending=False).head(200).copy()
+    df_view["ts"] = df_view["ts"].dt.strftime("%Y-%m-%d %H:%M:%S")
+    df_view["result"] = df_view["result"].map({"success": "✅", "error": "❌", "stopped": "⛔"})
+    df_view["action"] = df_view["action"].map(lambda x: all_action_labels.get(x, x))
+    df_view["user"] = df_view.apply(
+        lambda r: f"@{r['username']}" if r.get("username") else f"#{r['user_hash']}", axis=1
+    )
+    df_view["track_count"] = (
+        df_view["track_count"].fillna("—").astype(str).str.replace(r"\.0$", "", regex=True)
+    )
 
-period = st.radio("Период", ["Сегодня", "7 дней", "Всё время"], horizontal=True, index=2)
-if period == "Сегодня":
-    df_view = df[df["ts"].dt.date == today]
-elif period == "7 дней":
-    df_view = df[df["ts"].dt.date >= week_ago]
-else:
-    df_view = df
-
-df_view = df_view.sort_values("ts", ascending=False).head(200).copy()
-df_view["ts"] = df_view["ts"].dt.strftime("%Y-%m-%d %H:%M:%S")
-df_view["result"] = df_view["result"].map({"success": "✅", "error": "❌", "stopped": "⛔"})
-df_view["action"] = df_view["action"].map(lambda x: all_action_labels.get(x, x))
-df_view["user"] = df_view.apply(
-    lambda r: f"@{r['username']}" if r.get("username") else f"#{r['user_hash']}", axis=1
-)
-df_view["track_count"] = (
-    df_view["track_count"].fillna("—").astype(str).str.replace(r"\.0$", "", regex=True)
-)
-
-st.dataframe(
-    df_view[["ts", "user", "action", "result", "track_count", "detail"]].rename(columns={
-        "ts": "Время",
-        "user": "Пользователь",
-        "action": "Действие",
-        "result": "",
-        "track_count": "Треков",
-        "detail": "Детали",
-    }),
-    use_container_width=True,
-    hide_index=True,
-)
+    st.dataframe(
+        df_view[["ts", "user", "action", "result", "track_count", "detail"]].rename(columns={
+            "ts": "Время",
+            "user": "Пользователь",
+            "action": "Действие",
+            "result": "",
+            "track_count": "Треков",
+            "detail": "Детали",
+        }),
+        use_container_width=True,
+        hide_index=True,
+    )
 
 # ── Auto-refresh ──────────────────────────────────────────────────────────────
 if auto:

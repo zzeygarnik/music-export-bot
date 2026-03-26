@@ -39,9 +39,15 @@ Telegram bot with three modes: **export your Yandex Music library to `.txt`**, *
 - Returns a `.txt` file + option to batch-download only those tracks
 
 **SoundCloud / YouTube → .mp3 download**
-- **Telegram file cache**: every downloaded track is saved in PostgreSQL with its Telegram `file_id`. On the next request the bot checks the cache first — if a fuzzy match on title is found (threshold 75%), it offers the result instantly without re-downloading. Sending by `file_id` is instantaneous — Telegram serves the file from its own CDN
-- **Search on SoundCloud**: cache lookup first → fuzzy match (rapidfuzz) — auto-download if confidence ≥ 80%, otherwise show top-5 for manual selection
-- **Search on YouTube**: same cache-first flow, same top-5 fallback — separate button in the menu
+- **Telegram file_id cache**: every downloaded track is saved in PostgreSQL with its Telegram `file_id` (artist, title, normalized key). On repeat requests the bot skips downloading entirely — Telegram serves the file from its own servers in milliseconds
+- **Cache-first search flow** with transparent status messages:
+  - `🔍 Searching in database…` — fuzzy lookup runs instantly
+  - If found: `⚡ Found in cache: Artist — Title` → audio sent immediately, user confirms with **"Yes, download"** button
+  - If not found: `🔍 Searching on SoundCloud/YouTube…` → `⏳ Downloading…` → `⏳ Uploading track…` → audio
+  - If SC/YT finds a result that exactly matches the cache key: shows `⚡ Found in cache` at that point too
+- **Fuzzy cache matching** uses three metrics (rapidfuzz): `partial_ratio` (title only), `token_sort_ratio` and `token_set_ratio` (full artist+title) — order-insensitive, handles "Artist Title" and "Title Artist" equally. Old cache entries without metadata are matched by normalized cache key
+- **Search on SoundCloud**: cache lookup → auto-download if confidence ≥ 80%, otherwise top-5 for manual selection
+- **Search on YouTube**: same cache-first flow — separate button in the menu. Logged separately as `yt_search`
 - **Download by URL**: paste any SoundCloud or YouTube link — track downloads immediately, playlist starts batch download
 - **Batch playlist download**: authorize with Yandex Music → pick playlist (including **liked tracks**) → download all tracks
   - Cache checked per track before downloading — instant send if already cached (shown as ⚡ in progress)
@@ -57,8 +63,8 @@ Telegram bot with three modes: **export your Yandex Music library to `.txt`**, *
 - **Auto-retry**: one automatic retry on network error before giving up
 
 **General**
-- Streamlit dashboard with real-time batch progress and usage statistics (powered by PostgreSQL)
-- PostgreSQL stores events, live batch state, and the **track file cache** (`track_cache` table — `cache_key`, `file_id`, `artist`, `title`)
+- Streamlit dashboard — redesigned with **3 tabs**: Yandex Music stats / SC+YouTube stats / Event log. SC and YouTube searches tracked and displayed separately
+- PostgreSQL stores events, live batch state, and the **track file_id cache** (`track_cache` table — `cache_key`, `file_id`, `artist`, `title`)
 - Redis FSM storage with graceful fallback to MemoryStorage
 - Throttling + stale-button guard middleware
 
@@ -211,11 +217,11 @@ This script creates the `music_bot` database, sets up tables, and migrates any e
 
 ### 📊 Dashboard
 
-The Streamlit dashboard reads from PostgreSQL and includes:
-- All-time and daily export statistics
-- SoundCloud search and batch download metrics
-- **🔴 Live batch progress**: real-time progress bar, current track being downloaded, not-found list so far
-- Recent events table with filtering by period
+The Streamlit dashboard reads from PostgreSQL and is organized into **3 tabs**:
+- **📊 Yandex Music** — all-time/daily export stats, breakdown by export type
+- **☁️ SC / YouTube** — separate metrics for SoundCloud and YouTube searches, batch stats, top downloaded tracks
+- **📋 Event log** — filterable recent events table with correct SC/YT distinction (`sc_search` vs `yt_search`)
+- **🔴 Live batch progress** (always visible at top): real-time progress bar, current track, not-found list
 
 **Local:**
 ```bash
@@ -287,9 +293,15 @@ Open dashboard at `http://your-nas-ip:8501`
 - Возвращает `.txt` + кнопку «Скачать треки этого исполнителя»
 
 **SoundCloud / YouTube → скачивание .mp3**
-- **Кэш треков в Telegram**: каждый скачанный трек сохраняется в PostgreSQL с его Telegram `file_id`. При следующем запросе бот сначала проверяет кэш — если найдено fuzzy-совпадение по названию (порог 75%), предлагает его мгновенно без повторного скачивания. Отправка по `file_id` моментальна — Telegram отдаёт файл со своего CDN
-- **Поиск на SoundCloud**: сначала проверка кэша → fuzzy-матч — автоскачивание при совпадении ≥ 80%, иначе — выбор из топ-5
-- **Поиск на YouTube**: тот же флоу с кэшем, та же выдача топ-5 — отдельная кнопка в меню
+- **Кэш file_id в Telegram**: каждый скачанный трек сохраняется в PostgreSQL с Telegram `file_id` (artist, title, нормализованный ключ). При повторном запросе скачивание пропускается — Telegram отдаёт файл со своих серверов мгновенно
+- **Прозрачный флоу поиска**:
+  - `🔍 Ищу в базе…` — быстрый fuzzy-поиск по кэшу
+  - При хите: `⚡ Нашёл в базе: Артист — Трек` → аудио мгновенно, пользователь подтверждает кнопкой **"Да, скачать"**
+  - При промахе: `🔍 Ищу на SoundCloud/YouTube…` → `⏳ Скачиваю…` → `⏳ Выгружаю трек…` → аудио
+  - Если SC/YT находит результат, совпадающий с точным ключом кэша — показывает `⚡ Нашёл в базе` и на этом этапе
+- **Fuzzy-поиск по кэшу** использует три метрики (rapidfuzz): `partial_ratio` (только title), `token_sort_ratio` и `token_set_ratio` (artist+title) — нечувствителен к порядку слов: "Артист Трек" и "Трек Артист" дают одинаковый результат. Старые записи без метаданных матчатся по нормализованному ключу
+- **Поиск на SoundCloud**: проверка кэша → автоскачивание при совпадении ≥ 80%, иначе — выбор из топ-5
+- **Поиск на YouTube**: тот же флоу с кэшем — отдельная кнопка в меню. Логируется отдельно как `yt_search`
 - **Скачивание по ссылке**: вставь ссылку на трек или плейлист SoundCloud / YouTube
 - **Батчевое скачивание плейлиста**: авторизация в Яндекс Музыке → выбор плейлиста (включая **любимые треки**) → последовательное скачивание
   - Перед каждым треком — проверка кэша, при хите — мгновенная отправка с отметкой ⚡ в прогрессе
@@ -304,8 +316,8 @@ Open dashboard at `http://your-nas-ip:8501`
 - **Авто-повтор**: одна автоматическая попытка при сетевой ошибке
 
 **Общее**
-- Streamlit-дашборд с живым прогрессом батча и статистикой (на PostgreSQL)
-- PostgreSQL хранит события, состояние батча и **кэш треков** (таблица `track_cache` — `cache_key`, `file_id`, `artist`, `title`)
+- Streamlit-дашборд — переработан в **3 вкладки**: статистика YM / SC+YouTube / лог событий. SC и YouTube отслеживаются и отображаются раздельно
+- PostgreSQL хранит события, состояние батча и **кэш file_id треков** (таблица `track_cache` — `cache_key`, `file_id`, `artist`, `title`)
 - Redis FSM-хранилище с graceful fallback на MemoryStorage
 - Middleware: throttling + защита от нажатия устаревших кнопок
 
@@ -454,11 +466,11 @@ sudo docker run --rm \
 
 ### 📊 Дашборд
 
-Streamlit-дашборд читает из PostgreSQL и включает:
-- Статистику экспортов за всё время и по дням
-- Метрики SC-поиска и батч-загрузок
-- **🔴 Live-прогресс батча**: прогресс-бар, текущий скачиваемый трек, список ненайденных в реальном времени
-- Таблицу последних событий с фильтрацией по периоду
+Streamlit-дашборд читает из PostgreSQL и разбит на **3 вкладки**:
+- **📊 Яндекс Музыка** — статистика экспортов за всё время и по дням, разбивка по типам
+- **☁️ SC / YouTube** — раздельные метрики для SoundCloud и YouTube, статистика батча, топ скачанных треков
+- **📋 Лог событий** — таблица с фильтрацией по периоду, SC и YT поиски отображаются раздельно (`sc_search` / `yt_search`)
+- **🔴 Live-прогресс батча** (всегда вверху): прогресс-бар, текущий трек, список ненайденных в реальном времени
 
 **Локально:**
 ```bash
