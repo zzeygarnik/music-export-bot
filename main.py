@@ -9,7 +9,7 @@ from aiogram.types import BotCommand
 
 from config import settings
 from bot.handlers import router
-from bot.middleware import ThrottlingMiddleware, StaleButtonMiddleware, CallbackAnswerMiddleware
+from bot.middleware import BanMiddleware, ThrottlingMiddleware, StaleButtonMiddleware, CallbackAnswerMiddleware
 from utils import db
 
 log = logging.getLogger(__name__)
@@ -53,6 +53,8 @@ async def main() -> None:
     )
     bot = Bot(token=settings.BOT_TOKEN, session=session)
     dp = Dispatcher(storage=_build_storage())
+    dp.message.middleware(BanMiddleware())
+    dp.callback_query.middleware(BanMiddleware())
     dp.message.middleware(ThrottlingMiddleware(rate_limit=0.7))
     dp.callback_query.middleware(ThrottlingMiddleware(rate_limit=0.7))
     dp.callback_query.middleware(StaleButtonMiddleware())
@@ -61,6 +63,7 @@ async def main() -> None:
 
     await bot.set_my_commands([
         BotCommand(command="start", description="Главное меню"),
+        BotCommand(command="admin", description="Админ-панель"),
     ])
     log.info("Bot started")
     await dp.start_polling(bot, allowed_updates=["message", "callback_query"])

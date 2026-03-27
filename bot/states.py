@@ -38,3 +38,9 @@ class SCBatchFlow(StatesGroup):
     sc_resume_input = State()      # user types track name to resume from
     sc_resume_confirm = State()    # bot shows found track, user confirms
     sc_downloading = State()       # batch download in progress
+
+
+class AdminFlow(StatesGroup):
+    menu = State()       # browsing admin panel (stats/logs/batch/bans)
+    batch_add = State()  # waiting for user_id to add to batch whitelist
+    ban_input = State()  # waiting for user_id to ban

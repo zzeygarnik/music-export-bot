@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     #   "*" — enabled for everyone
     #   "123456789,@username" — only listed user IDs or @usernames
     BATCH_ALLOWED_USERS: str = "*"
+    ADMIN_ID: int = 0  # Telegram user_id of the bot admin (0 = disabled)
 
     def is_batch_allowed(self, user_id: int, username: str | None) -> bool:
         val = self.BATCH_ALLOWED_USERS.strip()
@@ -33,7 +34,7 @@ class Settings(BaseSettings):
                     pass
         return False
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 
 settings = Settings()
