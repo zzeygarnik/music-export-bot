@@ -5,8 +5,34 @@ from typing import Any, Awaitable, Callable
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject, Message, CallbackQuery
 
+from config import settings
+from utils import db
+
 # Callbacks older than this are considered stale and silently rejected.
 _CALLBACK_MAX_AGE_SECONDS = 300  # 5 minutes
+
+
+class BanMiddleware(BaseMiddleware):
+    """Block banned users before any handler runs. Admin is always exempt."""
+
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
+        data: dict[str, Any],
+    ) -> Any:
+        user = getattr(event, "from_user", None)
+        if user and user.id != settings.ADMIN_ID:
+            try:
+                if db.is_banned(user.id):
+                    if isinstance(event, CallbackQuery):
+                        await event.answer("⛔ Ты заблокирован.", show_alert=True)
+                    elif isinstance(event, Message):
+                        await event.answer("⛔ Ты заблокирован и не можешь пользоваться этим ботом.")
+                    return
+            except Exception:
+                pass  # DB unavailable — fail open
+        return await handler(event, data)
 
 
 class ThrottlingMiddleware(BaseMiddleware):
