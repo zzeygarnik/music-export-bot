@@ -44,9 +44,9 @@ from bot.keyboards import (
 from core.ym_source import YandexMusicSource
 from core import sc_downloader
 from core.sc_downloader import SCResult
-from utils.export import build_txt_file, cleanup
+from utils.export import build_txt_file, build_csv_file, cleanup
 from utils.event_log import log_event, update_batch_live
-from utils.db import get_cached_file_id, save_cached_file_id, search_cache_fuzzy
+from utils.db import get_cached_file_id, save_cached_file_id, delete_cached_file_id, search_cache_fuzzy
 
 router = Router()
 log = logging.getLogger(__name__)
@@ -145,6 +145,12 @@ def _make_cache_key(artist: str, title: str) -> str:
     """Normalised lookup key for the track_cache table."""
     s = f"{artist} {title}".lower()
     return re.sub(r'[^\w\s]', '', s).strip()
+
+
+def _progress_bar(current: int, total: int, width: int = 10) -> str:
+    """Return a text progress bar, e.g. '████░░░░░░ 4/10'."""
+    filled = round(width * current / total) if total else 0
+    return f"{'█' * filled}{'░' * (width - filled)} {current}/{total}"
 
 
 def _filter_by_artist(tracks: list[dict], query: str, threshold: int = 70) -> list[dict]:
@@ -1156,6 +1162,29 @@ async def on_sc_stop(call: CallbackQuery) -> None:
         await call.answer("Нет активного скачивания.", show_alert=True)
 
 
+# ── ExportFlow: CSV export ────────────────────────────────────────────────────
+
+@router.callback_query(F.data == "export:csv")
+async def on_export_csv(call: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    tracks = data.get("sc_tracks") or []
+    if not tracks:
+        await call.answer("Данные плейлиста недоступны. Введи /start чтобы начать заново.", show_alert=True)
+        return
+
+    await call.answer()
+    tmp_path = await build_csv_file(tracks)
+    try:
+        async with aiofiles.open(tmp_path, "rb") as f:
+            content = await f.read()
+        await call.message.answer_document(
+            document=BufferedInputFile(content, filename="tracks.csv"),
+            caption=f"📊 CSV-экспорт: {len(tracks)} треков (artist, title, album, year).",
+        )
+    finally:
+        await cleanup(tmp_path)
+
+
 # ── ExportFlow: artist filter ─────────────────────────────────────────────────
 
 @router.callback_query(F.data == "export:filter_artist")
@@ -1728,6 +1757,8 @@ async def _sc_download_and_send(
             return
         except Exception as e:
             log.warning("SC send_audio (cache) failed user=%s, falling back to download: %s", user_id, e)
+            if cache_key:
+                delete_cached_file_id(cache_key)
 
     try:
         path, meta = await sc_downloader.download(result.url, user_id)
@@ -1825,7 +1856,7 @@ async def _run_batch_download(
             })
             query = f"{artist} {title}"
             direct_url = track.get("url")
-            cache_key = _make_cache_key(artist, title) if (artist or title) and not direct_url else None
+            cache_key = _make_cache_key(artist, title) if (artist or title) else None
 
             # ── Cache lookup (YM-sourced tracks only) ─────────────────────────
             if cache_key:
@@ -1840,7 +1871,7 @@ async def _run_batch_download(
                         downloaded_count += 1
                         try:
                             await progress_msg.edit_text(
-                                f"⏳ {i}/{total} — ⚡ {artist} — {title}",
+                                f"⚡ {_progress_bar(i, total)} — {artist} — {title}",
                                 reply_markup=sc_stop_keyboard(),
                             )
                         except Exception:
@@ -1848,6 +1879,7 @@ async def _run_batch_download(
                         continue
                     except Exception as e:
                         log.warning("SC batch send_audio (cache) failed '%s': %s", query, e)
+                        delete_cached_file_id(cache_key)
                         # fall through to normal download
 
             if direct_url:
@@ -1909,7 +1941,7 @@ async def _run_batch_download(
             if sent:
                 try:
                     await progress_msg.edit_text(
-                        f"⏳ {i}/{total} — {artist} — {title}",
+                        f"⏳ {_progress_bar(i, total)} — {artist} — {title}",
                         reply_markup=sc_stop_keyboard(),
                     )
                 except Exception:

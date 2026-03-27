@@ -21,7 +21,7 @@ class SCResult:
     duration: int  # seconds
 
 
-def _search_sync(query: str, max_results: int = 5) -> list[SCResult]:
+def _search_sync(query: str, max_results: int = 5, platform: str = "sc") -> list[SCResult]:
     import yt_dlp  # lazy import — optional dep
 
     # extract_flat breaks scsearch (entries come back without webpage_url).
@@ -33,17 +33,16 @@ def _search_sync(query: str, max_results: int = 5) -> list[SCResult]:
         "ignoreerrors": True,
         **_proxy_opts(),
     }
-    search_query = f"scsearch{max_results}:{query}"
     with yt_dlp.YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(search_query, download=False)
+        info = ydl.extract_info(f"{platform}search{max_results}:{query}", download=False)
 
     if not info:
-        log.warning("SC search: extract_info returned None for query=%r", query)
+        log.warning("%s search: extract_info returned None for query=%r", platform.upper(), query)
         return []
 
     entries = info.get("entries") or []
     if not entries:
-        log.warning("SC search: no entries for query=%r, info keys=%s", query, list(info.keys()))
+        log.warning("%s search: no entries for query=%r, info keys=%s", platform.upper(), query, list(info.keys()))
         return []
 
     results: list[SCResult] = []
@@ -52,7 +51,7 @@ def _search_sync(query: str, max_results: int = 5) -> list[SCResult]:
             continue
         url = entry.get("webpage_url") or entry.get("url") or ""
         if not url:
-            log.debug("SC search: entry without url, title=%r", entry.get("title"))
+            log.debug("%s search: entry without url, title=%r", platform.upper(), entry.get("title"))
             continue
         results.append(SCResult(
             url=url,
@@ -60,7 +59,7 @@ def _search_sync(query: str, max_results: int = 5) -> list[SCResult]:
             artist=entry.get("uploader") or entry.get("channel") or "",
             duration=int(entry.get("duration") or 0),
         ))
-    log.info("SC search query=%r → %d results", query, len(results))
+    log.info("%s search query=%r → %d results", platform.upper(), query, len(results))
     return results
 
 
@@ -105,47 +104,12 @@ def _extract_url_info_sync(url: str) -> dict:
 
 async def search(query: str, max_results: int = 5) -> list[SCResult]:
     """Search SoundCloud, return up to max_results SCResult objects."""
-    return await asyncio.to_thread(_search_sync, query, max_results)
-
-
-def _yt_search_sync(query: str, max_results: int = 5) -> list[SCResult]:
-    import yt_dlp
-
-    opts = {
-        "quiet": False,
-        "no_warnings": False,
-        "noplaylist": False,
-        "ignoreerrors": True,
-        **_proxy_opts(),
-    }
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(f"ytsearch{max_results}:{query}", download=False)
-
-    if not info:
-        log.warning("YT search: extract_info returned None for query=%r", query)
-        return []
-
-    entries = info.get("entries") or []
-    results: list[SCResult] = []
-    for entry in entries:
-        if not entry:
-            continue
-        url = entry.get("webpage_url") or entry.get("url") or ""
-        if not url:
-            continue
-        results.append(SCResult(
-            url=url,
-            title=entry.get("title") or "",
-            artist=entry.get("uploader") or entry.get("channel") or "",
-            duration=int(entry.get("duration") or 0),
-        ))
-    log.info("YT search query=%r → %d results", query, len(results))
-    return results
+    return await asyncio.to_thread(_search_sync, query, max_results, "sc")
 
 
 async def search_youtube(query: str, max_results: int = 5) -> list[SCResult]:
     """Search YouTube, return up to max_results SCResult objects."""
-    return await asyncio.to_thread(_yt_search_sync, query, max_results)
+    return await asyncio.to_thread(_search_sync, query, max_results, "yt")
 
 
 async def download(url: str, user_id: int) -> tuple[str, dict]:

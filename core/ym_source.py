@@ -186,5 +186,8 @@ def _tracks_to_dicts(tracks) -> list[dict]:
         if t is None:
             continue
         artists = ", ".join(a.name for a in t.artists) if t.artists else "Неизвестен"
-        result.append({"artist": artists, "title": t.title or "Без названия"})
+        album = t.albums[0].title if t.albums else ""
+        year = str(t.albums[0].year) if t.albums and t.albums[0].year else ""
+        result.append({"artist": artists, "title": t.title or "Без названия",
+                       "album": album, "year": year})
     return result
