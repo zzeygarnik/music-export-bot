@@ -237,7 +237,7 @@ def sc_batch_token_keyboard() -> InlineKeyboardMarkup:
 
 
 def sc_offer_extended_keyboard() -> InlineKeyboardMarkup:
-    """Shown after YM export .txt — download on SC + filter by artist."""
+    """Shown after YM export .txt — download on SC + filter by artist + CSV."""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
             text="Скачать с SoundCloud",
@@ -248,6 +248,10 @@ def sc_offer_extended_keyboard() -> InlineKeyboardMarkup:
             text="Фильтр по исполнителю",
             callback_data="export:filter_artist",
             icon_custom_emoji_id="6037397706505195857",
+        )],
+        [InlineKeyboardButton(
+            text="Экспорт в CSV",
+            callback_data="export:csv",
         )],
     ])
 

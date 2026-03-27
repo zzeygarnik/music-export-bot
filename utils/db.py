@@ -33,6 +33,7 @@ def _create_tables() -> None:
     conn = get_conn()
     try:
         with conn.cursor() as cur:
+            cur.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS events (
                     id        SERIAL PRIMARY KEY,
@@ -75,6 +76,10 @@ def _create_tables() -> None:
             # Add artist/title columns if they don't exist yet (safe to run repeatedly)
             cur.execute("ALTER TABLE track_cache ADD COLUMN IF NOT EXISTS artist TEXT DEFAULT ''")
             cur.execute("ALTER TABLE track_cache ADD COLUMN IF NOT EXISTS title  TEXT DEFAULT ''")
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS track_cache_title_trgm_idx
+                ON track_cache USING GIN (title gin_trgm_ops)
+            """)
         conn.commit()
     finally:
         put_conn(conn)
@@ -121,15 +126,43 @@ def save_cached_file_id(cache_key: str, file_id: str, source: str,
         put_conn(conn)
 
 
-def search_cache_fuzzy(query: str, threshold: int = 75) -> list[dict]:
-    """
-    Fuzzy-search track_cache by title (and full artist+title).
-    Returns up to 5 best matches above threshold, sorted by score desc.
-    """
+def delete_cached_file_id(cache_key: str) -> None:
+    """Remove a stale/expired file_id from the cache."""
     conn = get_conn()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT cache_key, file_id, artist, title FROM track_cache")
+            cur.execute("DELETE FROM track_cache WHERE cache_key = %s", (cache_key,))
+        conn.commit()
+    except Exception as e:
+        log.warning("track_cache delete failed: %s", e)
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+    finally:
+        put_conn(conn)
+
+
+def search_cache_fuzzy(query: str, threshold: int = 75) -> list[dict]:
+    """
+    Fuzzy-search track_cache by title (and full artist+title).
+    Uses pg_trgm to pre-filter candidates on PG side, then re-scores with rapidfuzz.
+    Returns up to 5 best matches above threshold, sorted by score desc.
+    """
+    conn = get_conn()
+    q = query.lower().strip()
+    try:
+        with conn.cursor() as cur:
+            # pg_trgm pre-filter: similarity threshold ~0.2 casts a wide net,
+            # rapidfuzz does the precise scoring below. Also fetch legacy rows
+            # without title (title = '') via separate OR branch.
+            cur.execute("""
+                SELECT cache_key, file_id, artist, title
+                FROM track_cache
+                WHERE (title <> '' AND (title %% %s OR (artist || ' ' || title) %% %s))
+                   OR title = ''
+                LIMIT 100
+            """, (q, q))
             rows = cur.fetchall()
     except Exception as e:
         log.warning("track_cache fuzzy search failed: %s", e)
@@ -137,11 +170,9 @@ def search_cache_fuzzy(query: str, threshold: int = 75) -> list[dict]:
     finally:
         put_conn(conn)
 
-    q = query.lower().strip()
     scored = []
     top_misses = []
     for cache_key, file_id, artist, title in rows:
-        # для старых записей без метаданных матчим по cache_key
         if title:
             full = f"{artist} {title}".lower()
             score = max(
@@ -165,9 +196,9 @@ def search_cache_fuzzy(query: str, threshold: int = 75) -> list[dict]:
         log.info("search_cache_fuzzy: query=%r no hits (threshold=%d), top misses: %s",
                  q, threshold, top_misses[:3])
     elif scored:
-        log.info("search_cache_fuzzy: query=%r found %d hits", q, len(scored))
+        log.info("search_cache_fuzzy: query=%r found %d hits (candidates=%d)", q, len(scored), len(rows))
     else:
-        log.info("search_cache_fuzzy: query=%r no hits and no near misses (rows=%d)", q, len(rows))
+        log.info("search_cache_fuzzy: query=%r no hits (candidates=%d)", q, len(rows))
 
     scored.sort(key=lambda x: x[0], reverse=True)
     return [item for _, item in scored[:5]]
