@@ -71,6 +71,35 @@ def export_type_keyboard() -> InlineKeyboardMarkup:
             callback_data="export:by_link",
             icon_custom_emoji_id="6042011682497106307",
         )],
+        [InlineKeyboardButton(
+            text="Экспорт в CSV",
+            callback_data="export:set_fmt_csv",
+        )],
+    ])
+
+
+def export_type_csv_keyboard() -> InlineKeyboardMarkup:
+    """Same source options but format is CSV — shown after user picks CSV mode."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="Любимые треки",
+            callback_data="export:liked",
+            icon_custom_emoji_id="6041731551845159060",
+        )],
+        [InlineKeyboardButton(
+            text="Мои плейлисты",
+            callback_data="export:playlists",
+            icon_custom_emoji_id="5870801517140775623",
+        )],
+        [InlineKeyboardButton(
+            text="Плейлист по ссылке",
+            callback_data="export:by_link",
+            icon_custom_emoji_id="6042011682497106307",
+        )],
+        [InlineKeyboardButton(
+            text="← Назад (TXT)",
+            callback_data="export:set_fmt_txt",
+        )],
     ])
 
 

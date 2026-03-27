@@ -40,6 +40,7 @@ from bot.keyboards import (
     ym_share_filter_result_keyboard,
     ym_share_seek_confirm_keyboard,
     cache_results_keyboard,
+    export_type_csv_keyboard,
 )
 from core.ym_source import YandexMusicSource
 from core import sc_downloader
@@ -1184,6 +1185,10 @@ async def on_export_csv(call: CallbackQuery, state: FSMContext) -> None:
     finally:
         await cleanup(tmp_path)
 
+    if await state.get_state() is not None:
+        await call.message.answer(_EXPORT_MENU_TEXT, reply_markup=export_type_keyboard())
+        await state.set_state(ExportFlow.choosing_export_type)
+
 
 # ── ExportFlow: artist filter ─────────────────────────────────────────────────
 
@@ -1243,6 +1248,25 @@ async def on_export_filter_input(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "export:back_to_menu")
 async def on_export_back_to_menu(call: CallbackQuery, state: FSMContext) -> None:
+    await state.update_data(export_format="txt")
+    await call.message.edit_text(_EXPORT_MENU_TEXT, reply_markup=export_type_keyboard())
+    await state.set_state(ExportFlow.choosing_export_type)
+
+
+@router.callback_query(F.data == "export:set_fmt_csv")
+async def on_export_set_fmt_csv(call: CallbackQuery, state: FSMContext) -> None:
+    await state.update_data(export_format="csv")
+    await call.message.edit_text(
+        "📊 Формат: <b>CSV</b> (artist, title, album, year).\n\nВыбери источник:",
+        parse_mode="HTML",
+        reply_markup=export_type_csv_keyboard(),
+    )
+    await state.set_state(ExportFlow.choosing_export_type)
+
+
+@router.callback_query(F.data == "export:set_fmt_txt")
+async def on_export_set_fmt_txt(call: CallbackQuery, state: FSMContext) -> None:
+    await state.update_data(export_format="txt")
     await call.message.edit_text(_EXPORT_MENU_TEXT, reply_markup=export_type_keyboard())
     await state.set_state(ExportFlow.choosing_export_type)
 
@@ -1648,14 +1672,28 @@ async def _deliver_tracks(
     if offer_sc:
         await state.update_data(sc_tracks=tracks)
 
-    tmp_path = await build_txt_file(tracks, filename)
+    data_pre = await state.get_data()
+    fmt = data_pre.get("export_format", "txt")
+    await state.update_data(export_format="txt")  # reset after use
+
+    if fmt == "csv":
+        out_filename = filename.replace(".txt", ".csv")
+        tmp_path = await build_csv_file(tracks, out_filename)
+        caption = f"📊 CSV-экспорт: {len(tracks)} треков (artist, title, album, year)."
+        reply_markup = None
+    else:
+        out_filename = filename
+        tmp_path = await build_txt_file(tracks, out_filename)
+        caption = f"✅ Готово! Экспортировано треков: {len(tracks)}."
+        reply_markup = sc_offer_extended_keyboard() if offer_sc else None
+
     try:
         async with aiofiles.open(tmp_path, "rb") as f:
             content = await f.read()
         await call.message.answer_document(
-            document=BufferedInputFile(content, filename=filename),
-            caption=f"✅ Готово! Экспортировано треков: {len(tracks)}.",
-            reply_markup=sc_offer_extended_keyboard() if offer_sc else None,
+            document=BufferedInputFile(content, filename=out_filename),
+            caption=caption,
+            reply_markup=reply_markup,
         )
         try:
             await call.message.delete()
@@ -1695,14 +1733,28 @@ async def _deliver_tracks_msg(
     if offer_sc:
         await state.update_data(sc_tracks=tracks)
 
-    tmp_path = await build_txt_file(tracks, filename)
+    data_pre = await state.get_data()
+    fmt = data_pre.get("export_format", "txt")
+    await state.update_data(export_format="txt")  # reset after use
+
+    if fmt == "csv":
+        out_filename = filename.replace(".txt", ".csv")
+        tmp_path = await build_csv_file(tracks, out_filename)
+        caption = f"📊 CSV-экспорт: {len(tracks)} треков (artist, title, album, year)."
+        reply_markup = None
+    else:
+        out_filename = filename
+        tmp_path = await build_txt_file(tracks, out_filename)
+        caption = f"✅ Готово! Экспортировано треков: {len(tracks)}."
+        reply_markup = sc_offer_extended_keyboard() if offer_sc else None
+
     try:
         async with aiofiles.open(tmp_path, "rb") as f:
             content = await f.read()
         await status_msg.answer_document(
-            document=BufferedInputFile(content, filename=filename),
-            caption=f"✅ Готово! Экспортировано треков: {len(tracks)}.",
-            reply_markup=sc_offer_extended_keyboard() if offer_sc else None,
+            document=BufferedInputFile(content, filename=out_filename),
+            caption=caption,
+            reply_markup=reply_markup,
         )
         try:
             await status_msg.delete()
