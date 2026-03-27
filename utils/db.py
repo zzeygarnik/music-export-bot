@@ -389,7 +389,7 @@ def get_admin_stats() -> dict:
                 cur.execute(f"""
                     SELECT
                         COUNT(DISTINCT user_hash),
-                        COALESCE(SUM(CASE WHEN action IN ('sc_search','sc_batch') AND result='success'
+                        COALESCE(SUM(CASE WHEN action IN ('sc_search','yt_search','sc_batch') AND result='success'
                                          THEN COALESCE(track_count,1) ELSE 0 END), 0),
                         COUNT(CASE WHEN action='sc_batch' AND result IN ('success','stopped') THEN 1 END),
                         COUNT(CASE WHEN result='error' THEN 1 END)
@@ -404,7 +404,7 @@ def get_admin_stats() -> dict:
                 SELECT username, SUM(COALESCE(track_count,1)) as total
                 FROM events
                 WHERE ts >= NOW() - INTERVAL '7 days'
-                  AND action IN ('sc_search','sc_batch')
+                  AND action IN ('sc_search','yt_search','sc_batch')
                   AND result IN ('success','stopped')
                   AND username IS NOT NULL
                 GROUP BY username
