@@ -28,11 +28,11 @@ def _is_admin(user_id: int) -> bool:
 def _menu_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="📊 Статистика", callback_data="admin:stats"),
-            InlineKeyboardButton(text="📋 Логи", callback_data="admin:logs"),
+            InlineKeyboardButton(text="Статистика", callback_data="admin:stats"),
+            InlineKeyboardButton(text="Логи", callback_data="admin:logs"),
         ],
         [
-            InlineKeyboardButton(text="📥 Batch-доступ", callback_data="admin:batch"),
+            InlineKeyboardButton(text="Batch-доступ", callback_data="admin:batch"),
             InlineKeyboardButton(text="🚫 Баны", callback_data="admin:bans"),
         ],
     ])

@@ -16,13 +16,14 @@ Telegram bot with three modes: **export your Yandex Music library to `.txt`**, *
 
 ### ✨ Features
 
-**Yandex Music → .txt export**
+**Yandex Music → .txt / .csv export**
 - Export **liked tracks** in one tap
 - Export **any playlist** from your library
 - Export by **shared `lk.` link** (e.g. `music.yandex.ru/playlists/lk.UUID`)
 - OAuth token — stored in session RAM only, never written to disk
 - **Session** or **single-use** token retention modes
-- After playlist export — inline buttons to **download from SoundCloud** or **filter by artist**
+- Choose export format before receiving the file: **`.txt`** (one line per track) or **`.csv`** (artist, title, album, year — UTF-8 BOM, Excel-compatible)
+- After export — inline buttons to **download from SoundCloud** or **filter by artist**
 
 **Export playlist by link / embed** *(new)*
 - Send the bot an **iframe embed code** from the Yandex Music app ("Share → HTML code") or any direct playlist link
@@ -62,13 +63,19 @@ Telegram bot with three modes: **export your Yandex Music library to `.txt`**, *
 - **Download more** button after every single track
 - **Auto-retry**: one automatic retry on network error before giving up
 
+**Admin panel** (`/admin`, only for `ADMIN_ID`)
+- **📊 Stats** — today / last 7 days: unique users, tracks downloaded, batch sessions, errors + top 5 users by track count
+- **📋 Event log** — last 20 events with timestamp, username, action and result
+- **📥 Batch whitelist** — add / remove users (by numeric ID or forwarded message) who are allowed to run batch downloads; managed in PostgreSQL alongside the static `BATCH_ALLOWED_USERS` env var
+- **🚫 Bans** — ban any user by ID or forwarded message; banned users are blocked at middleware level before any handler runs; one-tap unban from the list
+
 **General**
 - Streamlit dashboard — redesigned with **3 tabs**: Yandex Music stats / SC+YouTube stats / Event log. SC and YouTube searches tracked and displayed separately
-- PostgreSQL stores events, live batch state, and the **track file_id cache** (`track_cache` table — `cache_key`, `file_id`, `artist`, `title`)
+- PostgreSQL stores events, live batch state, track file_id cache, banned users and batch whitelist
 - Redis FSM storage with graceful fallback to MemoryStorage
-- Throttling + stale-button guard middleware
-- **Batch access control** via `BATCH_ALLOWED_USERS` env var — disable for everyone, enable for all, or whitelist specific users by ID or `@username`
-- **Bot commands menu** registered on startup — `/start` appears in Telegram's command list and bottom-left button
+- Middleware stack: **Ban check** → Throttling → Stale-button guard → Callback auto-answer
+- **Batch access control**: `BATCH_ALLOWED_USERS` env var (`*` / `""` / static list) + DB whitelist managed via admin panel
+- **Bot commands menu** registered on startup — `/start` and `/admin` appear in Telegram's command list
 
 ### 🔄 User Flow
 
@@ -106,10 +113,17 @@ Telegram bot with three modes: **export your Yandex Music library to `.txt`**, *
 ```
 music-export-bot/
 ├── bot/
-│   ├── handlers.py       # aiogram handlers + FSM logic (YM + SC + YMShare + filter)
-│   ├── states.py         # ExportFlow + SCSearchFlow + SCBatchFlow + YMShareFlow
+│   ├── handlers/
+│   │   ├── __init__.py   # Combines all sub-routers in priority order
+│   │   ├── admin_router.py  # AdminFlow: stats, logs, batch whitelist, bans
+│   │   ├── common.py     # Shared globals, constants and helper functions
+│   │   ├── fallback.py   # Fallback handlers (registered last)
+│   │   ├── sc_router.py  # SCSearchFlow + SCBatchFlow + download helpers
+│   │   ├── ym_router.py  # ExportFlow: YM export, delivery, filter
+│   │   └── yms_router.py # YMShareFlow: shared playlist by link/embed
+│   ├── states.py         # ExportFlow + SCSearchFlow + SCBatchFlow + YMShareFlow + AdminFlow
 │   ├── keyboards.py      # Inline keyboards
-│   └── middleware.py     # Throttling + StaleButton + CallbackAnswer
+│   └── middleware.py     # BanMiddleware + Throttling + StaleButton + CallbackAnswer
 ├── core/
 │   ├── base_source.py    # AbstractMusicSource (extensible)
 │   ├── ym_source.py      # Yandex Music source + batch fetch + share link parsing
@@ -156,10 +170,13 @@ POSTGRES_URL=postgresql://user:password@host:5432/music_bot
 YM_BOT_TOKEN=
 
 # Batch playlist download access control (default: * = everyone)
-#   ""                     — disabled for all users
+#   ""                     — disabled for all users (DB whitelist still applies)
 #   "*"                    — enabled for all users
-#   "123456789,@username"  — only listed Telegram user IDs or @usernames
+#   "123456789,@username"  — only listed Telegram user IDs or @usernames + DB whitelist
 BATCH_ALLOWED_USERS=*
+
+# Telegram user_id of the bot admin — grants access to /admin panel (0 = disabled)
+ADMIN_ID=0
 ```
 
 > **Note on `SC_PROXY`:** If Telegram is blocked by your provider, this variable is required — without it the bot won't connect to Telegram at all. Requires `aiohttp-socks` (already in `requirements.txt`).
@@ -278,13 +295,14 @@ Open dashboard at `http://your-nas-ip:8501`
 
 ### ✨ Возможности
 
-**Яндекс Музыка → экспорт в .txt**
+**Яндекс Музыка → экспорт в .txt / .csv**
 - Экспорт **лайкнутых треков** в один клик
 - Экспорт **любого плейлиста** из библиотеки
 - Экспорт по **`lk.`-ссылке** (например `music.yandex.ru/playlists/lk.UUID`)
 - OAuth-токен хранится только в памяти — никогда не пишется на диск
 - Два режима хранения токена: **на весь сеанс** или **только один экспорт**
-- После экспорта плейлиста — кнопки «📥 Скачать с SoundCloud» и «Фильтр по исполнителю»
+- Выбор формата перед получением файла: **`.txt`** (одна строка — один трек) или **`.csv`** (artist, title, album, year — UTF-8 BOM, совместимо с Excel)
+- После экспорта — кнопки «📥 Скачать с SoundCloud» и «Фильтр по исполнителю»
 
 **Экспорт плейлиста по ссылке** *(новое)*
 - Отправь боту **iframe-код** из приложения Яндекс Музыки («Поделиться → HTML-код для встраивания») или прямую ссылку на плейлист
@@ -323,13 +341,19 @@ Open dashboard at `http://your-nas-ip:8501`
 - Кнопка **"Скачать ещё"** после каждого одиночного скачивания
 - **Авто-повтор**: одна автоматическая попытка при сетевой ошибке
 
+**Админ-панель** (`/admin`, только для `ADMIN_ID`)
+- **📊 Статистика** — сегодня / 7 дней: уникальных пользователей, треков скачано, батч-сессий, ошибок + топ-5 пользователей по трекам
+- **📋 Лог событий** — последние 20 событий с временем, именем пользователя, действием и результатом
+- **📥 Batch-вайтлист** — добавление / удаление пользователей (по числовому ID или пересланному сообщению), которым разрешено батчевое скачивание; хранится в PostgreSQL вместе со статическим `BATCH_ALLOWED_USERS`
+- **🚫 Баны** — заблокировать любого пользователя по ID или пересланному сообщению; заблокированные отсекаются на уровне middleware до любого хендлера; разблокировка в один тап из списка
+
 **Общее**
 - Streamlit-дашборд — переработан в **3 вкладки**: статистика YM / SC+YouTube / лог событий. SC и YouTube отслеживаются и отображаются раздельно
-- PostgreSQL хранит события, состояние батча и **кэш file_id треков** (таблица `track_cache` — `cache_key`, `file_id`, `artist`, `title`)
+- PostgreSQL хранит события, состояние батча, кэш file_id треков, заблокированных пользователей и batch-вайтлист
 - Redis FSM-хранилище с graceful fallback на MemoryStorage
-- Middleware: throttling + защита от нажатия устаревших кнопок
-- **Управление доступом к батчу** через env var `BATCH_ALLOWED_USERS` — отключить для всех, разрешить всем, или вайтлист по ID / `@username`
-- **Bot commands menu** регистрируется при старте — `/start` отображается в списке команд и кнопке слева снизу
+- Стек middleware: **проверка бана** → throttling → защита от устаревших кнопок → авто-ответ на callback
+- **Управление доступом к батчу**: env var `BATCH_ALLOWED_USERS` (`*` / `""` / статический список) + DB-вайтлист через админку
+- **Bot commands menu** регистрируется при старте — `/start` и `/admin` отображаются в списке команд
 
 ### 🔄 Флоу пользователя
 
@@ -367,10 +391,17 @@ Open dashboard at `http://your-nas-ip:8501`
 ```
 music-export-bot/
 ├── bot/
-│   ├── handlers.py       # Хендлеры aiogram + FSM (YM + SC + YMShare + фильтр)
-│   ├── states.py         # ExportFlow + SCSearchFlow + SCBatchFlow + YMShareFlow
+│   ├── handlers/
+│   │   ├── __init__.py      # Объединяет все sub-роутеры в правильном порядке
+│   │   ├── admin_router.py  # AdminFlow: статистика, логи, batch-вайтлист, баны
+│   │   ├── common.py        # Общие глобальные переменные, константы и хелперы
+│   │   ├── fallback.py      # Fallback-хендлеры (регистрируются последними)
+│   │   ├── sc_router.py     # SCSearchFlow + SCBatchFlow + хелперы скачивания
+│   │   ├── ym_router.py     # ExportFlow: экспорт YM, доставка файла, фильтр
+│   │   └── yms_router.py    # YMShareFlow: плейлист по ссылке/embed
+│   ├── states.py         # ExportFlow + SCSearchFlow + SCBatchFlow + YMShareFlow + AdminFlow
 │   ├── keyboards.py      # Inline-клавиатуры
-│   └── middleware.py     # Throttling + StaleButton + CallbackAnswer
+│   └── middleware.py     # BanMiddleware + Throttling + StaleButton + CallbackAnswer
 ├── core/
 │   ├── base_source.py    # AbstractMusicSource (расширяемо)
 │   ├── ym_source.py      # Источник YM + батчевый fetch + парсинг share-ссылок
@@ -416,10 +447,13 @@ POSTGRES_URL=postgresql://user:password@host:5432/music_bot
 YM_BOT_TOKEN=
 
 # Управление доступом к батчевому скачиванию плейлистов (дефолт: * = все)
-#   ""                     — отключено для всех
+#   ""                     — отключено для всех (DB-вайтлист всё ещё работает)
 #   "*"                    — разрешено всем
-#   "123456789,@username"  — только перечисленные Telegram user ID или @username
+#   "123456789,@username"  — только перечисленные Telegram user ID или @username + DB-вайтлист
 BATCH_ALLOWED_USERS=*
+
+# Telegram user_id владельца бота — даёт доступ к /admin панели (0 = отключено)
+ADMIN_ID=0
 ```
 
 > **Про `SC_PROXY`:** Если Telegram заблокирован у провайдера — переменная обязательна, без неё бот не подключится вообще. Требует `aiohttp-socks` (уже включён в `requirements.txt`).
