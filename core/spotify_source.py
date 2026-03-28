@@ -10,13 +10,14 @@ log = logging.getLogger(__name__)
 _OAUTH_SCOPE = "user-library-read"
 
 
-def _parse_playlist_id(url_or_id: str) -> str | None:
-    """Extract Spotify playlist ID from URL or return bare ID as-is."""
-    m = re.search(r'spotify\.com/playlist/([A-Za-z0-9]+)', url_or_id)
+def _parse_spotify_item(url_or_id: str) -> tuple[str, str] | None:
+    """Return (type, id) where type is 'playlist' or 'album'."""
+    m = re.search(r'spotify\.com/(playlist|album)/([A-Za-z0-9]+)', url_or_id)
     if m:
-        return m.group(1)
+        return m.group(1), m.group(2)
+    # bare ID — assume playlist
     if re.match(r'^[A-Za-z0-9]{10,30}$', url_or_id.strip()):
-        return url_or_id.strip()
+        return 'playlist', url_or_id.strip()
     return None
 
 
@@ -80,6 +81,26 @@ class SpotifySource:
             results = sp.next(results) if results.get("next") else None
         return tracks
 
+    def _fetch_album_sync(self, album_id: str) -> tuple[str, list[dict]]:
+        import spotipy
+        from spotipy.oauth2 import SpotifyClientCredentials
+        sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials(
+            client_id=self.client_id,
+            client_secret=self.client_secret,
+        ))
+        album = sp.album(album_id)
+        title = album.get("name", "Spotify Album")
+        tracks: list[dict] = []
+        results = sp.album_tracks(album_id, limit=50)
+        while results:
+            for item in (results.get("items") or []):
+                if not item:
+                    continue
+                artist = ", ".join(a["name"] for a in item.get("artists", []))
+                tracks.append({"artist": artist, "title": item["name"]})
+            results = sp.next(results) if results.get("next") else None
+        return title, tracks
+
     def _fetch_playlist_sync(self, playlist_id: str) -> tuple[str, list[dict]]:
         import spotipy
         from spotipy.oauth2 import SpotifyClientCredentials
@@ -108,7 +129,10 @@ class SpotifySource:
         return await asyncio.to_thread(self._fetch_liked_tracks_sync, access_token)
 
     async def get_playlist(self, url_or_id: str) -> tuple[str, list[dict]]:
-        playlist_id = _parse_playlist_id(url_or_id)
-        if not playlist_id:
-            raise ValueError("Не удалось распознать ссылку на плейлист Spotify.")
-        return await asyncio.to_thread(self._fetch_playlist_sync, playlist_id)
+        item = _parse_spotify_item(url_or_id)
+        if not item:
+            raise ValueError("Не удалось распознать ссылку на плейлист или альбом Spotify.")
+        item_type, item_id = item
+        if item_type == "album":
+            return await asyncio.to_thread(self._fetch_album_sync, item_id)
+        return await asyncio.to_thread(self._fetch_playlist_sync, item_id)

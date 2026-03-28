@@ -20,7 +20,7 @@ def service_keyboard() -> InlineKeyboardMarkup:
             icon_custom_emoji_id="6039802767931871481",
         )],
         [InlineKeyboardButton(
-            text="Плейлист по ссылке",
+            text="Плейлист / Альбом по ссылке",
             callback_data="service:share_pick",
             icon_custom_emoji_id="6042011682497106307",
         )],
@@ -37,7 +37,7 @@ def export_source_keyboard() -> InlineKeyboardMarkup:
 
 def share_source_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎵 Яндекс Музыка (ссылка / embed)", callback_data="service:share")],
+        [InlineKeyboardButton(text="🎵 Яндекс Музыка", callback_data="service:share")],
         [InlineKeyboardButton(text="🟢 Spotify", callback_data="service:spotify")],
         [InlineKeyboardButton(text="← Назад", callback_data="service:back_to_main")],
     ])

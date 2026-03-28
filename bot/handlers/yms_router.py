@@ -88,11 +88,12 @@ async def on_yms_waiting(message: Message, state: FSMContext) -> None:
     url = _parse_ym_share(message.text)
     if not url:
         await message.answer(
-            "❌ Не удалось распознать плейлист.\n\n"
-            "Отправь HTML-код (‹iframe ...›) из кнопки «Поделиться» в приложении\n"
-            "или прямую ссылку вида:\n"
+            "❌ Не удалось распознать ссылку.\n\n"
+            "Поддерживаются:\n"
+            "• <code>music.yandex.ru/album/НОМЕР</code>\n"
             "• <code>music.yandex.ru/users/ИМЯ/playlists/НОМЕР</code>\n"
-            "• <code>music.yandex.ru/playlists/lk.UUID</code>",
+            "• <code>music.yandex.ru/playlists/lk.UUID</code>\n"
+            "• Embed-код (iframe) из кнопки «Поделиться»",
             parse_mode="HTML",
             reply_markup=ym_share_cancel_keyboard(),
         )
@@ -101,7 +102,7 @@ async def on_yms_waiting(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     token = settings.YM_BOT_TOKEN or data.get("yms_token", "")
 
-    status_msg = await message.answer("⏳ Загружаю плейлист…")
+    status_msg = await message.answer("⏳ Загружаю…")
     try:
         title, tracks = await YandexMusicSource(token).get_playlist_by_url(url)
     except ValueError as e:
@@ -131,7 +132,7 @@ async def on_yms_waiting(message: Message, state: FSMContext) -> None:
     await state.update_data(yms_tracks=tracks, yms_playlist_title=title)
     safe_title = title[:50] if title else "Плейлист"
     await status_msg.edit_text(
-        f'✅ Загружен плейлист <b>«{safe_title}»</b> — {len(tracks)} треков.\n\nЧто делаем?',
+        f'✅ Загружено <b>«{safe_title}»</b> — {len(tracks)} треков.\n\nЧто делаем?',
         parse_mode="HTML",
         reply_markup=ym_share_actions_keyboard(),
     )
@@ -206,7 +207,7 @@ async def on_yms_back_to_actions(call: CallbackQuery, state: FSMContext) -> None
     title = data.get("yms_playlist_title", "Плейлист")
     safe_title = title[:50] if title else "Плейлист"
     await call.message.edit_text(
-        f'✅ Плейлист <b>«{safe_title}»</b> — {len(tracks)} треков.\n\nЧто делаем?',
+        f'✅ <b>«{safe_title}»</b> — {len(tracks)} треков.\n\nЧто делаем?',
         parse_mode="HTML",
         reply_markup=ym_share_actions_keyboard(),
     )
