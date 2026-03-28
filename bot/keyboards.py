@@ -38,7 +38,7 @@ def export_source_keyboard() -> InlineKeyboardMarkup:
 def share_source_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🎵 Яндекс Музыка (ссылка / embed)", callback_data="service:share")],
-        [InlineKeyboardButton(text="🟢 Spotify (плейлист по ссылке)", callback_data="service:spotify_playlist")],
+        [InlineKeyboardButton(text="🟢 Spotify", callback_data="service:spotify")],
         [InlineKeyboardButton(text="← Назад", callback_data="service:back_to_main")],
     ])
 

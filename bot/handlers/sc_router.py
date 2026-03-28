@@ -117,7 +117,7 @@ async def on_sc_batch_menu(call: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(SCSearchFlow.sc_menu, F.data == "sc:back")
 async def on_sc_back(call: CallbackQuery, state: FSMContext) -> None:
-    await call.message.edit_text("👋 Выбери сервис:", reply_markup=service_keyboard())
+    await call.message.edit_text("👋 Привет! Что хочешь сделать?", reply_markup=service_keyboard())
     await state.set_state(ExportFlow.choosing_service)
 
 
