@@ -10,8 +10,8 @@ _YM_OAUTH_URL = (
 def service_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
-            text="Экспорт треков в .txt",
-            callback_data="service:yandex",
+            text="Экспорт треков в .txt / .csv",
+            callback_data="service:export_pick",
             icon_custom_emoji_id="5870801517140775623",
         )],
         [InlineKeyboardButton(
@@ -20,14 +20,26 @@ def service_keyboard() -> InlineKeyboardMarkup:
             icon_custom_emoji_id="6039802767931871481",
         )],
         [InlineKeyboardButton(
-            text="Экспорт плейлиста по ссылке",
-            callback_data="service:share",
+            text="Плейлист по ссылке",
+            callback_data="service:share_pick",
             icon_custom_emoji_id="6042011682497106307",
         )],
-        [InlineKeyboardButton(
-            text="🎵 Spotify",
-            callback_data="service:spotify",
-        )],
+    ])
+
+
+def export_source_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🎵 Яндекс Музыка", callback_data="service:yandex")],
+        [InlineKeyboardButton(text="🟢 Spotify", callback_data="service:spotify")],
+        [InlineKeyboardButton(text="← Назад", callback_data="service:back_to_main")],
+    ])
+
+
+def share_source_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🎵 Яндекс Музыка (ссылка / embed)", callback_data="service:share")],
+        [InlineKeyboardButton(text="🟢 Spotify (плейлист по ссылке)", callback_data="service:spotify_playlist")],
+        [InlineKeyboardButton(text="← Назад", callback_data="service:back_to_main")],
     ])
 
 
@@ -146,6 +158,7 @@ def sc_menu_keyboard() -> InlineKeyboardMarkup:
             callback_data="sc:batch",
             icon_custom_emoji_id="6039802767931871481",
         )],
+        [InlineKeyboardButton(text="🟢 Из Spotify", callback_data="sc:from_spotify")],
         [InlineKeyboardButton(text="Назад", callback_data="sc:back")],
     ])
 
