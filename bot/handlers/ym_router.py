@@ -7,11 +7,13 @@ from aiogram.types import Message, CallbackQuery, BufferedInputFile
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 
-from bot.states import ExportFlow, SCSearchFlow, SCBatchFlow, YMShareFlow
+from bot.states import ExportFlow, SCSearchFlow, SCBatchFlow, YMShareFlow, FAQFlow
 from bot.keyboards import (
     service_keyboard,
     export_source_keyboard,
     share_source_keyboard,
+    faq_keyboard,
+    faq_contact_keyboard,
     retention_keyboard,
     token_guide_keyboard,
     export_type_keyboard,
@@ -38,6 +40,7 @@ from .common import (
     _TOKEN_GUIDE,
     _SC_MENU_TEXT,
     _YMS_INPUT_TEXT,
+    _FAQ_TEXT,
 )
 
 router = Router()
@@ -53,6 +56,67 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
         '👋 Привет! Что хочешь сделать?',
         parse_mode="HTML",
         reply_markup=service_keyboard(),
+    )
+    await state.set_state(ExportFlow.choosing_service)
+
+
+# ── /faq ──────────────────────────────────────────────────────────────────────
+
+@router.message(Command("faq"))
+async def cmd_faq(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await state.set_state(ExportFlow.choosing_service)
+    await message.answer(_FAQ_TEXT, parse_mode="HTML", reply_markup=faq_keyboard())
+
+
+@router.callback_query(F.data == "faq:back")
+async def on_faq_back(call: CallbackQuery, state: FSMContext) -> None:
+    await call.message.edit_text("👋 Привет! Что хочешь сделать?", reply_markup=service_keyboard())
+    await state.set_state(ExportFlow.choosing_service)
+
+
+@router.callback_query(F.data == "faq:back_to_faq")
+async def on_faq_back_to_faq(call: CallbackQuery, state: FSMContext) -> None:
+    await call.message.edit_text(_FAQ_TEXT, parse_mode="HTML", reply_markup=faq_keyboard())
+    await state.set_state(ExportFlow.choosing_service)
+
+
+@router.callback_query(F.data == "faq:contact")
+async def on_faq_contact(call: CallbackQuery, state: FSMContext) -> None:
+    await call.message.edit_text(
+        "📨 <b>Написать администрации</b>\n\nВведите сообщение для модерации в поле ниже:",
+        parse_mode="HTML",
+        reply_markup=faq_contact_keyboard(),
+    )
+    await state.set_state(FAQFlow.contact_waiting)
+
+
+@router.message(FAQFlow.contact_waiting)
+async def on_faq_contact_message(message: Message, state: FSMContext) -> None:
+    if not message.text:
+        await message.answer("❌ Отправь текстовое сообщение.", reply_markup=faq_contact_keyboard())
+        return
+
+    user_id, username = _get_user_info(message)
+    from datetime import datetime
+    now = datetime.now().strftime("%d.%m.%Y %H:%M")
+    user_label = f"@{username}" if username else f"ID: {user_id}"
+
+    if settings.ADMIN_ID:
+        admin_text = (
+            f"📨 <b>Сообщение от пользователя</b>\n\n"
+            f"👤 {user_label} (ID: {user_id})\n"
+            f"📅 {now}\n\n"
+            f"💬 {message.text}"
+        )
+        try:
+            await message.bot.send_message(settings.ADMIN_ID, admin_text, parse_mode="HTML")
+        except Exception:
+            log.warning("Failed to forward contact message to admin")
+
+    await message.answer(
+        "✅ Сообщение отправлено администрации. Ответим в ближайшее время!",
+        reply_markup=faq_keyboard(),
     )
     await state.set_state(ExportFlow.choosing_service)
 

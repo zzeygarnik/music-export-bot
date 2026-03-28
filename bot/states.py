@@ -53,3 +53,7 @@ class AdminFlow(StatesGroup):
     menu = State()       # browsing admin panel (stats/logs/batch/bans)
     batch_add = State()  # waiting for user_id to add to batch whitelist
     ban_input = State()  # waiting for user_id to ban
+
+
+class FAQFlow(StatesGroup):
+    contact_waiting = State()  # waiting for user's message to admin

@@ -115,6 +115,7 @@ async def main() -> None:
 
     await bot.set_my_commands([
         BotCommand(command="start", description="Главное меню"),
+        BotCommand(command="faq", description="FAQ и обратная связь"),
         BotCommand(command="admin", description="Админ-панель"),
     ])
     if settings.SPOTIFY_CLIENT_ID and settings.SPOTIFY_CALLBACK_PORT:

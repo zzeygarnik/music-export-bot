@@ -444,6 +444,19 @@ def spotify_actions_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
+def faq_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📨 Написать администрации", callback_data="faq:contact")],
+        [InlineKeyboardButton(text="← В меню", callback_data="faq:back")],
+    ])
+
+
+def faq_contact_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="← Назад", callback_data="faq:back_to_faq")],
+    ])
+
+
 def spotify_filter_result_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📥 Скачать треки исполнителя", callback_data="spotify:download_filtered")],
