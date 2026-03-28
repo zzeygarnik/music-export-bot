@@ -7,6 +7,9 @@ Reads from PostgreSQL — events and batch_live tables.
 import os
 import time
 from datetime import datetime, date, timedelta
+from zoneinfo import ZoneInfo
+
+_MSK = ZoneInfo("Europe/Moscow")
 
 import psycopg2
 import psycopg2.extras
@@ -98,7 +101,7 @@ elif finished_batches:
 col_title, col_refresh = st.columns([5, 1])
 with col_refresh:
     auto = st.toggle("Auto-refresh", value=True)
-st.caption(f"Обновлено: {datetime.now().strftime('%H:%M:%S')}  |  "
+st.caption(f"Обновлено: {datetime.now(_MSK).strftime('%H:%M:%S')} (МСК)  |  "
            f"Записей в логе: {len(df) if not df.empty else 0}")
 
 if df.empty:
