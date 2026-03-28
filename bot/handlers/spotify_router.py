@@ -7,7 +7,7 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, BufferedInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 
-from bot.states import ExportFlow, SCBatchFlow, SpotifyFlow
+from bot.states import ExportFlow, SCBatchFlow, SCSearchFlow, SpotifyFlow
 from bot.keyboards import (
     service_keyboard,
     spotify_menu_keyboard,
@@ -50,10 +50,30 @@ def _auth_keyboard(auth_url: str) -> InlineKeyboardMarkup:
     ])
 
 
-# ── Entry from main menu ──────────────────────────────────────────────────────
+# ── Entry points ──────────────────────────────────────────────────────────────
 
 @router.callback_query(ExportFlow.choosing_service, F.data == "service:spotify")
 async def on_spotify_entry(call: CallbackQuery, state: FSMContext) -> None:
+    if not _spotify_source():
+        await call.answer("Spotify не настроен на этом боте.", show_alert=True)
+        return
+    await call.message.edit_text(_SPOTIFY_MENU_TEXT, parse_mode="HTML", reply_markup=spotify_menu_keyboard())
+    await state.set_state(SpotifyFlow.menu)
+
+
+@router.callback_query(ExportFlow.choosing_service, F.data == "service:spotify_playlist")
+async def on_spotify_playlist_entry(call: CallbackQuery, state: FSMContext) -> None:
+    """Entry point from share source picker — goes directly to playlist input."""
+    if not _spotify_source():
+        await call.answer("Spotify не настроен на этом боте.", show_alert=True)
+        return
+    await call.message.edit_text(_SPOTIFY_PLAYLIST_TEXT, parse_mode="HTML", reply_markup=spotify_cancel_keyboard())
+    await state.set_state(SpotifyFlow.playlist_waiting)
+
+
+@router.callback_query(SCSearchFlow.sc_menu, F.data == "sc:from_spotify")
+async def on_sc_from_spotify(call: CallbackQuery, state: FSMContext) -> None:
+    """Entry point from SC menu — shows Spotify menu (liked + playlist)."""
     if not _spotify_source():
         await call.answer("Spotify не настроен на этом боте.", show_alert=True)
         return

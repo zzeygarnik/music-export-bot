@@ -10,6 +10,8 @@ from aiogram.fsm.context import FSMContext
 from bot.states import ExportFlow, SCSearchFlow, SCBatchFlow, YMShareFlow
 from bot.keyboards import (
     service_keyboard,
+    export_source_keyboard,
+    share_source_keyboard,
     retention_keyboard,
     token_guide_keyboard,
     export_type_keyboard,
@@ -56,6 +58,27 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
 
 
 # ── Service selection ─────────────────────────────────────────────────────────
+
+@router.callback_query(ExportFlow.choosing_service, F.data == "service:export_pick")
+async def on_service_export_pick(call: CallbackQuery, state: FSMContext) -> None:
+    await call.message.edit_text(
+        "Выбери источник для экспорта:",
+        reply_markup=export_source_keyboard(),
+    )
+
+
+@router.callback_query(ExportFlow.choosing_service, F.data == "service:share_pick")
+async def on_service_share_pick(call: CallbackQuery, state: FSMContext) -> None:
+    await call.message.edit_text(
+        "Выбери источник плейлиста:",
+        reply_markup=share_source_keyboard(),
+    )
+
+
+@router.callback_query(ExportFlow.choosing_service, F.data == "service:back_to_main")
+async def on_service_back_to_main(call: CallbackQuery, state: FSMContext) -> None:
+    await call.message.edit_text("👋 Привет! Что хочешь сделать?", reply_markup=service_keyboard())
+
 
 @router.callback_query(ExportFlow.choosing_service, F.data == "service:yandex")
 async def on_service_yandex(call: CallbackQuery, state: FSMContext) -> None:
