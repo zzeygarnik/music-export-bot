@@ -74,7 +74,7 @@ Telegram bot with three main sections: **export your music library to `.txt` / `
 
 **Admin panel** (`/admin`, only for `ADMIN_ID`)
 - **📊 Stats** — today / last 7 days: unique users, tracks downloaded, batch sessions, errors + top 5 users by track count
-- **📋 Event log** — last 20 events with timestamp, username, action and result
+- **📋 Event log** — last 20 events with timestamp (Moscow time), username, action and result
 - **📥 Batch whitelist** — add / remove users (by ID or forwarded message); managed in PostgreSQL alongside `BATCH_ALLOWED_USERS` env var
 - **🚫 Bans** — ban/unban any user by ID or forwarded message; blocked at middleware level
 - **📨 Requests** — view and approve/reject pending batch access requests
@@ -407,7 +407,7 @@ streamlit run dashboard.py
 
 **Админ-панель** (`/admin`, только для `ADMIN_ID`)
 - **📊 Статистика** — сегодня / 7 дней: пользователи, треки, батч-сессии, ошибки, топ-5
-- **📋 Лог событий** — последние 20 записей
+- **📋 Лог событий** — последние 20 записей с временем по Москве (МСК)
 - **📥 Batch-вайтлист** — добавление / удаление по ID или пересланному сообщению
 - **🚫 Баны** — блокировка/разблокировка на уровне middleware
 - **📨 Запросы** — просмотр и обработка запросов на batch-доступ
