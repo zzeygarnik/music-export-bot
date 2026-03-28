@@ -19,6 +19,7 @@ from bot.keyboards import (
 from core.spotify_source import SpotifySource, parse_code_from_redirect
 from utils.export import build_txt_file, build_csv_file, cleanup
 from utils.db import is_batch_allowed
+from utils.event_log import log_event
 from config import settings
 from .common import (
     _get_user_info,
@@ -147,6 +148,7 @@ async def on_spotify_load_liked_auto(call: CallbackQuery, state: FSMContext) -> 
         await status_msg.edit_text("😔 Сохранённых треков не найдено.", reply_markup=spotify_cancel_keyboard())
         return
 
+    log_event(user_id, username, "spotify_liked_load", "success", track_count=len(tracks))
     await state.update_data(spotify_tracks=tracks, spotify_title="Мои лайки Spotify")
     await status_msg.edit_text(
         f'✅ Загружено <b>{len(tracks)}</b> сохранённых треков.\n\nЧто делаем?',
@@ -187,6 +189,7 @@ async def on_spotify_playlist_input(message: Message, state: FSMContext) -> None
         await status_msg.edit_text("😔 Плейлист пуст или недоступен.", reply_markup=spotify_cancel_keyboard())
         return
 
+    log_event(user_id, username, "spotify_playlist_load", "success", track_count=len(tracks), detail=title[:80])
     await state.update_data(spotify_tracks=tracks, spotify_title=title)
     safe_title = title[:50]
     await status_msg.edit_text(
@@ -249,6 +252,7 @@ async def on_spotify_auth_input(message: Message, state: FSMContext) -> None:
         await status_msg.edit_text("😔 Сохранённых треков не найдено.", reply_markup=spotify_cancel_keyboard())
         return
 
+    log_event(user_id, username, "spotify_liked_load", "success", track_count=len(tracks))
     await state.update_data(spotify_tracks=tracks, spotify_title="Мои лайки Spotify")
     await status_msg.edit_text(
         f'✅ Загружено <b>{len(tracks)}</b> сохранённых треков.\n\nЧто делаем?',
@@ -291,6 +295,8 @@ async def on_spotify_export_txt(call: CallbackQuery, state: FSMContext) -> None:
             parse_mode="HTML",
             reply_markup=spotify_actions_keyboard(),
         )
+        log_event(call.from_user.id, call.from_user.username, "spotify_export", "success",
+                  track_count=len(tracks), detail="txt")
     finally:
         await cleanup(tmp_path)
 
@@ -312,6 +318,8 @@ async def on_spotify_export_csv(call: CallbackQuery, state: FSMContext) -> None:
             parse_mode="HTML",
             reply_markup=spotify_actions_keyboard(),
         )
+        log_event(call.from_user.id, call.from_user.username, "spotify_export", "success",
+                  track_count=len(tracks), detail="csv")
     finally:
         await cleanup(tmp_path)
 

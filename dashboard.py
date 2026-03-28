@@ -126,8 +126,15 @@ yt_search_ok = yt_search_all[yt_search_all["result"] == "success"]
 sc_batch_all = df[df["action"] == "sc_batch"]
 sc_batch_ok = sc_batch_all[sc_batch_all["result"].isin(["success", "stopped"])]
 
+# Spotify events
+sp_playlist = df[df["action"] == "spotify_playlist_load"]
+sp_liked = df[df["action"] == "spotify_liked_load"]
+sp_exports = df_success[df_success["action"] == "spotify_export"]
+sp_loads = pd.concat([sp_playlist, sp_liked])
+sp_loads_ok = sp_loads[sp_loads["result"] == "success"]
+
 # ── Tabs ──────────────────────────────────────────────────────────────────────
-tab_ym, tab_sc, tab_log = st.tabs(["📊 Яндекс Музыка", "☁️ SC / YouTube", "📋 Лог событий"])
+tab_ym, tab_spotify, tab_sc, tab_log = st.tabs(["📊 Яндекс Музыка", "🟢 Spotify", "☁️ SC / YouTube", "📋 Лог событий"])
 
 # ── Tab 1: YM ─────────────────────────────────────────────────────────────────
 with tab_ym:
@@ -175,7 +182,65 @@ with tab_ym:
         else:
             st.info("Нет данных.")
 
-# ── Tab 2: SC / YouTube ───────────────────────────────────────────────────────
+# ── Tab 2: Spotify ────────────────────────────────────────────────────────────
+with tab_spotify:
+    sp_c1, sp_c2, sp_c3, sp_c4 = st.columns(4)
+    sp_c1.metric("Плейлистов загружено", len(sp_playlist[sp_playlist["result"] == "success"]))
+    sp_c2.metric("Лайков загружено", len(sp_liked[sp_liked["result"] == "success"]))
+    sp_c3.metric("Экспортов", len(sp_exports))
+    sp_c4.metric("Треков экспортировано", int(sp_exports["track_count"].fillna(0).sum()))
+
+    st.divider()
+
+    sp_col1, sp_col2 = st.columns(2)
+
+    with sp_col1:
+        st.subheader("Загрузки по дням")
+        if not sp_loads_ok.empty:
+            by_day = (
+                sp_loads_ok.groupby([sp_loads_ok["ts"].dt.date, "action"])
+                .size()
+                .reset_index(name="count")
+                .rename(columns={"ts": "Дата", "action": "Тип"})
+            )
+            by_day["Дата"] = pd.to_datetime(by_day["Дата"])
+            by_day["Тип"] = by_day["Тип"].map({
+                "spotify_playlist_load": "Плейлист/Альбом",
+                "spotify_liked_load": "Лайки",
+            })
+            pivot = by_day.pivot(index="Дата", columns="Тип", values="count").fillna(0)
+            st.bar_chart(pivot)
+        else:
+            st.info("Нет данных.")
+
+    with sp_col2:
+        st.subheader("Экспорты по формату")
+        if not sp_exports.empty:
+            fmt_counts = (
+                sp_exports["detail"]
+                .map({"txt": "📄 TXT", "csv": "📊 CSV"})
+                .value_counts()
+                .reset_index()
+            )
+            fmt_counts.columns = ["Формат", "Количество"]
+            st.bar_chart(fmt_counts.set_index("Формат"))
+
+            st.subheader("Топ плейлистов")
+            top_pl = (
+                sp_playlist[sp_playlist["result"] == "success"]["detail"]
+                .dropna()
+                .value_counts()
+                .head(10)
+                .reset_index()
+            )
+            top_pl.columns = ["Плейлист / Альбом", "Загрузок"]
+            if not top_pl.empty:
+                st.dataframe(top_pl, use_container_width=True, hide_index=True)
+        else:
+            st.info("Нет данных.")
+
+
+# ── Tab 3: SC / YouTube ───────────────────────────────────────────────────────
 with tab_sc:
     sc_tracks_downloaded = int(sc_search_ok["track_count"].fillna(1).sum())
     yt_tracks_downloaded = int(yt_search_ok["track_count"].fillna(1).sum())
@@ -253,14 +318,17 @@ with tab_log:
         "export_liked": "❤️ YM: Любимые треки",
         "export_playlist": "📋 YM: Плейлист",
         "export_by_link": "🔗 YM: По ссылке",
-        "auth_ok": "🔑 Авторизация (успех)",
-        "auth_fail": "❌ Авторизация (ошибка)",
-        "export_error": "⚠️ Ошибка экспорта",
-        "sc_search": "🔍 SC: поиск",
-        "yt_search": "🔍 YT: поиск",
-        "sc_batch": "📥 Батч-загрузка",
-        "sc_track_fail": "❌ Трек не найден",
-        "yms_load": "🔗 Загрузка плейлиста по ссылке",
+        "auth_ok": "🔑 YM: Авторизация (успех)",
+        "auth_fail": "❌ YM: Авторизация (ошибка)",
+        "export_error": "⚠️ YM: Ошибка экспорта",
+        "yms_load": "🔗 YM: Плейлист/Альбом по ссылке",
+        "sc_search": "🔍 SC: Поиск",
+        "yt_search": "🔍 YT: Поиск",
+        "sc_batch": "📥 Батч-загрузка (SC/YT)",
+        "sc_track_fail": "❌ Трек не найден (батч)",
+        "spotify_playlist_load": "🟢 Spotify: Плейлист/Альбом",
+        "spotify_liked_load": "🟢 Spotify: Лайки",
+        "spotify_export": "🟢 Spotify: Экспорт",
     }
 
     period = st.radio("Период", ["Сегодня", "7 дней", "Всё время"], horizontal=True, index=2)
