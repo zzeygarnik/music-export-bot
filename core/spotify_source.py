@@ -3,9 +3,10 @@ import asyncio
 import logging
 import re
 
+from config import settings
+
 log = logging.getLogger(__name__)
 
-REDIRECT_URI = "http://localhost/"
 _OAUTH_SCOPE = "user-library-read"
 
 
@@ -49,16 +50,16 @@ class SpotifySource:
         return oauth2.SpotifyOAuth(
             client_id=self.client_id,
             client_secret=self.client_secret,
-            redirect_uri=REDIRECT_URI,
+            redirect_uri=settings.SPOTIFY_REDIRECT_URI,
             scope=_OAUTH_SCOPE,
             cache_handler=cache_handler.MemoryCacheHandler(),
         )
 
-    def _get_auth_url_sync(self) -> str:
-        return self._get_oauth().get_authorize_url()
+    def _get_auth_url_sync(self, state: str = "") -> str:
+        return self._get_oauth().get_authorize_url(state=state)
 
-    async def get_auth_url(self) -> str:
-        return await asyncio.to_thread(self._get_auth_url_sync)
+    async def get_auth_url(self, state: str = "") -> str:
+        return await asyncio.to_thread(self._get_auth_url_sync, state)
 
     # ── Sync internals ────────────────────────────────────────────────────
 

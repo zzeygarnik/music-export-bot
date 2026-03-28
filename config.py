@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     ADMIN_ID: int = 0  # Telegram user_id of the bot admin (0 = disabled)
     SPOTIFY_CLIENT_ID: str = ""
     SPOTIFY_CLIENT_SECRET: str = ""
+    SPOTIFY_REDIRECT_URI: str = "http://localhost/"   # override in .env with https://DOMAIN/spotify/callback
+    SPOTIFY_CALLBACK_PORT: int = 8889                 # local port for OAuth callback HTTP server
 
     def is_batch_allowed(self, user_id: int, username: str | None) -> bool:
         val = self.BATCH_ALLOWED_USERS.strip()

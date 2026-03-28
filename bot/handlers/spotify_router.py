@@ -25,6 +25,7 @@ from .common import (
     _filter_by_artist,
     _cancel_events,
     _batch_semaphore,
+    _pending_spotify_codes,
     _SPOTIFY_MENU_TEXT,
     _SPOTIFY_PLAYLIST_TEXT,
     _SPOTIFY_AUTH_TEXT,
@@ -81,7 +82,7 @@ async def on_spotify_liked(call: CallbackQuery, state: FSMContext) -> None:
         await call.answer("Spotify не настроен на этом боте.", show_alert=True)
         return
     try:
-        auth_url = await source.get_auth_url()
+        auth_url = await source.get_auth_url(state=str(call.from_user.id))
     except Exception as e:
         log.exception("Spotify get_auth_url failed: %s", e)
         await call.answer("❌ Ошибка подключения к Spotify.", show_alert=True)
@@ -98,6 +99,58 @@ async def on_spotify_liked(call: CallbackQuery, state: FSMContext) -> None:
 async def on_spotify_to_menu(call: CallbackQuery, state: FSMContext) -> None:
     await call.message.edit_text(_SPOTIFY_MENU_TEXT, parse_mode="HTML", reply_markup=spotify_menu_keyboard())
     await state.set_state(SpotifyFlow.menu)
+
+
+# ── Auto OAuth callback (via aiohttp callback server) ────────────────────────
+
+@router.callback_query(F.data == "spotify:load_liked_auto")
+async def on_spotify_load_liked_auto(call: CallbackQuery, state: FSMContext) -> None:
+    user_id = call.from_user.id
+    code = _pending_spotify_codes.pop(user_id, None)
+    if not code:
+        await call.answer("Код авторизации не найден. Попробуй войти снова.", show_alert=True)
+        return
+
+    source = _spotify_source()
+    if not source:
+        await call.answer("Spotify не настроен.", show_alert=True)
+        return
+
+    status_msg = await call.message.edit_text("⏳ Получаю токен…")
+    try:
+        access_token = await source.exchange_code(code)
+    except Exception as e:
+        log.warning("Spotify code exchange failed user=%d: %s", user_id, e)
+        await status_msg.edit_text(
+            "❌ Ошибка авторизации. Попробуй войти снова.",
+            reply_markup=spotify_menu_keyboard(),
+        )
+        await state.set_state(SpotifyFlow.menu)
+        return
+
+    await status_msg.edit_text("⏳ Загружаю лайки…")
+    try:
+        tracks = await source.get_liked_tracks(access_token)
+    except Exception as e:
+        log.exception("Spotify liked tracks failed user=%d: %s", user_id, e)
+        await status_msg.edit_text(
+            "❌ Не удалось загрузить лайки. Попробуй ещё раз.",
+            reply_markup=spotify_menu_keyboard(),
+        )
+        await state.set_state(SpotifyFlow.menu)
+        return
+
+    if not tracks:
+        await status_msg.edit_text("😔 Сохранённых треков не найдено.", reply_markup=spotify_cancel_keyboard())
+        return
+
+    await state.update_data(spotify_tracks=tracks, spotify_title="Мои лайки Spotify")
+    await status_msg.edit_text(
+        f'✅ Загружено <b>{len(tracks)}</b> сохранённых треков.\n\nЧто делаем?',
+        parse_mode="HTML",
+        reply_markup=spotify_actions_keyboard(),
+    )
+    await state.set_state(SpotifyFlow.actions)
 
 
 # ── Playlist URL input ────────────────────────────────────────────────────────
