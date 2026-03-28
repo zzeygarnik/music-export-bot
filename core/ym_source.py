@@ -67,10 +67,23 @@ class YandexMusicSource(AbstractMusicSource):
         Fetch playlist or album by normalised path.
         Returns (title, tracks). Raises ValueError with Russian message on failure.
         """
+        # Strip query params and fragments (handles UTM links and _parse_ym_share output)
+        url = url.split("?")[0].split("#")[0].strip()
+
         if url.startswith("album/"):
             album_id = url[len("album/"):]
             return await self._fetch_album(album_id)
 
+        # Path-only patterns (output of _parse_ym_share, no domain prefix)
+        m_user_path = re.match(r"users/([^/\s]+)/playlists/(\d+)$", url)
+        if m_user_path:
+            return await self._fetch_user_playlist(m_user_path.group(1), int(m_user_path.group(2)))
+
+        m_lk_path = re.match(r"playlists/lk\.([a-f0-9-]+)$", url)
+        if m_lk_path:
+            return await self._fetch_lk_playlist(m_lk_path.group(1))
+
+        # Full URL patterns (with domain)
         m_user = _RE_USER_PLAYLIST.search(url)
         if m_user:
             username, kind = m_user.group(2), int(m_user.group(3))
