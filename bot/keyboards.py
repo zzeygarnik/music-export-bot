@@ -356,11 +356,6 @@ def ym_share_actions_keyboard() -> InlineKeyboardMarkup:
             callback_data="yms:filter_artist",
             icon_custom_emoji_id="6037397706505195857",
         )],
-        [InlineKeyboardButton(
-            text="Начать с определённого трека",
-            callback_data="yms:seek",
-            icon_custom_emoji_id="5345906554510012647",
-        )],
         [InlineKeyboardButton(text="Назад", callback_data="yms:back_to_input")],
     ])
 
