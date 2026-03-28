@@ -4,7 +4,7 @@ import logging
 import aiofiles
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, BufferedInputFile
-from aiogram.filters import CommandStart
+from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 
 from bot.states import ExportFlow, SCSearchFlow, SCBatchFlow, YMShareFlow, FAQFlow
