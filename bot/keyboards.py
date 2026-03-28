@@ -153,11 +153,6 @@ def sc_menu_keyboard() -> InlineKeyboardMarkup:
             callback_data="sc:url",
             icon_custom_emoji_id="6042011682497106307",
         )],
-        [InlineKeyboardButton(
-            text="Скачать плейлист из Яндекс Музыки",
-            callback_data="sc:batch",
-            icon_custom_emoji_id="6039802767931871481",
-        )],
         [InlineKeyboardButton(text="Назад", callback_data="sc:back")],
     ])
 
