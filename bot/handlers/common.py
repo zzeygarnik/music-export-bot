@@ -146,6 +146,7 @@ def _parse_ym_share(text: str) -> str | None:
     for domain in ("music.yandex.ru/", "music.yandex.com/"):
         if text.startswith(domain):
             path = text[len(domain):]
+            path = path.split("?")[0].split("#")[0]
             if (path.startswith("users/")
                     or path.startswith("playlists/lk.")
                     or path.startswith("album/")):
