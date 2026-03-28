@@ -341,6 +341,12 @@ async def on_export_back(call: CallbackQuery, state: FSMContext) -> None:
     await call.message.edit_text(_EXPORT_MENU_TEXT, reply_markup=export_type_keyboard())
 
 
+@router.callback_query(F.data == "export:back_to_source")
+async def on_export_back_to_source(call: CallbackQuery, state: FSMContext) -> None:
+    await call.message.edit_text("Выбери сервис:", reply_markup=export_source_keyboard())
+    await state.set_state(ExportFlow.choosing_service)
+
+
 # ── Link input ────────────────────────────────────────────────────────────────
 
 @router.message(ExportFlow.waiting_for_link)

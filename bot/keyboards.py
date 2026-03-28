@@ -91,6 +91,7 @@ def export_type_keyboard() -> InlineKeyboardMarkup:
             text="Экспорт в CSV",
             callback_data="export:set_fmt_csv",
         )],
+        [InlineKeyboardButton(text="← Назад", callback_data="export:back_to_source")],
     ])
 
 
