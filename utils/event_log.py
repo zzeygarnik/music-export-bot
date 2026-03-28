@@ -1,7 +1,7 @@
 """Structured event logger — writes to PostgreSQL (events + batch_live tables)."""
 import hashlib
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from utils.db import get_conn, put_conn
 
@@ -32,7 +32,7 @@ def log_event(
               yms_load   (shared playlist loaded)
     Results:  success, error, stopped
     """
-    ts = datetime.now().isoformat(timespec="seconds")
+    ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
     level = logging.INFO if result == "success" else logging.WARNING
     _log.log(
         level,

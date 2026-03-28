@@ -3,7 +3,7 @@ import asyncio
 import logging
 import os
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timezone
 
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, FSInputFile
@@ -1281,7 +1281,7 @@ async def _run_batch_download(
     not_found: list[str] = []
     failed_tracks: list[dict] = []
     downloaded_count = 0
-    started_at = datetime.now().isoformat(timespec="seconds")
+    started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     update_batch_live(user_id, username, {
         "started_at": started_at,
@@ -1415,7 +1415,7 @@ async def _run_batch_download(
 
     update_batch_live(user_id, username, {
         "started_at": started_at,
-        "finished_at": datetime.now().isoformat(timespec="seconds"),
+        "finished_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "total": total,
         "current_idx": total,
         "current_track": "—",

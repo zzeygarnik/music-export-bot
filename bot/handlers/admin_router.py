@@ -1,6 +1,19 @@
 """Admin panel: stats, recent events, batch whitelist management, user bans."""
 import logging
 import re
+from zoneinfo import ZoneInfo
+
+_MSK = ZoneInfo("Europe/Moscow")
+
+
+def _fmt_msk(dt) -> str:
+    """Format a DB timestamp (UTC-aware datetime) as Moscow time."""
+    if dt is None:
+        return "?"
+    try:
+        return dt.astimezone(_MSK).strftime("%d.%m %H:%M")
+    except Exception:
+        return str(dt)[:16].replace("T", " ")
 
 from aiogram import Bot, Router, F
 from aiogram.filters import Command
@@ -137,7 +150,7 @@ async def on_logs(call: CallbackQuery) -> None:
 
     lines = ["📋 <b>Последние события:</b>\n"]
     for e in events:
-        ts = str(e["ts"])[:16].replace("T", " ") if e["ts"] else "?"
+        ts = _fmt_msk(e["ts"])
         user = f"@{e['username']}" if e["username"] else f"#{e['user_hash']}"
         icon = "✅" if e["result"] == "success" else ("⏹" if e["result"] == "stopped" else "❌")
         tracks = f" ({e['track_count']} тр.)" if e["track_count"] else ""
@@ -301,7 +314,7 @@ def _requests_text(pending: list[dict]) -> str:
     lines = [f"📨 <b>Запросы на batch-доступ</b> ({len(pending)})\n"]
     for r in pending:
         name = f"@{r['username']}" if r["username"] else f"ID {r['user_id']}"
-        ts = str(r["created_at"])[:16].replace("T", " ") if r["created_at"] else "?"
+        ts = _fmt_msk(r["created_at"])
         lines.append(f"• {name} (<code>{r['user_id']}</code>) — {ts}")
     return "\n".join(lines)
 

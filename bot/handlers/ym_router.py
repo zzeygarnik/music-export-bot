@@ -1,6 +1,9 @@
 """ExportFlow handlers: /start, service selection, YM auth, export, filter, CSV."""
 import logging
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
+
+_MSK = ZoneInfo("Europe/Moscow")
 
 import aiofiles
 from aiogram import Router, F
@@ -115,7 +118,7 @@ async def on_faq_contact_message(message: Message, state: FSMContext) -> None:
         )
         return
 
-    now = datetime.now().strftime("%d.%m.%Y %H:%M")
+    now = datetime.now(_MSK).strftime("%d.%m.%Y %H:%M")
     user_label = f"@{username}" if username else f"ID: {user_id}"
 
     if settings.ADMIN_ID:
