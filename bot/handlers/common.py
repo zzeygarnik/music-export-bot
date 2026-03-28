@@ -62,15 +62,14 @@ _SC_URL_TEXT = (
 )
 
 _YMS_INPUT_TEXT = (
-    '<tg-emoji emoji-id="6042011682497106307">🔗</tg-emoji> <b>Отправь ссылку или embed-код плейлиста</b>\n\n'
-    '<b>Как получить embed-код в приложении Яндекс Музыки:</b>\n'
-    '1. Открой нужный плейлист\n'
-    '2. Нажми <b>···</b> (три точки) → «Поделиться»\n'
-    '3. Выбери <b>«HTML-код для встраивания»</b>\n'
-    '4. Скопируй и отправь сюда\n\n'
-    '<b>Также принимаются прямые ссылки:</b>\n'
+    '<tg-emoji emoji-id="6042011682497106307">🔗</tg-emoji> <b>Отправь ссылку на плейлист или альбом</b>\n\n'
+    '<b>Поддерживаемые форматы:</b>\n'
+    '• <code>music.yandex.ru/album/НОМЕР</code>\n'
     '• <code>music.yandex.ru/users/ИМЯ/playlists/НОМЕР</code>\n'
-    '• <code>music.yandex.ru/playlists/lk.UUID</code> (кнопка «Поделиться»)'
+    '• <code>music.yandex.ru/playlists/lk.UUID</code> (кнопка «Поделиться»)\n\n'
+    '<b>Или embed-код плейлиста из приложения:</b>\n'
+    '1. Открой плейлист → <b>···</b> → «Поделиться»\n'
+    '2. Выбери <b>«HTML-код для встраивания»</b> и отправь сюда'
 )
 
 _SPOTIFY_MENU_TEXT = (
@@ -80,8 +79,9 @@ _SPOTIFY_MENU_TEXT = (
 )
 
 _SPOTIFY_PLAYLIST_TEXT = (
-    "🔗 Отправь ссылку на плейлист Spotify:\n\n"
-    "<i>Например: https://open.spotify.com/playlist/37i9dQZF1DX...</i>"
+    "🔗 Отправь ссылку на плейлист или альбом Spotify:\n\n"
+    "<i>Плейлист: https://open.spotify.com/playlist/37i9dQZF1DX...</i>\n"
+    "<i>Альбом: https://open.spotify.com/album/4aawyAB9vmqN3uQ7FjRGTy...</i>"
 )
 
 _SPOTIFY_AUTH_TEXT = (
@@ -125,7 +125,9 @@ def _parse_ym_share(text: str) -> str | None:
     for domain in ("music.yandex.ru/", "music.yandex.com/"):
         if text.startswith(domain):
             path = text[len(domain):]
-            if path.startswith("users/") or path.startswith("playlists/lk."):
+            if (path.startswith("users/")
+                    or path.startswith("playlists/lk.")
+                    or path.startswith("album/")):
                 return path
     return None
 

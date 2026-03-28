@@ -64,9 +64,13 @@ class YandexMusicSource(AbstractMusicSource):
 
     async def get_playlist_by_url(self, url: str) -> tuple[str, list[dict]]:
         """
-        Fetch any playlist by URL using stored token.
+        Fetch playlist or album by normalised path.
         Returns (title, tracks). Raises ValueError with Russian message on failure.
         """
+        if url.startswith("album/"):
+            album_id = url[len("album/"):]
+            return await self._fetch_album(album_id)
+
         m_user = _RE_USER_PLAYLIST.search(url)
         if m_user:
             username, kind = m_user.group(2), int(m_user.group(3))
@@ -80,9 +84,26 @@ class YandexMusicSource(AbstractMusicSource):
         raise ValueError(
             "Не удалось распознать ссылку.\n\n"
             "Поддерживаемые форматы:\n"
+            "• <code>music.yandex.ru/album/НОМЕР</code>\n"
             "• <code>music.yandex.ru/users/ИМЯ/playlists/НОМЕР</code>\n"
             "• <code>music.yandex.ru/playlists/lk.UUID</code> (кнопка «Поделиться»)"
         )
+
+    async def _fetch_album(self, album_id: str) -> tuple[str, list[dict]]:
+        client = await self._get_client()
+
+        def _sync():
+            albums = client.albums_with_tracks([int(album_id)])
+            if not albums:
+                raise ValueError("Альбом не найден или недоступен.")
+            album = albums[0]
+            title = album.title or "Альбом"
+            tracks: list[dict] = []
+            for volume in (album.volumes or []):
+                tracks.extend(_tracks_to_dicts(volume))
+            return title, tracks
+
+        return await asyncio.to_thread(_sync)
 
     async def _fetch_user_playlist(self, username: str, kind: int) -> tuple[str, list[dict]]:
         client = await self._get_client()
