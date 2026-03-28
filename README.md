@@ -6,7 +6,7 @@
 ![Streamlit](https://img.shields.io/badge/Dashboard-Streamlit-FF4B4B?logo=streamlit&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Database-336791?logo=postgresql&logoColor=white)
 
-Telegram bot with three modes: **export your Yandex Music library to `.txt`**, **download tracks from SoundCloud as `.mp3`**, and **load any shared YM playlist by link or embed code**. Self-hosted, containerized, ready for TrueNAS or any Linux server.
+Telegram bot with four modes: **export your Yandex Music library to `.txt`**, **download tracks from SoundCloud as `.mp3`**, **load any shared YM playlist by link or embed code**, and **export / download Spotify playlists and liked tracks**. Self-hosted, containerized, ready for TrueNAS or any Linux server.
 
 [ 🇬🇧 English](#-english) | [ 🇷🇺 Русский](#-русский)
 
@@ -58,23 +58,38 @@ Telegram bot with three modes: **export your Yandex Music library to `.txt`**, *
   - Progress updates after each track
   - ⛔ Stop button at any time
   - Tracks not found on either platform are collected and shown at the end
+  - **Retry failed tracks**: after batch completes, a **"🔄 Retry not found (N)"** button appears — starts a new batch with only the failed tracks
   - Each failed track is logged individually to the database
   - Concurrency limit: configurable via `SC_MAX_BATCH_DOWNLOADS`
 - **Download more** button after every single track
 - **Auto-retry**: one automatic retry on network error before giving up
+
+**Spotify integration**
+- **Public playlists by link** — paste any `open.spotify.com/playlist/...` URL, no auth required (Client Credentials)
+- **Liked tracks** — OAuth via browser: bot generates auth URL → user logs in → copies redirect URL back to bot → bot exchanges code for token and fetches saved tracks
+- After loading: **Export to .txt**, **Export to .csv**, **Download via SoundCloud**, **Filter by artist** — same actions as YMShareFlow
+- Requires `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` in `.env`; add `http://localhost:8888/callback` as redirect URI in your Spotify Developer app (Premium account required to create the app)
+
+**Batch access request system**
+- Users without batch access see a page explaining the feature instead of a plain "denied" alert
+- **"📨 Request access"** button sends a notification to the admin with **approve / reject** buttons
+- Admin buttons are **eternal** — they work until clicked, regardless of message age (exempt from the stale-button middleware)
+- Deduplication: user can only have one pending request at a time
+- After admin decision, user receives an instant notification
 
 **Admin panel** (`/admin`, only for `ADMIN_ID`)
 - **📊 Stats** — today / last 7 days: unique users, tracks downloaded, batch sessions, errors + top 5 users by track count
 - **📋 Event log** — last 20 events with timestamp, username, action and result
 - **📥 Batch whitelist** — add / remove users (by numeric ID or forwarded message) who are allowed to run batch downloads; managed in PostgreSQL alongside the static `BATCH_ALLOWED_USERS` env var
 - **🚫 Bans** — ban any user by ID or forwarded message; banned users are blocked at middleware level before any handler runs; one-tap unban from the list
+- **📨 Requests** — view all pending batch access requests; approve / reject with one tap; list refreshes in place; counter shown on button when requests are pending
 
 **General**
 - Streamlit dashboard — redesigned with **3 tabs**: Yandex Music stats / SC+YouTube stats / Event log. SC and YouTube searches tracked and displayed separately
-- PostgreSQL stores events, live batch state, track file_id cache, banned users and batch whitelist
+- PostgreSQL stores events, live batch state, track file_id cache, banned users, batch whitelist and access requests
 - Redis FSM storage with graceful fallback to MemoryStorage
-- Middleware stack: **Ban check** → Throttling → Stale-button guard → Callback auto-answer
-- **Batch access control**: `BATCH_ALLOWED_USERS` env var (`*` / `""` / static list) + DB whitelist managed via admin panel
+- Middleware stack: **Ban check** → Throttling → Stale-button guard (eternal callbacks exempted) → Callback auto-answer
+- **Batch access control**: `BATCH_ALLOWED_USERS` env var (`*` / `""` / static list) + DB whitelist managed via admin panel + in-bot request flow for users
 - **Bot commands menu** registered on startup — `/start` and `/admin` appear in Telegram's command list
 
 ### 🔄 User Flow
@@ -99,13 +114,19 @@ Telegram bot with three modes: **export your Yandex Music library to `.txt`**, *
      │                                 → choose order (oldest-first / newest-first)
      │                                 → batch mp3  (SC → YT fallback per track)
      │
-     └─ 🔗 Export playlist by link  (new)
-          → Send iframe HTML or URL
-          → Bot loads playlist
-          → Choose action:
-               ├─ Download all         → batch mp3
-               ├─ Filter by artist     → enter name → .txt  [+ Download filtered]
-               └─ Start from track     → enter name → confirm position → batch mp3
+     ├─ 🔗 Export playlist by link
+     │    → Send iframe HTML or URL
+     │    → Bot loads playlist
+     │    → Choose action:
+     │         ├─ Download all         → batch mp3  [🔄 Retry failed on finish]
+     │         ├─ Filter by artist     → enter name → .txt  [+ Download filtered]
+     │         └─ Start from track     → enter name → confirm position → batch mp3
+     │
+     └─ 🎵 Spotify
+          ├─ 🔗 Playlist by link  → paste URL → load tracks
+          │                          → Export .txt / .csv / Download via SC / Filter by artist
+          └─ ❤️ Liked tracks      → OAuth (browser) → copy redirect URL → load tracks
+                                     → Export .txt / .csv / Download via SC / Filter by artist
 ```
 
 ### 🗂️ Project Structure
@@ -114,18 +135,20 @@ Telegram bot with three modes: **export your Yandex Music library to `.txt`**, *
 music-export-bot/
 ├── bot/
 │   ├── handlers/
-│   │   ├── __init__.py   # Combines all sub-routers in priority order
-│   │   ├── admin_router.py  # AdminFlow: stats, logs, batch whitelist, bans
-│   │   ├── common.py     # Shared globals, constants and helper functions
-│   │   ├── fallback.py   # Fallback handlers (registered last)
-│   │   ├── sc_router.py  # SCSearchFlow + SCBatchFlow + download helpers
-│   │   ├── ym_router.py  # ExportFlow: YM export, delivery, filter
-│   │   └── yms_router.py # YMShareFlow: shared playlist by link/embed
-│   ├── states.py         # ExportFlow + SCSearchFlow + SCBatchFlow + YMShareFlow + AdminFlow
+│   │   ├── __init__.py      # Combines all sub-routers in priority order
+│   │   ├── admin_router.py  # AdminFlow: stats, logs, batch whitelist, bans, access requests
+│   │   ├── common.py        # Shared globals, constants and helper functions
+│   │   ├── fallback.py      # Fallback handlers (registered last)
+│   │   ├── sc_router.py     # SCSearchFlow + SCBatchFlow + download helpers + retry
+│   │   ├── spotify_router.py # SpotifyFlow: playlists + liked tracks OAuth
+│   │   ├── ym_router.py     # ExportFlow: YM export, delivery, filter
+│   │   └── yms_router.py    # YMShareFlow: shared playlist by link/embed
+│   ├── states.py         # ExportFlow + SCSearchFlow + SCBatchFlow + YMShareFlow + SpotifyFlow + AdminFlow
 │   ├── keyboards.py      # Inline keyboards
 │   └── middleware.py     # BanMiddleware + Throttling + StaleButton + CallbackAnswer
 ├── core/
 │   ├── base_source.py    # AbstractMusicSource (extensible)
+│   ├── spotify_source.py # Spotify source: public playlists (client creds) + liked tracks (OAuth)
 │   ├── ym_source.py      # Yandex Music source + batch fetch + share link parsing
 │   └── sc_downloader.py  # yt-dlp wrapper: search() + search_youtube() + download() + extract_url_info()
 ├── utils/
@@ -177,6 +200,11 @@ BATCH_ALLOWED_USERS=*
 
 # Telegram user_id of the bot admin — grants access to /admin panel (0 = disabled)
 ADMIN_ID=0
+
+# Spotify integration (optional — leave empty to disable the Spotify button)
+# Create an app at developer.spotify.com, add http://localhost:8888/callback as redirect URI
+SPOTIFY_CLIENT_ID=
+SPOTIFY_CLIENT_SECRET=
 ```
 
 > **Note on `SC_PROXY`:** If Telegram is blocked by your provider, this variable is required — without it the bot won't connect to Telegram at all. Requires `aiohttp-socks` (already in `requirements.txt`).
@@ -272,6 +300,7 @@ Open dashboard at `http://your-nas-ip:8501`
 |---|---|
 | Bot framework | [aiogram 3](https://docs.aiogram.dev/) (async FSM) |
 | Yandex Music API | [yandex-music](https://github.com/MarshalX/yandex-music-api) 2.x |
+| Spotify API | [spotipy](https://github.com/spotipy-dev/spotipy) 2.x |
 | SoundCloud downloader | [yt-dlp](https://github.com/yt-dlp/yt-dlp) |
 | Fuzzy matching | [rapidfuzz](https://github.com/rapidfuzz/RapidFuzz) |
 | Audio processing | ffmpeg (in Docker image) |
@@ -279,7 +308,7 @@ Open dashboard at `http://your-nas-ip:8501`
 | Event storage | PostgreSQL (psycopg2) |
 | Dashboard | [Streamlit](https://streamlit.io/) + pandas |
 | Containerization | Docker |
-| Hosting | TrueNAS Scale / any Linux server |
+| Hosting | Aeza VPS / any Linux server |
 
 ### 🔒 Security Notes
 
@@ -337,22 +366,37 @@ Open dashboard at `http://your-nas-ip:8501`
   - Прогресс после каждого трека
   - Кнопка ⛔ Остановить в любой момент
   - Ненайденные треки (нигде) выводятся в конце, каждый логируется отдельно в БД
+  - **Retry**: после завершения батча появляется кнопка **«🔄 Повторить не найденные (N)»** — запускает новый батч только с ними
   - Ограничение параллельности: `SC_MAX_BATCH_DOWNLOADS`
 - Кнопка **"Скачать ещё"** после каждого одиночного скачивания
 - **Авто-повтор**: одна автоматическая попытка при сетевой ошибке
+
+**Интеграция со Spotify**
+- **Публичные плейлисты по ссылке** — вставь любую ссылку `open.spotify.com/playlist/...`, авторизация не нужна (Client Credentials)
+- **Мои лайки** — OAuth через браузер: бот генерирует ссылку → пользователь входит → копирует redirect URL обратно в бот → бот обменивает код на токен и загружает сохранённые треки
+- После загрузки: **Экспорт в .txt**, **Экспорт в .csv**, **Скачать через SoundCloud**, **Фильтр по исполнителю**
+- Требуется `SPOTIFY_CLIENT_ID` и `SPOTIFY_CLIENT_SECRET` в `.env`; нужно добавить `http://localhost:8888/callback` как redirect URI в Spotify Developer Dashboard (требуется аккаунт с Premium для создания приложения)
+
+**Система запросов на batch-доступ**
+- Пользователи без доступа к батчу видят страницу с объяснением вместо просто «нет доступа»
+- Кнопка **«📨 Запросить доступ»** отправляет уведомление администратору с кнопками **одобрить / отклонить**
+- Кнопки администратора **вечные** — работают до нажатия, независимо от возраста сообщения (исключены из stale-button middleware)
+- Дедупликация: у пользователя может быть только один pending-запрос
+- После решения администратора пользователь получает мгновенное уведомление
 
 **Админ-панель** (`/admin`, только для `ADMIN_ID`)
 - **📊 Статистика** — сегодня / 7 дней: уникальных пользователей, треков скачано, батч-сессий, ошибок + топ-5 пользователей по трекам
 - **📋 Лог событий** — последние 20 событий с временем, именем пользователя, действием и результатом
 - **📥 Batch-вайтлист** — добавление / удаление пользователей (по числовому ID или пересланному сообщению), которым разрешено батчевое скачивание; хранится в PostgreSQL вместе со статическим `BATCH_ALLOWED_USERS`
 - **🚫 Баны** — заблокировать любого пользователя по ID или пересланному сообщению; заблокированные отсекаются на уровне middleware до любого хендлера; разблокировка в один тап из списка
+- **📨 Запросы** — просмотр всех pending-запросов на batch-доступ; одобрение / отклонение одним тапом; список обновляется на месте; на кнопке показывается счётчик если есть ожидающие запросы
 
 **Общее**
 - Streamlit-дашборд — переработан в **3 вкладки**: статистика YM / SC+YouTube / лог событий. SC и YouTube отслеживаются и отображаются раздельно
-- PostgreSQL хранит события, состояние батча, кэш file_id треков, заблокированных пользователей и batch-вайтлист
+- PostgreSQL хранит события, состояние батча, кэш file_id треков, заблокированных пользователей, batch-вайтлист и запросы на доступ
 - Redis FSM-хранилище с graceful fallback на MemoryStorage
-- Стек middleware: **проверка бана** → throttling → защита от устаревших кнопок → авто-ответ на callback
-- **Управление доступом к батчу**: env var `BATCH_ALLOWED_USERS` (`*` / `""` / статический список) + DB-вайтлист через админку
+- Стек middleware: **проверка бана** → throttling → защита от устаревших кнопок (вечные колбэки исключены) → авто-ответ на callback
+- **Управление доступом к батчу**: env var `BATCH_ALLOWED_USERS` (`*` / `""` / статический список) + DB-вайтлист через админку + система запросов прямо в боте
 - **Bot commands menu** регистрируется при старте — `/start` и `/admin` отображаются в списке команд
 
 ### 🔄 Флоу пользователя
@@ -377,13 +421,19 @@ Open dashboard at `http://your-nas-ip:8501`
      │                                  → выбор порядка (от первого / от последнего)
      │                                  → батч mp3  (SC → YT фолбэк на каждый трек)
      │
-     └─ 🔗 Экспорт плейлиста по ссылке  (новое)
-          → Отправить iframe-код или ссылку
-          → Бот загружает плейлист
-          → Выбор действия:
-               ├─ Скачать все            → батч mp3
-               ├─ Фильтр по исполнителю → имя → .txt  [+ Скачать отфильтрованное]
-               └─ Начать с трека         → название → подтверждение позиции → батч mp3
+     ├─ 🔗 Экспорт плейлиста по ссылке
+     │    → Отправить iframe-код или ссылку
+     │    → Бот загружает плейлист
+     │    → Выбор действия:
+     │         ├─ Скачать все            → батч mp3  [🔄 Retry при ошибках]
+     │         ├─ Фильтр по исполнителю → имя → .txt  [+ Скачать отфильтрованное]
+     │         └─ Начать с трека         → название → подтверждение → батч mp3
+     │
+     └─ 🎵 Spotify
+          ├─ 🔗 Плейлист по ссылке  → вставить URL → загрузка треков
+          │                            → Экспорт .txt / .csv / Скачать через SC / Фильтр
+          └─ ❤️ Мои лайки           → OAuth (браузер) → скопировать redirect URL → загрузка
+                                       → Экспорт .txt / .csv / Скачать через SC / Фильтр
 ```
 
 ### 🗂️ Структура проекта
@@ -393,17 +443,19 @@ music-export-bot/
 ├── bot/
 │   ├── handlers/
 │   │   ├── __init__.py      # Объединяет все sub-роутеры в правильном порядке
-│   │   ├── admin_router.py  # AdminFlow: статистика, логи, batch-вайтлист, баны
+│   │   ├── admin_router.py  # AdminFlow: статистика, логи, вайтлист, баны, запросы на доступ
 │   │   ├── common.py        # Общие глобальные переменные, константы и хелперы
 │   │   ├── fallback.py      # Fallback-хендлеры (регистрируются последними)
-│   │   ├── sc_router.py     # SCSearchFlow + SCBatchFlow + хелперы скачивания
+│   │   ├── sc_router.py     # SCSearchFlow + SCBatchFlow + хелперы скачивания + retry
+│   │   ├── spotify_router.py # SpotifyFlow: плейлисты + лайки через OAuth
 │   │   ├── ym_router.py     # ExportFlow: экспорт YM, доставка файла, фильтр
 │   │   └── yms_router.py    # YMShareFlow: плейлист по ссылке/embed
-│   ├── states.py         # ExportFlow + SCSearchFlow + SCBatchFlow + YMShareFlow + AdminFlow
+│   ├── states.py         # ExportFlow + SCSearchFlow + SCBatchFlow + YMShareFlow + SpotifyFlow + AdminFlow
 │   ├── keyboards.py      # Inline-клавиатуры
 │   └── middleware.py     # BanMiddleware + Throttling + StaleButton + CallbackAnswer
 ├── core/
 │   ├── base_source.py    # AbstractMusicSource (расширяемо)
+│   ├── spotify_source.py # Источник Spotify: публичные плейлисты + лайки OAuth
 │   ├── ym_source.py      # Источник YM + батчевый fetch + парсинг share-ссылок
 │   └── sc_downloader.py  # yt-dlp обёртка: search() + search_youtube() + download() + extract_url_info()
 ├── utils/
@@ -454,6 +506,11 @@ BATCH_ALLOWED_USERS=*
 
 # Telegram user_id владельца бота — даёт доступ к /admin панели (0 = отключено)
 ADMIN_ID=0
+
+# Интеграция Spotify (опционально — оставь пустым чтобы скрыть кнопку)
+# Создай приложение на developer.spotify.com, добавь http://localhost:8888/callback как redirect URI
+SPOTIFY_CLIENT_ID=
+SPOTIFY_CLIENT_SECRET=
 ```
 
 > **Про `SC_PROXY`:** Если Telegram заблокирован у провайдера — переменная обязательна, без неё бот не подключится вообще. Требует `aiohttp-socks` (уже включён в `requirements.txt`).

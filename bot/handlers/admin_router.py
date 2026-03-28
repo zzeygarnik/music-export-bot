@@ -1,7 +1,7 @@
 """Admin panel: stats, recent events, batch whitelist management, user bans."""
 import logging
 
-from aiogram import Router, F
+from aiogram import Bot, Router, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import (
@@ -11,7 +11,8 @@ from aiogram.types import (
     Message,
 )
 
-from bot.states import AdminFlow
+from bot.keyboards import admin_batch_request_keyboard, batch_access_pending_keyboard, service_keyboard
+from bot.states import AdminFlow, ExportFlow
 from config import settings
 from utils import db
 
@@ -26,6 +27,8 @@ def _is_admin(user_id: int) -> bool:
 # ── Keyboards ─────────────────────────────────────────────────────────────
 
 def _menu_kb() -> InlineKeyboardMarkup:
+    pending = db.get_pending_requests()
+    req_label = f"📨 Запросы ({len(pending)})" if pending else "📨 Запросы"
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="Статистика", callback_data="admin:stats"),
@@ -34,6 +37,9 @@ def _menu_kb() -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton(text="Batch-доступ", callback_data="admin:batch"),
             InlineKeyboardButton(text="🚫 Баны", callback_data="admin:bans"),
+        ],
+        [
+            InlineKeyboardButton(text=req_label, callback_data="admin:requests"),
         ],
     ])
 
@@ -284,3 +290,199 @@ def _parse_user_input(message: Message) -> tuple[int | None, str | None]:
         except ValueError:
             pass
     return None, None
+
+
+# ── Admin: pending requests list ──────────────────────────────────────────
+
+def _requests_text(pending: list[dict]) -> str:
+    if not pending:
+        return "📨 <b>Запросы на batch-доступ</b>\n\nПендинг запросов нет."
+    lines = [f"📨 <b>Запросы на batch-доступ</b> ({len(pending)})\n"]
+    for r in pending:
+        name = f"@{r['username']}" if r["username"] else f"ID {r['user_id']}"
+        ts = str(r["created_at"])[:16].replace("T", " ") if r["created_at"] else "?"
+        lines.append(f"• {name} (<code>{r['user_id']}</code>) — {ts}")
+    return "\n".join(lines)
+
+
+def _requests_kb(pending: list[dict]) -> InlineKeyboardMarkup:
+    rows = []
+    for r in pending:
+        name = f"@{r['username']}" if r["username"] else str(r["user_id"])
+        rows.append([
+            InlineKeyboardButton(text=f"✅ {name}", callback_data=f"admin:req_approve:{r['id']}"),
+            InlineKeyboardButton(text=f"❌ {name}", callback_data=f"admin:req_reject:{r['id']}"),
+        ])
+    rows.append([InlineKeyboardButton(text="← Назад", callback_data="admin:menu")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+@router.callback_query(AdminFlow.menu, F.data == "admin:requests")
+async def on_requests(call: CallbackQuery) -> None:
+    pending = db.get_pending_requests()
+    await call.message.edit_text(
+        _requests_text(pending), parse_mode="HTML", reply_markup=_requests_kb(pending)
+    )
+
+
+@router.callback_query(AdminFlow.menu, F.data.startswith("admin:req_approve:"))
+async def on_admin_req_approve(call: CallbackQuery, bot: Bot) -> None:
+    request_id = int(call.data.split(":")[-1])
+    req = db.get_request_by_id(request_id)
+    if not req or req["status"] != "pending":
+        await call.answer("Запрос уже рассмотрен.", show_alert=True)
+    else:
+        db.add_batch_whitelist(req["user_id"], req["username"])
+        db.resolve_batch_request(request_id, "approved")
+        name = f"@{req['username']}" if req["username"] else f"ID {req['user_id']}"
+        await call.answer(f"✅ {name} одобрен.")
+        try:
+            await bot.send_message(
+                req["user_id"],
+                "🎉 <b>Отличные новости!</b> Администратор одобрил твой запрос — "
+                "теперь тебе доступно скачивание плейлистов. Возвращайся и качай!",
+                parse_mode="HTML",
+            )
+        except Exception as e:
+            log.warning("Failed to notify user %d about approval: %s", req["user_id"], e)
+
+    pending = db.get_pending_requests()
+    await call.message.edit_text(
+        _requests_text(pending), parse_mode="HTML", reply_markup=_requests_kb(pending)
+    )
+
+
+@router.callback_query(AdminFlow.menu, F.data.startswith("admin:req_reject:"))
+async def on_admin_req_reject(call: CallbackQuery, bot: Bot) -> None:
+    request_id = int(call.data.split(":")[-1])
+    req = db.get_request_by_id(request_id)
+    if not req or req["status"] != "pending":
+        await call.answer("Запрос уже рассмотрен.", show_alert=True)
+    else:
+        db.resolve_batch_request(request_id, "rejected")
+        name = f"@{req['username']}" if req["username"] else f"ID {req['user_id']}"
+        await call.answer(f"❌ {req['username'] or req['user_id']} отклонён.")
+        try:
+            await bot.send_message(
+                req["user_id"],
+                "😔 Администратор отклонил твой запрос на доступ к скачиванию плейлистов.",
+            )
+        except Exception as e:
+            log.warning("Failed to notify user %d about rejection: %s", req["user_id"], e)
+
+    pending = db.get_pending_requests()
+    await call.message.edit_text(
+        _requests_text(pending), parse_mode="HTML", reply_markup=_requests_kb(pending)
+    )
+
+
+# ── Batch access requests ─────────────────────────────────────────────────
+
+@router.callback_query(F.data == "batch_req:send")
+async def on_batch_req_send(call: CallbackQuery, bot: Bot) -> None:
+    user_id = call.from_user.id
+    username = call.from_user.username
+
+    if db.get_pending_request(user_id):
+        await call.answer("⏳ Запрос уже отправлен. Ожидай решения администратора.", show_alert=True)
+        return
+
+    request_id = db.create_batch_request(user_id, username)
+    if request_id == -1:
+        await call.answer("❌ Ошибка при отправке запроса. Попробуй позже.", show_alert=True)
+        return
+
+    if settings.ADMIN_ID:
+        name = f"@{username}" if username else f"ID {user_id}"
+        try:
+            admin_msg = await bot.send_message(
+                settings.ADMIN_ID,
+                f"🔔 <b>Запрос на доступ к скачиванию плейлистов</b>\n\n"
+                f"Пользователь: {name} (<code>{user_id}</code>)",
+                parse_mode="HTML",
+                reply_markup=admin_batch_request_keyboard(request_id),
+            )
+            db.set_request_admin_msg(request_id, admin_msg.message_id, settings.ADMIN_ID)
+        except Exception as e:
+            log.warning("Failed to notify admin about batch request %d: %s", request_id, e)
+
+    await call.message.edit_text(
+        "✅ <b>Запрос отправлен!</b>\n\nОжидай — мы постараемся рассмотреть его как можно скорее.",
+        parse_mode="HTML",
+        reply_markup=batch_access_pending_keyboard("batch_req_back:main"),
+    )
+
+
+@router.callback_query(F.data.startswith("batch_req:approve:"))
+async def on_batch_req_approve(call: CallbackQuery, bot: Bot) -> None:
+    if not _is_admin(call.from_user.id):
+        await call.answer("⛔ Нет доступа.", show_alert=True)
+        return
+
+    request_id = int(call.data.split(":")[-1])
+    req = db.get_request_by_id(request_id)
+    if not req:
+        await call.answer("❌ Запрос не найден.", show_alert=True)
+        return
+    if req["status"] != "pending":
+        label = "одобрен" if req["status"] == "approved" else "отклонён"
+        await call.answer(f"Запрос уже {label}.", show_alert=True)
+        return
+
+    db.add_batch_whitelist(req["user_id"], req["username"])
+    db.resolve_batch_request(request_id, "approved")
+
+    name = f"@{req['username']}" if req["username"] else f"ID {req['user_id']}"
+    await call.message.edit_text(
+        f"✅ Доступ одобрен — {name} (<code>{req['user_id']}</code>)",
+        parse_mode="HTML",
+    )
+
+    try:
+        await bot.send_message(
+            req["user_id"],
+            "🎉 <b>Отличные новости!</b> Администратор одобрил твой запрос — "
+            "теперь тебе доступно скачивание плейлистов. Возвращайся и качай!",
+            parse_mode="HTML",
+        )
+    except Exception as e:
+        log.warning("Failed to notify user %d about request approval: %s", req["user_id"], e)
+
+
+@router.callback_query(F.data.startswith("batch_req:reject:"))
+async def on_batch_req_reject(call: CallbackQuery, bot: Bot) -> None:
+    if not _is_admin(call.from_user.id):
+        await call.answer("⛔ Нет доступа.", show_alert=True)
+        return
+
+    request_id = int(call.data.split(":")[-1])
+    req = db.get_request_by_id(request_id)
+    if not req:
+        await call.answer("❌ Запрос не найден.", show_alert=True)
+        return
+    if req["status"] != "pending":
+        label = "одобрен" if req["status"] == "approved" else "отклонён"
+        await call.answer(f"Запрос уже {label}.", show_alert=True)
+        return
+
+    db.resolve_batch_request(request_id, "rejected")
+
+    name = f"@{req['username']}" if req["username"] else f"ID {req['user_id']}"
+    await call.message.edit_text(
+        f"❌ Доступ отклонён — {name} (<code>{req['user_id']}</code>)",
+        parse_mode="HTML",
+    )
+
+    try:
+        await bot.send_message(
+            req["user_id"],
+            "😔 Администратор отклонил твой запрос на доступ к скачиванию плейлистов.",
+        )
+    except Exception as e:
+        log.warning("Failed to notify user %d about request rejection: %s", req["user_id"], e)
+
+
+@router.callback_query(F.data == "batch_req_back:main")
+async def on_batch_req_back_main(call: CallbackQuery, state: FSMContext) -> None:
+    await call.message.edit_text("👋 Привет! Что хочешь сделать?", reply_markup=service_keyboard())
+    await state.set_state(ExportFlow.choosing_service)

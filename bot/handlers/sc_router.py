@@ -39,6 +39,7 @@ from .common import (
     _TOKEN_GUIDE,
     _SC_MENU_TEXT,
     _SC_URL_TEXT,
+    _show_batch_access_page,
 )
 
 router = Router()
@@ -102,7 +103,7 @@ async def on_sc_search_again(call: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(SCSearchFlow.sc_menu, F.data == "sc:batch")
 async def on_sc_batch_menu(call: CallbackQuery, state: FSMContext) -> None:
     if not is_batch_allowed(call.from_user.id, call.from_user.username):
-        await call.answer("⛔ Скачивание плейлистов сейчас недоступно.", show_alert=True)
+        await _show_batch_access_page(call, back_cb="batch_req_back:sc_menu")
         return
     await call.message.edit_text(
         "📥 <b>Скачать плейлист с SoundCloud</b>\n\n"
@@ -120,12 +121,18 @@ async def on_sc_back(call: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(ExportFlow.choosing_service)
 
 
+@router.callback_query(F.data == "batch_req_back:sc_menu")
+async def on_batch_req_back_sc_menu(call: CallbackQuery, state: FSMContext) -> None:
+    await call.message.edit_text(_SC_MENU_TEXT, parse_mode="HTML", reply_markup=sc_menu_keyboard())
+    await state.set_state(SCSearchFlow.sc_menu)
+
+
 # ── SC: Inline offer after YM .txt export ─────────────────────────────────────
 
 @router.callback_query(F.data == "sc:batch_from_ym")
 async def on_sc_batch_from_ym(call: CallbackQuery, state: FSMContext) -> None:
     if not is_batch_allowed(call.from_user.id, call.from_user.username):
-        await call.answer("⛔ Скачивание плейлистов сейчас недоступно.", show_alert=True)
+        await _show_batch_access_page(call, back_cb="batch_req_back:main")
         return
     data = await state.get_data()
     sc_tracks = data.get("sc_tracks")
@@ -748,6 +755,35 @@ async def on_sc_stop(call: CallbackQuery) -> None:
         await call.answer("Нет активного скачивания.", show_alert=True)
 
 
+@router.callback_query(F.data == "sc:retry_failed")
+async def on_sc_retry_failed(call: CallbackQuery, state: FSMContext) -> None:
+    user_id = call.from_user.id
+    if user_id in _cancel_events:
+        await call.answer("⚠️ У тебя уже идёт скачивание.", show_alert=True)
+        return
+    if _batch_semaphore.locked():
+        await call.answer(
+            f"⏳ Бот сейчас занят. Попробуй чуть позже.",
+            show_alert=True,
+        )
+        return
+    data = await state.get_data()
+    retry_tracks = data.get("sc_retry_tracks", [])
+    if not retry_tracks:
+        await call.answer("Нет треков для повтора.", show_alert=True)
+        return
+    await state.update_data(sc_tracks=retry_tracks, sc_retry_tracks=[])
+    await call.message.edit_text(
+        f"🔄 Повторяю скачивание <b>{len(retry_tracks)}</b> не найденных треков.",
+        parse_mode="HTML",
+        reply_markup=sc_stop_keyboard(),
+    )
+    await state.set_state(SCBatchFlow.sc_downloading)
+    asyncio.create_task(
+        _run_batch_download(call.message, state, user_id, call.from_user.username, retry_tracks, 0)
+    )
+
+
 # ── SC delivery helpers ───────────────────────────────────────────────────────
 
 async def _sc_download_and_send(
@@ -848,6 +884,7 @@ async def _run_batch_download(
 
     total = len(tracks)
     not_found: list[str] = []
+    failed_tracks: list[dict] = []
     downloaded_count = 0
     started_at = datetime.now().isoformat(timespec="seconds")
 
@@ -912,6 +949,7 @@ async def _run_batch_download(
                 except Exception as e:
                     log.warning("SC batch URL download failed '%s': %s", direct_url, e)
                     not_found.append(f"{artist} — {title}")
+                    failed_tracks.append(track)
                     continue
             else:
                 path, meta = None, {}
@@ -932,11 +970,13 @@ async def _run_batch_download(
                         yt_results = await sc_downloader.search_youtube(query, max_results=1)
                         if not yt_results:
                             not_found.append(f"{artist} — {title}")
+                            failed_tracks.append(track)
                             continue
                         path, meta = await sc_downloader.download(yt_results[0].url, user_id)
                     except Exception as e:
                         log.warning("YT batch fallback failed '%s': %s", query, e)
                         not_found.append(f"{artist} — {title}")
+                        failed_tracks.append(track)
                         continue
 
             sent = False
@@ -954,6 +994,7 @@ async def _run_batch_download(
             except Exception as e:
                 log.warning("SC batch send_audio failed '%s': %s", query, e)
                 not_found.append(f"{artist} — {title}")
+                failed_tracks.append(track)
             finally:
                 try:
                     os.remove(path)
@@ -1004,4 +1045,17 @@ async def _run_batch_download(
         await progress_msg.answer(summary)
 
     if await state.get_state() is not None:
-        await progress_msg.answer(_SC_MENU_TEXT, parse_mode="HTML", reply_markup=sc_menu_keyboard())
+        if failed_tracks:
+            await state.update_data(sc_retry_tracks=failed_tracks)
+            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+            retry_kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(
+                    text=f"🔄 Повторить не найденные ({len(failed_tracks)})",
+                    callback_data="sc:retry_failed",
+                )],
+                [InlineKeyboardButton(text="← В меню", callback_data="sc:cancel")],
+            ])
+            await progress_msg.answer("Что делаем дальше?", reply_markup=retry_kb)
+            await state.set_state(SCBatchFlow.sc_resume_choice)
+        else:
+            await progress_msg.answer(_SC_MENU_TEXT, parse_mode="HTML", reply_markup=sc_menu_keyboard())

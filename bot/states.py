@@ -40,6 +40,15 @@ class SCBatchFlow(StatesGroup):
     sc_downloading = State()       # batch download in progress
 
 
+class SpotifyFlow(StatesGroup):
+    menu = State()              # choose: public playlist / liked tracks
+    playlist_waiting = State()  # waiting for playlist URL
+    auth_waiting = State()      # waiting for OAuth redirect URL (liked tracks)
+    actions = State()           # loaded tracks — choose action
+    filter_input = State()      # waiting for artist name
+    downloading = State()       # batch in progress
+
+
 class AdminFlow(StatesGroup):
     menu = State()       # browsing admin panel (stats/logs/batch/bans)
     batch_add = State()  # waiting for user_id to add to batch whitelist

@@ -7,6 +7,7 @@ from aiogram.types import Message, CallbackQuery
 from rapidfuzz import fuzz
 
 from config import settings
+from utils import db
 
 log = logging.getLogger(__name__)
 
@@ -69,6 +70,37 @@ _YMS_INPUT_TEXT = (
     '• <code>music.yandex.ru/playlists/lk.UUID</code> (кнопка «Поделиться»)'
 )
 
+_SPOTIFY_MENU_TEXT = (
+    "🎵 <b>Spotify</b>\n\n"
+    "🔗 <b>Плейлист по ссылке</b> — вставь ссылку на любой публичный плейлист\n"
+    "❤️ <b>Мои лайки</b> — экспорт или скачивание сохранённых треков"
+)
+
+_SPOTIFY_PLAYLIST_TEXT = (
+    "🔗 Отправь ссылку на плейлист Spotify:\n\n"
+    "<i>Например: https://open.spotify.com/playlist/37i9dQZF1DX...</i>"
+)
+
+_SPOTIFY_AUTH_TEXT = (
+    "❤️ <b>Авторизация Spotify</b>\n\n"
+    "1. Нажми кнопку <b>«Войти через Spotify»</b> ниже\n"
+    "2. Войди в аккаунт и разреши доступ\n"
+    "3. Браузер попробует открыть <code>localhost:8888</code> — страница не откроется, "
+    "это нормально\n"
+    "4. Скопируй <b>полный URL</b> из адресной строки и отправь сюда"
+)
+
+_BATCH_ACCESS_TEXT = (
+    "🔒 <b>Скачивание плейлистов — функция с ограниченным доступом.</b>\n\n"
+    "Она бесплатна, но нуждается в ручной модерации. Отправь запрос администрации, "
+    "и она очень быстро его рассмотрит."
+)
+
+_BATCH_ACCESS_PENDING_TEXT = (
+    "⏳ <b>Запрос уже отправлен.</b>\n\n"
+    "Ожидай — администратор рассмотрит его в ближайшее время."
+)
+
 _RE_IFRAME_PLAYLIST = re.compile(
     r'music\.yandex\.(ru|com)/iframe/playlist/([^/"?\s]+)/(\d+)'
 )
@@ -123,3 +155,21 @@ def _filter_by_artist(tracks: list[dict], query: str, threshold: int = 70) -> li
 def _get_user_info(event: Message | CallbackQuery) -> tuple[int, str | None]:
     user = event.from_user
     return user.id, (user.username or None) if user else (0, None)
+
+
+async def _show_batch_access_page(call: CallbackQuery, back_cb: str, use_answer: bool = False) -> None:
+    """Show access request page or 'already pending' page depending on user's request status.
+
+    use_answer=True sends a new message instead of editing (needed for document/caption messages).
+    """
+    from bot.keyboards import batch_access_request_keyboard, batch_access_pending_keyboard
+
+    has_pending = db.get_pending_request(call.from_user.id) is not None
+
+    text = _BATCH_ACCESS_PENDING_TEXT if has_pending else _BATCH_ACCESS_TEXT
+    kb = batch_access_pending_keyboard(back_cb) if has_pending else batch_access_request_keyboard(back_cb)
+
+    if use_answer:
+        await call.message.answer(text, parse_mode="HTML", reply_markup=kb)
+    else:
+        await call.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
