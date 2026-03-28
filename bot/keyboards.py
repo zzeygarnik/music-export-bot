@@ -218,6 +218,11 @@ def sc_resume_keyboard() -> InlineKeyboardMarkup:
             callback_data="sc_resume:seek",
             icon_custom_emoji_id="5345906554510012647",
         )],
+        [InlineKeyboardButton(
+            text="Выбрать треки",
+            callback_data="sc_resume:track_select",
+            icon_custom_emoji_id="6037397706505195857",
+        )],
     ])
 
 
@@ -455,6 +460,72 @@ def faq_contact_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="← Назад", callback_data="faq:back_to_faq")],
     ])
+
+
+def tsel_panel_keyboard(count: int) -> InlineKeyboardMarkup:
+    """Main track-selection panel: show selected count + confirm/cancel."""
+    rows = []
+    if count > 0:
+        rows.append([InlineKeyboardButton(
+            text=f"📋 Выбранные ({count})", callback_data="tsel:show_sel:0"
+        )])
+    confirm_text = f"✅ Начать скачивание ({count})" if count > 0 else "✅ Начать скачивание"
+    rows.append([InlineKeyboardButton(text=confirm_text, callback_data="tsel:confirm")])
+    rows.append([InlineKeyboardButton(text="❌ Отмена", callback_data="tsel:cancel")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def tsel_results_keyboard(
+    results: list,
+    selected_keys: set,
+    artist_all: list | None,
+    total_selected: int,
+) -> InlineKeyboardMarkup:
+    """Search results: toggle add/remove per track + optional 'add all by artist'."""
+    rows = []
+    for i, t in enumerate(results):
+        key = f"{t.get('artist', '')}||{t.get('title', '')}"
+        in_sel = key in selected_keys
+        sym = "✅" if in_sel else "➕"
+        action = "rem" if in_sel else "add"
+        label = f"{t.get('artist', '')} — {t.get('title', '')}"
+        if len(label) > 55:
+            label = label[:52] + "…"
+        rows.append([InlineKeyboardButton(text=f"{sym} {label}", callback_data=f"tsel:{action}:{i}")])
+    if artist_all:
+        artist, cnt = artist_all
+        short = (artist[:22] + "…") if len(artist) > 22 else artist
+        rows.append([InlineKeyboardButton(
+            text=f"➕ Все от {short} ({cnt})", callback_data="tsel:add_all"
+        )])
+    confirm_text = f"✅ Начать ({total_selected})" if total_selected > 0 else "✅ Начать"
+    rows.append([
+        InlineKeyboardButton(text="← К поиску", callback_data="tsel:back_panel"),
+        InlineKeyboardButton(text=confirm_text, callback_data="tsel:confirm"),
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def tsel_selected_keyboard(selected: list, page: int = 0, page_size: int = 8) -> InlineKeyboardMarkup:
+    """Selected tracks list with per-track remove buttons and pagination."""
+    start = page * page_size
+    rows = []
+    for i, t in enumerate(selected[start:start + page_size]):
+        label = f"{t.get('artist', '')} — {t.get('title', '')}"
+        if len(label) > 52:
+            label = label[:49] + "…"
+        rows.append([InlineKeyboardButton(
+            text=f"❌ {label}", callback_data=f"tsel:rem_sel:{start + i}"
+        )])
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton(text="◀ Назад", callback_data=f"tsel:sel_page:{page - 1}"))
+    if start + page_size < len(selected):
+        nav.append(InlineKeyboardButton(text="Вперёд ▶", callback_data=f"tsel:sel_page:{page + 1}"))
+    if nav:
+        rows.append(nav)
+    rows.append([InlineKeyboardButton(text="← К поиску", callback_data="tsel:back_panel")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def spotify_filter_result_keyboard() -> InlineKeyboardMarkup:

@@ -1,5 +1,6 @@
 """ExportFlow handlers: /start, service selection, YM auth, export, filter, CSV."""
 import logging
+from datetime import datetime, timezone, timedelta
 
 import aiofiles
 from aiogram import Router, F
@@ -31,6 +32,7 @@ from bot.keyboards import (
 from core.ym_source import YandexMusicSource
 from utils.export import build_txt_file, build_csv_file, cleanup
 from utils.event_log import log_event
+from utils import db
 from config import settings
 from .common import (
     _get_user_info,
@@ -98,7 +100,21 @@ async def on_faq_contact_message(message: Message, state: FSMContext) -> None:
         return
 
     user_id, username = _get_user_info(message)
-    from datetime import datetime
+
+    active = db.get_active_contact(user_id)
+    if active:
+        remaining = (active["sent_at"] + timedelta(hours=24)) - datetime.now(timezone.utc)
+        total_sec = max(0, int(remaining.total_seconds()))
+        hours, rem = divmod(total_sec, 3600)
+        minutes = rem // 60
+        time_str = f"{hours} ч {minutes} мин" if hours > 0 else f"{minutes} мин"
+        await message.answer(
+            f"Ваш запрос передан администрации, ожидайте ответа. "
+            f"Отправить новое сообщение вы сможете через {time_str}.",
+            reply_markup=faq_contact_keyboard(),
+        )
+        return
+
     now = datetime.now().strftime("%d.%m.%Y %H:%M")
     user_label = f"@{username}" if username else f"ID: {user_id}"
 
@@ -114,6 +130,7 @@ async def on_faq_contact_message(message: Message, state: FSMContext) -> None:
         except Exception:
             log.warning("Failed to forward contact message to admin")
 
+    db.create_contact_message(user_id, username)
     await message.answer(
         "✅ Сообщение отправлено администрации. Ответим в ближайшее время!",
         reply_markup=faq_keyboard(),
@@ -125,6 +142,7 @@ async def on_faq_contact_message(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(ExportFlow.choosing_service, F.data == "service:export_pick")
 async def on_service_export_pick(call: CallbackQuery, state: FSMContext) -> None:
+    await state.update_data(nav_back="export_source")
     await call.message.edit_text(
         "Выбери источник для экспорта:",
         reply_markup=export_source_keyboard(),
@@ -133,6 +151,7 @@ async def on_service_export_pick(call: CallbackQuery, state: FSMContext) -> None
 
 @router.callback_query(ExportFlow.choosing_service, F.data == "service:share_pick")
 async def on_service_share_pick(call: CallbackQuery, state: FSMContext) -> None:
+    await state.update_data(nav_back="share_source")
     await call.message.edit_text(
         "Выбери источник плейлиста:",
         reply_markup=share_source_keyboard(),
@@ -181,9 +200,8 @@ async def on_service_share(call: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(ExportFlow.choosing_retention, F.data == "retention:back")
 async def on_retention_back(call: CallbackQuery, state: FSMContext) -> None:
     await call.message.edit_text(
-        '👋 Привет! Что хочешь сделать?',
-        parse_mode="HTML",
-        reply_markup=service_keyboard(),
+        "Выбери источник для экспорта:",
+        reply_markup=export_source_keyboard(),
     )
     await state.set_state(ExportFlow.choosing_service)
 

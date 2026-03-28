@@ -2,6 +2,7 @@
 import asyncio
 import logging
 import os
+from collections import Counter
 from datetime import datetime
 
 from aiogram import Router, F
@@ -22,6 +23,9 @@ from bot.keyboards import (
     sc_after_download_keyboard,
     sc_batch_token_keyboard,
     cache_results_keyboard,
+    tsel_panel_keyboard,
+    tsel_results_keyboard,
+    tsel_selected_keyboard,
 )
 from core.ym_source import YandexMusicSource
 from core import sc_downloader
@@ -782,6 +786,343 @@ async def on_sc_retry_failed(call: CallbackQuery, state: FSMContext) -> None:
     asyncio.create_task(
         _run_batch_download(call.message, state, user_id, call.from_user.username, retry_tracks, 0)
     )
+
+
+# ── Track selection ───────────────────────────────────────────────────────────
+
+def _tsel_key(t: dict) -> str:
+    return f"{t.get('artist', '')}||{t.get('title', '')}"
+
+
+def _search_in_playlist(query: str, tracks: list[dict]) -> list[dict]:
+    q = query.lower().strip()
+    scored = []
+    for t in tracks:
+        artist = (t.get("artist") or "").lower()
+        title = (t.get("title") or "").lower()
+        score = max(
+            fuzz.partial_ratio(q, artist),
+            fuzz.partial_ratio(q, title),
+            fuzz.token_set_ratio(q, f"{artist} {title}"),
+        )
+        if score >= 55:
+            scored.append((score, t))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [t for _, t in scored[:10]]
+
+
+def _tsel_panel_text(sel_count: int, total: int) -> str:
+    return (
+        f"🎯 <b>Выбор треков для скачивания</b>\n\n"
+        f"Всего в плейлисте: {total}\n"
+        f"Выбрано: <b>{sel_count}</b>\n\n"
+        f"Введи название трека или исполнителя для поиска."
+    )
+
+
+def _tsel_results_text(query: str, results: list[dict], selected_keys: set) -> str:
+    lines = [f"🔍 <b>«{query}»</b> — найдено {len(results)}:\n"]
+    for t in results:
+        mark = "✅" if _tsel_key(t) in selected_keys else "•"
+        lines.append(f"{mark} {t.get('artist', '?')} — {t.get('title', '?')}")
+    return "\n".join(lines)
+
+
+def _tsel_sel_text(selected: list[dict], page: int, page_size: int = 8) -> str:
+    total = len(selected)
+    start = page * page_size
+    lines = [f"📋 <b>Выбранные треки</b> ({total}):\n"]
+    for i, t in enumerate(selected[start:start + page_size], start=start + 1):
+        lines.append(f"{i}. {t.get('artist', '?')} — {t.get('title', '?')}")
+    pages = (total + page_size - 1) // page_size
+    if pages > 1:
+        lines.append(f"\n<i>Страница {page + 1} из {pages}</i>")
+    return "\n".join(lines)
+
+
+@router.callback_query(SCBatchFlow.sc_resume_choice, F.data == "sc_resume:track_select")
+async def on_track_select_start(call: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    tracks = data.get("sc_tracks", [])
+    if not tracks:
+        await call.answer("Нет треков для выбора.", show_alert=True)
+        return
+    await state.update_data(
+        tsel_selected=[], tsel_results=[], tsel_query="",
+        tsel_artist_all=None, tsel_msg_id=call.message.message_id,
+    )
+    await call.message.edit_text(
+        _tsel_panel_text(0, len(tracks)),
+        parse_mode="HTML",
+        reply_markup=tsel_panel_keyboard(0),
+    )
+    await state.set_state(SCBatchFlow.track_selection)
+
+
+@router.message(SCBatchFlow.track_selection)
+async def on_tsel_search(message: Message, state: FSMContext) -> None:
+    try:
+        await message.delete()
+    except Exception:
+        pass
+    if not message.text:
+        return
+
+    query = message.text.strip()
+    data = await state.get_data()
+    all_tracks = data.get("sc_tracks", [])
+    selected = data.get("tsel_selected", [])
+    selected_keys = {_tsel_key(t) for t in selected}
+    results = _search_in_playlist(query, all_tracks)
+
+    artist_all = None
+    if results:
+        counts = Counter(t.get("artist", "") for t in results)
+        top_artist, top_count = counts.most_common(1)[0]
+        if top_count >= 2:
+            full_count = sum(
+                1 for t in all_tracks
+                if (t.get("artist") or "").lower() == top_artist.lower()
+            )
+            artist_all = [top_artist, full_count]
+
+    await state.update_data(tsel_results=results, tsel_query=query, tsel_artist_all=artist_all)
+
+    if not results:
+        from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+        text = f"🔍 По запросу <b>«{query}»</b> ничего не найдено.\n\nПопробуй другой запрос."
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="← К поиску", callback_data="tsel:back_panel")]
+        ])
+    else:
+        text = _tsel_results_text(query, results, selected_keys)
+        kb = tsel_results_keyboard(results, selected_keys, artist_all, len(selected))
+
+    msg_id = data.get("tsel_msg_id")
+    if msg_id:
+        try:
+            await message.bot.edit_message_text(
+                text, chat_id=message.chat.id, message_id=msg_id,
+                parse_mode="HTML", reply_markup=kb,
+            )
+            return
+        except Exception:
+            pass
+    new_msg = await message.answer(text, parse_mode="HTML", reply_markup=kb)
+    await state.update_data(tsel_msg_id=new_msg.message_id)
+
+
+@router.callback_query(SCBatchFlow.track_selection, F.data.startswith("tsel:add:"))
+async def on_tsel_add(call: CallbackQuery, state: FSMContext) -> None:
+    idx = int(call.data.split(":")[-1])
+    data = await state.get_data()
+    results = data.get("tsel_results", [])
+    selected = list(data.get("tsel_selected", []))
+    if idx >= len(results):
+        await call.answer()
+        return
+    track = results[idx]
+    key = _tsel_key(track)
+    selected_keys = {_tsel_key(t) for t in selected}
+    if key not in selected_keys:
+        selected.append(track)
+        await state.update_data(tsel_selected=selected)
+        selected_keys.add(key)
+        await call.answer("✅ Добавлено")
+    else:
+        await call.answer("Уже в списке")
+    query = data.get("tsel_query", "")
+    artist_all = data.get("tsel_artist_all")
+    try:
+        await call.message.edit_text(
+            _tsel_results_text(query, results, selected_keys),
+            parse_mode="HTML",
+            reply_markup=tsel_results_keyboard(results, selected_keys, artist_all, len(selected)),
+        )
+    except Exception:
+        pass
+
+
+@router.callback_query(SCBatchFlow.track_selection, F.data.startswith("tsel:rem:"))
+async def on_tsel_rem(call: CallbackQuery, state: FSMContext) -> None:
+    idx = int(call.data.split(":")[-1])
+    data = await state.get_data()
+    results = data.get("tsel_results", [])
+    selected = list(data.get("tsel_selected", []))
+    if idx >= len(results):
+        await call.answer()
+        return
+    key = _tsel_key(results[idx])
+    selected = [t for t in selected if _tsel_key(t) != key]
+    await state.update_data(tsel_selected=selected)
+    selected_keys = {_tsel_key(t) for t in selected}
+    await call.answer("❌ Удалено")
+    query = data.get("tsel_query", "")
+    artist_all = data.get("tsel_artist_all")
+    try:
+        await call.message.edit_text(
+            _tsel_results_text(query, results, selected_keys),
+            parse_mode="HTML",
+            reply_markup=tsel_results_keyboard(results, selected_keys, artist_all, len(selected)),
+        )
+    except Exception:
+        pass
+
+
+@router.callback_query(SCBatchFlow.track_selection, F.data == "tsel:add_all")
+async def on_tsel_add_all(call: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    all_tracks = data.get("sc_tracks", [])
+    selected = list(data.get("tsel_selected", []))
+    artist_all = data.get("tsel_artist_all")
+    if not artist_all:
+        await call.answer("Нет данных об артисте.", show_alert=True)
+        return
+    artist_name = artist_all[0]
+    selected_keys = {_tsel_key(t) for t in selected}
+    added = 0
+    for t in all_tracks:
+        if (t.get("artist") or "").lower() == artist_name.lower():
+            if _tsel_key(t) not in selected_keys:
+                selected.append(t)
+                selected_keys.add(_tsel_key(t))
+                added += 1
+    await state.update_data(tsel_selected=selected)
+    await call.answer(f"✅ Добавлено {added} треков")
+    total = len(all_tracks)
+    try:
+        await call.message.edit_text(
+            _tsel_panel_text(len(selected), total),
+            parse_mode="HTML",
+            reply_markup=tsel_panel_keyboard(len(selected)),
+        )
+    except Exception:
+        pass
+
+
+@router.callback_query(SCBatchFlow.track_selection, F.data.startswith("tsel:show_sel:"))
+async def on_tsel_show_sel(call: CallbackQuery, state: FSMContext) -> None:
+    page = int(call.data.split(":")[-1])
+    data = await state.get_data()
+    selected = data.get("tsel_selected", [])
+    if not selected:
+        await call.answer("Список пуст.", show_alert=True)
+        return
+    try:
+        await call.message.edit_text(
+            _tsel_sel_text(selected, page),
+            parse_mode="HTML",
+            reply_markup=tsel_selected_keyboard(selected, page),
+        )
+    except Exception:
+        pass
+
+
+@router.callback_query(SCBatchFlow.track_selection, F.data.startswith("tsel:rem_sel:"))
+async def on_tsel_rem_sel(call: CallbackQuery, state: FSMContext) -> None:
+    idx = int(call.data.split(":")[-1])
+    data = await state.get_data()
+    selected = list(data.get("tsel_selected", []))
+    if idx >= len(selected):
+        await call.answer()
+        return
+    removed = selected.pop(idx)
+    await state.update_data(tsel_selected=selected)
+    await call.answer(f"❌ {removed.get('title', '?')}")
+    total = len(data.get("sc_tracks", []))
+    if not selected:
+        try:
+            await call.message.edit_text(
+                _tsel_panel_text(0, total),
+                parse_mode="HTML",
+                reply_markup=tsel_panel_keyboard(0),
+            )
+        except Exception:
+            pass
+        return
+    page_size = 8
+    page = idx // page_size
+    if page * page_size >= len(selected):
+        page = max(0, page - 1)
+    try:
+        await call.message.edit_text(
+            _tsel_sel_text(selected, page),
+            parse_mode="HTML",
+            reply_markup=tsel_selected_keyboard(selected, page),
+        )
+    except Exception:
+        pass
+
+
+@router.callback_query(SCBatchFlow.track_selection, F.data.startswith("tsel:sel_page:"))
+async def on_tsel_sel_page(call: CallbackQuery, state: FSMContext) -> None:
+    page = int(call.data.split(":")[-1])
+    data = await state.get_data()
+    selected = data.get("tsel_selected", [])
+    try:
+        await call.message.edit_text(
+            _tsel_sel_text(selected, page),
+            parse_mode="HTML",
+            reply_markup=tsel_selected_keyboard(selected, page),
+        )
+    except Exception:
+        pass
+
+
+@router.callback_query(SCBatchFlow.track_selection, F.data == "tsel:back_panel")
+async def on_tsel_back_panel(call: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    selected = data.get("tsel_selected", [])
+    total = len(data.get("sc_tracks", []))
+    try:
+        await call.message.edit_text(
+            _tsel_panel_text(len(selected), total),
+            parse_mode="HTML",
+            reply_markup=tsel_panel_keyboard(len(selected)),
+        )
+    except Exception:
+        pass
+
+
+@router.callback_query(SCBatchFlow.track_selection, F.data == "tsel:confirm")
+async def on_tsel_confirm(call: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    selected = data.get("tsel_selected", [])
+    if not selected:
+        await call.answer("Выбери хотя бы один трек.", show_alert=True)
+        return
+    user_id = call.from_user.id
+    if user_id in _cancel_events:
+        await call.answer("⚠️ У тебя уже идёт скачивание.", show_alert=True)
+        return
+    if _batch_semaphore.locked():
+        await call.answer(
+            f"⏳ Бот сейчас занят ({settings.SC_MAX_BATCH_DOWNLOADS}/{settings.SC_MAX_BATCH_DOWNLOADS} загрузок). Попробуй чуть позже.",
+            show_alert=True,
+        )
+        return
+    await state.update_data(sc_tracks=selected)
+    await call.message.edit_text(
+        f"▶️ Начинаю скачивание <b>{len(selected)}</b> выбранных треков…",
+        parse_mode="HTML",
+        reply_markup=sc_stop_keyboard(),
+    )
+    await state.set_state(SCBatchFlow.sc_downloading)
+    asyncio.create_task(
+        _run_batch_download(call.message, state, user_id, call.from_user.username, selected, 0)
+    )
+
+
+@router.callback_query(SCBatchFlow.track_selection, F.data == "tsel:cancel")
+async def on_tsel_cancel(call: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    tracks = data.get("sc_tracks", [])
+    await call.message.edit_text(
+        f"📥 Готов скачать <b>{len(tracks)}</b> треков.\n\nС какого трека начать?",
+        parse_mode="HTML",
+        reply_markup=sc_resume_keyboard(),
+    )
+    await state.set_state(SCBatchFlow.sc_resume_choice)
 
 
 # ── SC delivery helpers ───────────────────────────────────────────────────────

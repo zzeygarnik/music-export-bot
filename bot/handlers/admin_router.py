@@ -511,6 +511,7 @@ async def on_admin_reply_to_user(message: Message) -> None:
             f"📩 <b>Ответ администратора:</b>\n\n{message.text}",
             parse_mode="HTML",
         )
+        db.mark_contact_replied(user_id)
         await message.answer("✅ Ответ доставлен пользователю.")
     except Exception as e:
         await message.answer(f"❌ Не удалось отправить: {e}")

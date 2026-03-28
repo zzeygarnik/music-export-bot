@@ -106,6 +106,18 @@ def _create_tables() -> None:
                     admin_chat_id BIGINT
                 )
             """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS contact_messages (
+                    id         SERIAL PRIMARY KEY,
+                    user_id    BIGINT NOT NULL,
+                    username   TEXT,
+                    sent_at    TIMESTAMPTZ DEFAULT NOW(),
+                    replied    BOOLEAN DEFAULT FALSE
+                )
+            """)
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS contact_messages_user_idx ON contact_messages (user_id, sent_at DESC)
+            """)
         conn.commit()
     finally:
         put_conn(conn)
@@ -555,6 +567,71 @@ def get_admin_stats() -> dict:
     except Exception as e:
         log.warning("get_admin_stats failed: %s", e)
         return {}
+    finally:
+        put_conn(conn)
+
+
+# ── Contact message cooldown ──────────────────────────────────────────────
+
+def create_contact_message(user_id: int, username: str | None) -> None:
+    """Record a new contact message from the user."""
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO contact_messages (user_id, username) VALUES (%s, %s)",
+                (user_id, username),
+            )
+        conn.commit()
+    except Exception as e:
+        log.warning("create_contact_message failed: %s", e)
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+    finally:
+        put_conn(conn)
+
+
+def get_active_contact(user_id: int) -> dict | None:
+    """Return the unanswered contact message sent within the last 24 hours, or None."""
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, sent_at FROM contact_messages
+                WHERE user_id = %s
+                  AND replied = FALSE
+                  AND sent_at >= NOW() - INTERVAL '24 hours'
+                ORDER BY sent_at DESC LIMIT 1
+            """, (user_id,))
+            row = cur.fetchone()
+            if not row:
+                return None
+            return {"id": row[0], "sent_at": row[1]}
+    except Exception as e:
+        log.warning("get_active_contact failed: %s", e)
+        return None
+    finally:
+        put_conn(conn)
+
+
+def mark_contact_replied(user_id: int) -> None:
+    """Mark all pending contact messages from user as replied."""
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE contact_messages SET replied = TRUE WHERE user_id = %s AND replied = FALSE",
+                (user_id,),
+            )
+        conn.commit()
+    except Exception as e:
+        log.warning("mark_contact_replied failed: %s", e)
+        try:
+            conn.rollback()
+        except Exception:
+            pass
     finally:
         put_conn(conn)
 
