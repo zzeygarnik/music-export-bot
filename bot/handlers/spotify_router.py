@@ -77,7 +77,15 @@ async def on_spotify_playlist(call: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(SpotifyFlow.menu, F.data == "spotify:liked")
 async def on_spotify_liked(call: CallbackQuery, state: FSMContext) -> None:
     source = _spotify_source()
-    auth_url = source.get_auth_url()
+    if not source:
+        await call.answer("Spotify не настроен на этом боте.", show_alert=True)
+        return
+    try:
+        auth_url = await source.get_auth_url()
+    except Exception as e:
+        log.exception("Spotify get_auth_url failed: %s", e)
+        await call.answer("❌ Ошибка подключения к Spotify.", show_alert=True)
+        return
     await call.message.edit_text(
         _SPOTIFY_AUTH_TEXT, parse_mode="HTML", reply_markup=_auth_keyboard(auth_url)
     )
@@ -139,32 +147,34 @@ async def on_spotify_playlist_input(message: Message, state: FSMContext) -> None
 async def on_spotify_auth_input(message: Message, state: FSMContext) -> None:
     user_id, username = _get_user_info(message)
 
+    source = _spotify_source()
+    if not source:
+        await message.answer("❌ Spotify не настроен на этом боте.")
+        return
+
     if not message.text:
-        source = _spotify_source()
         await message.answer(_SPOTIFY_AUTH_TEXT, parse_mode="HTML",
-                             reply_markup=_auth_keyboard(source.get_auth_url()))
+                             reply_markup=_auth_keyboard(await source.get_auth_url()))
         return
 
     code = parse_code_from_redirect(message.text.strip())
     if not code:
-        source = _spotify_source()
         await message.answer(
             "❌ Не удалось найти код авторизации в ссылке.\n\n"
             "Скопируй <b>полный URL</b> из адресной строки после редиректа.",
             parse_mode="HTML",
-            reply_markup=_auth_keyboard(source.get_auth_url()),
+            reply_markup=_auth_keyboard(await source.get_auth_url()),
         )
         return
 
     status_msg = await message.answer("⏳ Получаю токен…")
-    source = _spotify_source()
     try:
         access_token = await source.exchange_code(code)
     except Exception as e:
         log.warning("Spotify code exchange failed user=%s: %s", user_id, e)
         await status_msg.edit_text(
             "❌ Ошибка авторизации. Попробуй войти снова.",
-            reply_markup=_auth_keyboard(source.get_auth_url()),
+            reply_markup=_auth_keyboard(await source.get_auth_url()),
         )
         return
 
