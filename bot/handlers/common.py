@@ -19,6 +19,9 @@ _cancel_events: dict[int, asyncio.Event] = {}
 # Global semaphore limiting concurrent SC batch downloads
 _batch_semaphore = asyncio.Semaphore(settings.SC_MAX_BATCH_DOWNLOADS)
 
+# Spotify OAuth codes received via callback server {user_id: code}
+_pending_spotify_codes: dict[int, str] = {}
+
 # ── Text constants ────────────────────────────────────────────────────────────
 
 _TOKEN_GUIDE = (
