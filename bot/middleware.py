@@ -11,6 +11,9 @@ from utils import db
 # Callbacks older than this are considered stale and silently rejected.
 _CALLBACK_MAX_AGE_SECONDS = 300  # 5 minutes
 
+# Callback prefixes that are exempt from stale check (must work until explicitly acted on).
+_ETERNAL_CALLBACK_PREFIXES = ("batch_req:approve:", "batch_req:reject:")
+
 
 class BanMiddleware(BaseMiddleware):
     """Block banned users before any handler runs. Admin is always exempt."""
@@ -80,7 +83,9 @@ class StaleButtonMiddleware(BaseMiddleware):
     ) -> Any:
         if isinstance(event, CallbackQuery) and event.message:
             msg_date = event.message.date
-            if msg_date:
+            if msg_date and not any(
+                (event.data or "").startswith(p) for p in _ETERNAL_CALLBACK_PREFIXES
+            ):
                 age = time.time() - msg_date.timestamp()
                 if age > _CALLBACK_MAX_AGE_SECONDS:
                     await event.answer(

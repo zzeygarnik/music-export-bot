@@ -32,6 +32,7 @@ from .common import (
     _cancel_events,
     _batch_semaphore,
     _YMS_INPUT_TEXT,
+    _show_batch_access_page,
 )
 from .sc_router import _run_batch_download
 
@@ -140,7 +141,7 @@ async def on_yms_waiting(message: Message, state: FSMContext) -> None:
 @router.callback_query(YMShareFlow.actions, F.data == "yms:download_all")
 async def on_yms_download_all(call: CallbackQuery, state: FSMContext) -> None:
     if not is_batch_allowed(call.from_user.id, call.from_user.username):
-        await call.answer("⛔ Скачивание плейлистов сейчас недоступно.", show_alert=True)
+        await _show_batch_access_page(call, back_cb="yms:back_to_actions")
         return
     user_id = call.from_user.id
     if user_id in _cancel_events:
@@ -252,7 +253,8 @@ async def on_yms_filter_input(message: Message, state: FSMContext) -> None:
 @router.callback_query(F.data == "yms:download_filtered")
 async def on_yms_download_filtered(call: CallbackQuery, state: FSMContext) -> None:
     if not is_batch_allowed(call.from_user.id, call.from_user.username):
-        await call.answer("⛔ Скачивание плейлистов сейчас недоступно.", show_alert=True)
+        # Document caption can't be edited as text — send new message
+        await _show_batch_access_page(call, back_cb="yms:back_to_actions", use_answer=True)
         return
     data = await state.get_data()
     filtered = data.get("yms_filtered_tracks")
@@ -321,6 +323,9 @@ async def on_yms_seek_input(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(YMShareFlow.seek_confirm, F.data == "yms_resume:confirm")
 async def on_yms_seek_confirm(call: CallbackQuery, state: FSMContext) -> None:
+    if not is_batch_allowed(call.from_user.id, call.from_user.username):
+        await _show_batch_access_page(call, back_cb="yms:back_to_actions")
+        return
     user_id = call.from_user.id
     if user_id in _cancel_events:
         await call.answer("⚠️ У тебя уже идёт скачивание.", show_alert=True)

@@ -24,6 +24,10 @@ def service_keyboard() -> InlineKeyboardMarkup:
             callback_data="service:share",
             icon_custom_emoji_id="6042011682497106307",
         )],
+        [InlineKeyboardButton(
+            text="🎵 Spotify",
+            callback_data="service:spotify",
+        )],
     ])
 
 
@@ -366,6 +370,31 @@ def ym_share_filter_result_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
+def batch_access_request_keyboard(back_cb: str) -> InlineKeyboardMarkup:
+    """Shown to users without batch access — offer to send request to admin."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📨 Запросить доступ", callback_data="batch_req:send")],
+        [InlineKeyboardButton(text="← Назад", callback_data=back_cb)],
+    ])
+
+
+def batch_access_pending_keyboard(back_cb: str) -> InlineKeyboardMarkup:
+    """Shown when user already has a pending request."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="← Назад", callback_data=back_cb)],
+    ])
+
+
+def admin_batch_request_keyboard(request_id: int) -> InlineKeyboardMarkup:
+    """Sent to admin with approve/reject buttons — lives until clicked."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="✅ Одобрить", callback_data=f"batch_req:approve:{request_id}"),
+            InlineKeyboardButton(text="❌ Отклонить", callback_data=f"batch_req:reject:{request_id}"),
+        ]
+    ])
+
+
 def ym_share_seek_confirm_keyboard() -> InlineKeyboardMarkup:
     """Confirm start track in YMShareFlow seek."""
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -379,4 +408,37 @@ def ym_share_seek_confirm_keyboard() -> InlineKeyboardMarkup:
             callback_data="yms_resume:retry",
             icon_custom_emoji_id="5870753782874246579",
         )],
+    ])
+
+
+# ── Spotify keyboards ──────────────────────────────────────────────────────────
+
+def spotify_menu_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔗 Плейлист по ссылке", callback_data="spotify:playlist")],
+        [InlineKeyboardButton(text="❤️ Мои лайки", callback_data="spotify:liked")],
+        [InlineKeyboardButton(text="← Назад", callback_data="spotify:back")],
+    ])
+
+
+def spotify_cancel_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="← Назад", callback_data="spotify:to_menu")],
+    ])
+
+
+def spotify_actions_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📄 Экспорт в .txt", callback_data="spotify:export_txt")],
+        [InlineKeyboardButton(text="📊 Экспорт в .csv", callback_data="spotify:export_csv")],
+        [InlineKeyboardButton(text="📥 Скачать через SoundCloud", callback_data="spotify:download")],
+        [InlineKeyboardButton(text="🔍 Фильтр по исполнителю", callback_data="spotify:filter")],
+        [InlineKeyboardButton(text="← Назад", callback_data="spotify:to_menu")],
+    ])
+
+
+def spotify_filter_result_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📥 Скачать треки исполнителя", callback_data="spotify:download_filtered")],
+        [InlineKeyboardButton(text="← Назад", callback_data="spotify:back_to_actions")],
     ])

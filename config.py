@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     #   "123456789,@username" — only listed user IDs or @usernames
     BATCH_ALLOWED_USERS: str = "*"
     ADMIN_ID: int = 0  # Telegram user_id of the bot admin (0 = disabled)
+    SPOTIFY_CLIENT_ID: str = ""
+    SPOTIFY_CLIENT_SECRET: str = ""
 
     def is_batch_allowed(self, user_id: int, username: str | None) -> bool:
         val = self.BATCH_ALLOWED_USERS.strip()

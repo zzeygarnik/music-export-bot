@@ -95,6 +95,17 @@ def _create_tables() -> None:
                 CREATE INDEX IF NOT EXISTS track_cache_title_trgm_idx
                 ON track_cache USING GIN (title gin_trgm_ops)
             """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS batch_access_requests (
+                    id            SERIAL PRIMARY KEY,
+                    user_id       BIGINT NOT NULL,
+                    username      TEXT,
+                    status        VARCHAR(20) DEFAULT 'pending',
+                    created_at    TIMESTAMPTZ DEFAULT NOW(),
+                    admin_msg_id  BIGINT,
+                    admin_chat_id BIGINT
+                )
+            """)
         conn.commit()
     finally:
         put_conn(conn)
@@ -375,6 +386,134 @@ def get_batch_whitelist() -> list[dict]:
     except Exception as e:
         log.warning("get_batch_whitelist failed: %s", e)
         return []
+    finally:
+        put_conn(conn)
+
+
+# ── Batch access requests ─────────────────────────────────────────────────
+
+def create_batch_request(user_id: int, username: str | None) -> int:
+    """Create a new pending batch access request. Returns the new request id, or -1 on error."""
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO batch_access_requests (user_id, username) VALUES (%s, %s) RETURNING id",
+                (user_id, username),
+            )
+            row = cur.fetchone()
+        conn.commit()
+        return row[0]
+    except Exception as e:
+        log.warning("create_batch_request failed: %s", e)
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return -1
+    finally:
+        put_conn(conn)
+
+
+def get_pending_request(user_id: int) -> dict | None:
+    """Return the pending batch access request for a user, or None."""
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, user_id, username, status, created_at, admin_msg_id, admin_chat_id
+                FROM batch_access_requests
+                WHERE user_id = %s AND status = 'pending'
+                ORDER BY created_at DESC LIMIT 1
+            """, (user_id,))
+            row = cur.fetchone()
+            if not row:
+                return None
+            return {"id": row[0], "user_id": row[1], "username": row[2], "status": row[3],
+                    "created_at": row[4], "admin_msg_id": row[5], "admin_chat_id": row[6]}
+    except Exception as e:
+        log.warning("get_pending_request failed: %s", e)
+        return None
+    finally:
+        put_conn(conn)
+
+
+def get_request_by_id(request_id: int) -> dict | None:
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, user_id, username, status, created_at, admin_msg_id, admin_chat_id
+                FROM batch_access_requests WHERE id = %s
+            """, (request_id,))
+            row = cur.fetchone()
+            if not row:
+                return None
+            return {"id": row[0], "user_id": row[1], "username": row[2], "status": row[3],
+                    "created_at": row[4], "admin_msg_id": row[5], "admin_chat_id": row[6]}
+    except Exception as e:
+        log.warning("get_request_by_id failed: %s", e)
+        return None
+    finally:
+        put_conn(conn)
+
+
+def get_pending_requests() -> list[dict]:
+    """Return all pending batch access requests ordered by creation time."""
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, user_id, username, created_at
+                FROM batch_access_requests
+                WHERE status = 'pending'
+                ORDER BY created_at ASC
+            """)
+            return [{"id": r[0], "user_id": r[1], "username": r[2], "created_at": r[3]}
+                    for r in cur.fetchall()]
+    except Exception as e:
+        log.warning("get_pending_requests failed: %s", e)
+        return []
+    finally:
+        put_conn(conn)
+
+
+def resolve_batch_request(request_id: int, status: str) -> None:
+    """Update request status to 'approved' or 'rejected'."""
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE batch_access_requests SET status = %s WHERE id = %s",
+                (status, request_id),
+            )
+        conn.commit()
+    except Exception as e:
+        log.warning("resolve_batch_request failed: %s", e)
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+    finally:
+        put_conn(conn)
+
+
+def set_request_admin_msg(request_id: int, admin_msg_id: int, admin_chat_id: int) -> None:
+    """Save the admin notification message location for later editing."""
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE batch_access_requests SET admin_msg_id = %s, admin_chat_id = %s WHERE id = %s",
+                (admin_msg_id, admin_chat_id, request_id),
+            )
+        conn.commit()
+    except Exception as e:
+        log.warning("set_request_admin_msg failed: %s", e)
+        try:
+            conn.rollback()
+        except Exception:
+            pass
     finally:
         put_conn(conn)
 
