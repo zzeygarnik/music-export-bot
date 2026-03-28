@@ -223,6 +223,7 @@ def sc_resume_keyboard() -> InlineKeyboardMarkup:
             callback_data="sc_resume:track_select",
             icon_custom_emoji_id="6037397706505195857",
         )],
+        [InlineKeyboardButton(text="← Назад", callback_data="sc_resume:back")],
     ])
 
 
