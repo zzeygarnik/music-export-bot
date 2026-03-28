@@ -61,15 +61,6 @@ async def on_spotify_entry(call: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(SpotifyFlow.menu)
 
 
-@router.callback_query(ExportFlow.choosing_service, F.data == "service:spotify_playlist")
-async def on_spotify_playlist_entry(call: CallbackQuery, state: FSMContext) -> None:
-    """Entry point from share source picker — goes directly to playlist input."""
-    if not _spotify_source():
-        await call.answer("Spotify не настроен на этом боте.", show_alert=True)
-        return
-    await call.message.edit_text(_SPOTIFY_PLAYLIST_TEXT, parse_mode="HTML", reply_markup=spotify_cancel_keyboard())
-    await state.set_state(SpotifyFlow.playlist_waiting)
-
 
 @router.callback_query(SCSearchFlow.sc_menu, F.data == "sc:from_spotify")
 async def on_sc_from_spotify(call: CallbackQuery, state: FSMContext) -> None:
