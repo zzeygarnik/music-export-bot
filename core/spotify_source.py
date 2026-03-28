@@ -43,27 +43,30 @@ class SpotifySource:
 
     # ── Auth URL ──────────────────────────────────────────────────────────
 
-    def get_auth_url(self) -> str:
+    def _get_oauth(self):
         import spotipy.oauth2 as oauth2
-        o = oauth2.SpotifyOAuth(
+        import spotipy.cache_handler as cache_handler
+        return oauth2.SpotifyOAuth(
             client_id=self.client_id,
             client_secret=self.client_secret,
             redirect_uri=REDIRECT_URI,
             scope=_OAUTH_SCOPE,
+            cache_handler=cache_handler.MemoryCacheHandler(),
         )
-        return o.get_authorize_url()
+
+    def _get_auth_url_sync(self) -> str:
+        return self._get_oauth().get_authorize_url()
+
+    async def get_auth_url(self) -> str:
+        return await asyncio.to_thread(self._get_auth_url_sync)
 
     # ── Sync internals ────────────────────────────────────────────────────
 
     def _exchange_code_sync(self, code: str) -> str:
-        import spotipy.oauth2 as oauth2
-        o = oauth2.SpotifyOAuth(
-            client_id=self.client_id,
-            client_secret=self.client_secret,
-            redirect_uri=REDIRECT_URI,
-            scope=_OAUTH_SCOPE,
-        )
+        o = self._get_oauth()
         token_info = o.get_access_token(code, as_dict=True, check_cache=False)
+        if not token_info:
+            raise ValueError("Spotify не вернул токен.")
         return token_info["access_token"]
 
     def _fetch_liked_tracks_sync(self, access_token: str) -> list[dict]:
