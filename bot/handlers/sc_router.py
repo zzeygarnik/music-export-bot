@@ -9,7 +9,7 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, FSInputFile
 from aiogram.fsm.context import FSMContext
 
-from bot.states import ExportFlow, SCSearchFlow, SCBatchFlow
+from bot.states import ExportFlow, SCSearchFlow, SCBatchFlow, YMShareFlow, SpotifyFlow
 from bot.keyboards import (
     service_keyboard,
     sc_menu_keyboard,
@@ -26,6 +26,9 @@ from bot.keyboards import (
     tsel_panel_keyboard,
     tsel_results_keyboard,
     tsel_selected_keyboard,
+    ym_share_actions_keyboard,
+    spotify_actions_keyboard,
+    export_type_keyboard,
 )
 from core.ym_source import YandexMusicSource
 from core import sc_downloader
@@ -152,6 +155,7 @@ async def on_sc_batch_from_ym(call: CallbackQuery, state: FSMContext) -> None:
     except Exception:
         pass
 
+    await state.update_data(sc_resume_back_cb="sc_menu")
     await call.message.answer(
         f"📥 Готов скачать <b>{len(sc_tracks)}</b> треков с SoundCloud.\n\nС какого трека начать?",
         parse_mode="HTML",
@@ -506,7 +510,7 @@ async def on_sc_url_input(message: Message, state: FSMContext) -> None:
             )
             return
         tracks = [{"url": e.url, "artist": e.artist, "title": e.title} for e in entries]
-        await state.update_data(sc_tracks=tracks)
+        await state.update_data(sc_tracks=tracks, sc_resume_back_cb="sc_menu")
         await status_msg.edit_text(
             f'<tg-emoji emoji-id="6039802767931871481">📥</tg-emoji> '
             f'Найдено <b>{len(tracks)}</b> треков в плейлисте «{title}».\n\nС какого трека начать?',
@@ -602,7 +606,7 @@ async def on_sc_ym_playlist_selected(call: CallbackQuery, state: FSMContext) -> 
         await state.set_state(SCSearchFlow.sc_menu)
         return
 
-    await state.update_data(sc_tracks=tracks)
+    await state.update_data(sc_tracks=tracks, sc_resume_back_cb="sc_ym_playlists")
     await call.message.edit_text(
         f"📥 Готов скачать <b>{len(tracks)}</b> треков с SoundCloud из «{title}».\n\nС какого трека начать?",
         parse_mode="HTML",
@@ -612,6 +616,56 @@ async def on_sc_ym_playlist_selected(call: CallbackQuery, state: FSMContext) -> 
 
 
 # ── SC: Resume choice ─────────────────────────────────────────────────────────
+
+@router.callback_query(SCBatchFlow.sc_resume_choice, F.data == "sc_resume:back")
+async def on_sc_resume_back(call: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    back_cb = data.get("sc_resume_back_cb", "sc_menu")
+
+    if back_cb == "sc_ym_playlists":
+        playlists = data.get("sc_playlists", [])
+        if playlists:
+            await call.message.edit_text("📋 Выбери плейлист:", reply_markup=sc_playlists_keyboard(playlists))
+            await state.set_state(SCBatchFlow.sc_ym_playlist)
+            return
+        back_cb = "sc_menu"
+
+    if back_cb == "yms_actions":
+        tracks = data.get("yms_tracks", [])
+        title = data.get("yms_playlist_title", "Плейлист")
+        safe_title = (title[:50] if title else "Плейлист")
+        await call.message.edit_text(
+            f'✅ <b>«{safe_title}»</b> — {len(tracks)} треков.\n\nЧто делаем?',
+            parse_mode="HTML",
+            reply_markup=ym_share_actions_keyboard(),
+        )
+        await state.set_state(YMShareFlow.actions)
+        return
+
+    if back_cb == "spotify_actions":
+        tracks = data.get("spotify_tracks", [])
+        title = data.get("spotify_title", "Spotify")
+        safe_title = title[:50]
+        await call.message.edit_text(
+            f'✅ <b>«{safe_title}»</b> — {len(tracks)} треков.\n\nЧто делаем?',
+            parse_mode="HTML",
+            reply_markup=spotify_actions_keyboard(),
+        )
+        await state.set_state(SpotifyFlow.actions)
+        return
+
+    if back_cb == "export_actions":
+        await call.message.edit_text(
+            "Что экспортируем?",
+            reply_markup=export_type_keyboard(),
+        )
+        await state.set_state(ExportFlow.choosing_export_type)
+        return
+
+    # default: sc_menu
+    await call.message.edit_text(_SC_MENU_TEXT, parse_mode="HTML", reply_markup=sc_menu_keyboard())
+    await state.set_state(SCSearchFlow.sc_menu)
+
 
 @router.callback_query(SCBatchFlow.sc_resume_choice, F.data == "sc_resume:start")
 async def on_sc_resume_start(call: CallbackQuery, state: FSMContext) -> None:

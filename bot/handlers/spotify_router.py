@@ -349,7 +349,7 @@ async def on_spotify_download(call: CallbackQuery, state: FSMContext) -> None:
         return
     data = await state.get_data()
     tracks = data.get("spotify_tracks", [])
-    await state.update_data(sc_tracks=tracks)
+    await state.update_data(sc_tracks=tracks, sc_resume_back_cb="spotify_actions")
     await call.message.edit_text(
         f"📥 Готов скачать <b>{len(tracks)}</b> треков с SoundCloud.\n\nС какого трека начать?",
         parse_mode="HTML",
@@ -429,7 +429,7 @@ async def on_spotify_download_filtered(call: CallbackQuery, state: FSMContext) -
         await call.message.edit_reply_markup(reply_markup=None)
     except Exception:
         pass
-    await state.update_data(sc_tracks=filtered)
+    await state.update_data(sc_tracks=filtered, sc_resume_back_cb="spotify_actions")
     await call.message.answer(
         f"📥 Готов скачать <b>{len(filtered)}</b> треков с SoundCloud.\n\nС какого трека начать?",
         parse_mode="HTML",
