@@ -10,6 +10,8 @@ from aiogram.fsm.context import FSMContext
 from bot.states import ExportFlow, SCBatchFlow, SpotifyFlow
 from bot.keyboards import (
     service_keyboard,
+    export_source_keyboard,
+    share_source_keyboard,
     spotify_menu_keyboard,
     spotify_cancel_keyboard,
     spotify_actions_keyboard,
@@ -69,7 +71,14 @@ async def on_spotify_entry(call: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(SpotifyFlow.menu, F.data == "spotify:back")
 async def on_spotify_back(call: CallbackQuery, state: FSMContext) -> None:
-    await call.message.edit_text("👋 Привет! Что хочешь сделать?", reply_markup=service_keyboard())
+    data = await state.get_data()
+    nav_back = data.get("nav_back")
+    if nav_back == "export_source":
+        await call.message.edit_text("Выбери источник для экспорта:", reply_markup=export_source_keyboard())
+    elif nav_back == "share_source":
+        await call.message.edit_text("Выбери источник плейлиста:", reply_markup=share_source_keyboard())
+    else:
+        await call.message.edit_text("👋 Привет! Что хочешь сделать?", reply_markup=service_keyboard())
     await state.set_state(ExportFlow.choosing_service)
 
 
@@ -109,7 +118,7 @@ async def on_spotify_to_menu(call: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "spotify:load_liked_auto")
 async def on_spotify_load_liked_auto(call: CallbackQuery, state: FSMContext) -> None:
-    user_id = call.from_user.id
+    user_id, username = _get_user_info(call)
     code = _pending_spotify_codes.pop(user_id, None)
     if not code:
         await call.answer("Код авторизации не найден. Попробуй войти снова.", show_alert=True)

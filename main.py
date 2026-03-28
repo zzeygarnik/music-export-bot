@@ -19,8 +19,7 @@ log = logging.getLogger(__name__)
 _SPOTIFY_CALLBACK_HTML_OK = """<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Spotify</title></head>
 <body style="font-family:sans-serif;text-align:center;padding:60px">
-<h2>✅ Авторизация прошла успешно!</h2>
-<p>Вернись в Telegram — бот уже получил доступ и загружает твои лайки.</p>
+<h2>Авторизация успешна. Вы можете вернуться в Telegram.</h2>
 </body></html>"""
 
 _SPOTIFY_CALLBACK_HTML_ERR = """<!DOCTYPE html>
