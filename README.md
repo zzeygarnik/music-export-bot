@@ -27,10 +27,9 @@ Telegram bot with three main sections: **export your music library to `.txt` / `
 - Choose source: **Yandex Music** or **Spotify**
 - **Yandex Music:** send an iframe embed code from the YM app ("Share → HTML code"), a direct playlist link, `lk.UUID` share link, or an **album link** (`music.yandex.ru/album/ID`)
 - **Spotify:** send any `open.spotify.com/playlist/...` or **album link** (`open.spotify.com/album/ID`)
-- Three actions after loading:
-  - **Download all** — batch-download every track via SoundCloud (with YouTube fallback)
+- Two actions after loading:
+  - **Download all** — opens a pre-download menu: choose order (oldest-first / newest-first), continue from a specific track, or **select specific tracks** (search within playlist, toggle individually, add all by artist); then batch-downloads via SoundCloud (with YouTube fallback)
   - **Filter by artist** — enter an artist name, get a `.txt` with matching tracks, then optionally batch-download that filtered list
-  - **Start from a specific track** — enter a track name, bot finds its position, confirms next track and total, then starts batch from there
 - If `YM_BOT_TOKEN` is set, users don't need to authenticate — bot reads public playlists with the bot-level token
 
 **Filter by artist**
@@ -53,6 +52,7 @@ Telegram bot with three main sections: **export your music library to `.txt` / `
   - SoundCloud first, **automatic YouTube fallback** if track not found or fails
   - Choose download order: **oldest-first** or **newest-first**
   - Resume from any track (fuzzy search inside playlist)
+  - **Select specific tracks** — search within the playlist by query, toggle individual tracks on/off, **add all tracks by a single artist** in one tap, paginated selected-tracks view; confirmed selection replaces the full list
   - Progress updates after each track; ⛔ Stop button at any time
   - Tracks not found on either platform shown at the end
   - **Retry failed tracks**: after batch completes, a **"🔄 Retry not found (N)"** button starts a new batch with only the failed tracks
@@ -82,6 +82,7 @@ Telegram bot with three main sections: **export your music library to `.txt` / `
 **FAQ / Help** (`/faq`)
 - Shows bot capabilities overview and privacy policy (what data is stored, Spotify token handling, temporary files)
 - **"📨 Contact admin"** button starts a message flow: user writes a message → bot forwards it to admin with user info
+- **24 h cooldown** while the message is unanswered — attempting to send again shows remaining time (hours + minutes); cooldown resets immediately once admin replies
 - Admin replies by replying to the forwarded message in Telegram → bot delivers the reply to the user
 
 **General**
@@ -123,9 +124,11 @@ Telegram bot with three main sections: **export your music library to `.txt` / `
           ├─ Yandex Music → send iframe / URL / album link → bot loads tracks
           └─ Spotify      → send playlist / album URL     → bot loads tracks
                → Choose action:
-                    ├─ Download all         → batch mp3  [🔄 Retry failed on finish]
-                    ├─ Filter by artist     → enter name → .txt  [+ Download filtered]
-                    └─ Start from track     → enter name → confirm position → batch mp3
+                    ├─ Download all     → oldest-first | newest-first
+                    │                     | Continue from track…
+                    │                     | Select specific tracks  → search / toggle / add by artist
+                    │                     → batch mp3  [🔄 Retry failed on finish]
+                    └─ Filter by artist → enter name → .txt  [+ Download filtered → same pre-download menu]
 
 /faq  → capabilities + privacy policy  [+ Contact admin → write message → forwarded to admin]
 /admin → admin panel (ADMIN_ID only)
@@ -358,10 +361,9 @@ streamlit run dashboard.py
 - Выбор источника: **Яндекс Музыка** или **Spotify**
 - **Яндекс Музыка:** iframe-код из приложения, прямая ссылка, `lk.UUID` или **ссылка на альбом** (`music.yandex.ru/album/ID`)
 - **Spotify:** ссылка на плейлист (`open.spotify.com/playlist/...`) или **альбом** (`open.spotify.com/album/ID`)
-- Три действия после загрузки:
-  - **Скачать все** — батчевое скачивание через SoundCloud (с YouTube-фолбэком)
-  - **Фильтр по исполнителю** — введи имя, получи `.txt` с треками, можно скачать отфильтрованный список
-  - **Начать с определённого трека** — введи название, бот найдёт позицию, запустит батч оттуда
+- Два действия после загрузки:
+  - **Скачать все** — открывает предстартовое меню: выбор порядка (с первого / с последнего), продолжить с конкретного трека или **выбрать конкретные треки** (поиск по плейлисту, переключение по одному, добавить всех от исполнителя); затем батчевое скачивание через SoundCloud (с YouTube-фолбэком)
+  - **Фильтр по исполнителю** — введи имя, получи `.txt` с треками, можно скачать отфильтрованный список через то же предстартовое меню
 - Если задан `YM_BOT_TOKEN`, пользователям не нужно авторизоваться — бот читает публичные плейлисты через бот-токен
 
 **Фильтр по исполнителю**
@@ -383,6 +385,7 @@ streamlit run dashboard.py
   - SoundCloud сначала, **автоматический фолбэк на YouTube**
   - Выбор порядка: от первого к последнему или наоборот
   - Возобновление с любого трека (fuzzy-поиск)
+  - **Выбор конкретных треков** — поиск по плейлисту, переключение по одному, добавить всех треков исполнителя одной кнопкой, постраничный просмотр выбранного; подтверждённый список заменяет полный
   - Прогресс после каждого трека; кнопка ⛔ в любой момент
   - Ненайденные треки выводятся в конце
   - **Retry**: кнопка **«🔄 Повторить не найденные (N)»** — только проблемные треки
@@ -412,6 +415,7 @@ streamlit run dashboard.py
 **FAQ / Помощь** (`/faq`)
 - Обзор возможностей бота и политика конфиденциальности (что хранится, токены Spotify, временные файлы)
 - Кнопка **«📨 Написать администратору»**: пользователь пишет сообщение → бот пересылает с информацией о пользователе
+- **Cooldown 24 ч** пока сообщение не получило ответа — при повторной попытке бот показывает оставшееся время (часы + минуты); cooldown сбрасывается сразу после ответа администратора
 - Администратор отвечает, сделав Telegram-ответ на это сообщение → бот доставляет ответ пользователю
 
 **Общее**
@@ -453,9 +457,11 @@ streamlit run dashboard.py
           ├─ Яндекс Музыка → iframe / URL / ссылка на альбом → бот загружает треки
           └─ Spotify        → ссылка на плейлист / альбом    → бот загружает треки
                → Выбор действия:
-                    ├─ Скачать все            → батч mp3  [🔄 Retry при ошибках]
-                    ├─ Фильтр по исполнителю → имя → .txt  [+ Скачать отфильтрованное]
-                    └─ Начать с трека         → название → подтверждение → батч mp3
+                    ├─ Скачать все        → с первого | с последнего
+                    │                        | Продолжить с трека…
+                    │                        | Выбрать треки  → поиск / переключение / добавить по исполнителю
+                    │                        → батч mp3  [🔄 Retry при ошибках]
+                    └─ Фильтр по исполнителю → имя → .txt  [+ Скачать отфильтрованное → то же меню]
 
 /faq   → возможности + политика конфиденциальности  [+ Написать администратору]
 /admin → панель администратора (только ADMIN_ID)
