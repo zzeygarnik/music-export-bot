@@ -1,5 +1,6 @@
 """Admin panel: stats, recent events, batch whitelist management, user bans."""
 import logging
+import re
 
 from aiogram import Bot, Router, F
 from aiogram.filters import Command
@@ -486,3 +487,30 @@ async def on_batch_req_reject(call: CallbackQuery, bot: Bot) -> None:
 async def on_batch_req_back_main(call: CallbackQuery, state: FSMContext) -> None:
     await call.message.edit_text("👋 Привет! Что хочешь сделать?", reply_markup=service_keyboard())
     await state.set_state(ExportFlow.choosing_service)
+
+
+# ── Admin reply to user contact message ───────────────────────────────────────
+
+@router.message(F.reply_to_message)
+async def on_admin_reply_to_user(message: Message) -> None:
+    """Admin replies to a forwarded user contact message → bot delivers reply to user."""
+    if not message.from_user or not _is_admin(message.from_user.id):
+        return
+    if not message.text:
+        return
+    original = message.reply_to_message
+    if not original or not original.text:
+        return
+    m = re.search(r'ID: (\d+)', original.text)
+    if not m:
+        return
+    user_id = int(m.group(1))
+    try:
+        await message.bot.send_message(
+            user_id,
+            f"📩 <b>Ответ администратора:</b>\n\n{message.text}",
+            parse_mode="HTML",
+        )
+        await message.answer("✅ Ответ доставлен пользователю.")
+    except Exception as e:
+        await message.answer(f"❌ Не удалось отправить: {e}")
