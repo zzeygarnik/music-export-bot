@@ -5,7 +5,7 @@ import re
 
 log = logging.getLogger(__name__)
 
-REDIRECT_URI = "http://localhost:8888/callback"
+REDIRECT_URI = "http://localhost/"
 _OAUTH_SCOPE = "user-library-read"
 
 
