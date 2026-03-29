@@ -36,10 +36,12 @@ from core.ym_source import YandexMusicSource
 from utils.export import build_txt_file, build_csv_file, cleanup
 from utils.event_log import log_event
 from utils import db
+from utils.db import get_user_stats
 from config import settings
 from .common import (
     _get_user_info,
     _filter_by_artist,
+    _batch_queue,
     _EXPORT_MENU_TEXT,
     _RETENTION_TEXT,
     _TOKEN_GUIDE,
@@ -56,6 +58,9 @@ log = logging.getLogger(__name__)
 
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext) -> None:
+    # Remove user from batch queue if they were waiting
+    user_id = message.from_user.id
+    _batch_queue[:] = [item for item in _batch_queue if item.user_id != user_id]
     await state.clear()
     await message.answer(
         '👋 Привет! Что хочешь сделать?',
@@ -66,6 +71,57 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
 
 
 # ── /faq ──────────────────────────────────────────────────────────────────────
+
+@router.message(Command("mystats"))
+async def cmd_mystats(message: Message) -> None:
+    user_id = message.from_user.id
+    stats = get_user_stats(user_id)
+
+    if not stats:
+        await message.answer(
+            "📊 Статистики пока нет.\n\nНачни со /start — скачай первый трек!",
+            parse_mode="HTML",
+        )
+        return
+
+    a = stats["all"]
+    w = stats["week"]
+
+    all_dl = a["single"] + a["batch"]
+    week_dl = w["single"] + w["batch"]
+
+    first_dt = a["first_ts"].astimezone(_MSK)
+    first_str = first_dt.strftime("%d.%m.%Y")
+
+    def _n(n: int) -> str:
+        return f"<b>{n}</b>"
+
+    lines = ["📊 <b>Твоя статистика</b>\n"]
+
+    lines.append("━━━━ <b>Последние 7 дней</b> ━━━━")
+    lines.append(f"⬇️ Скачано треков: {_n(week_dl)}")
+    if week_dl > 0:
+        lines.append(f"   └ поиском: {w['single']}  ·  плейлистами: {w['batch']}")
+    if w["exported"]:
+        lines.append(f"📤 Экспортировано: {_n(w['exported'])}")
+    elif week_dl == 0:
+        lines.append("   (нет активности)")
+
+    lines.append("")
+    lines.append("━━━━ <b>За всё время</b> ━━━━━━━")
+    lines.append(f"⬇️ Скачано треков: {_n(all_dl)}")
+    if all_dl > 0:
+        lines.append(f"   └ поиском: {a['single']}  ·  плейлистами: {a['batch']}")
+    if a["batches"]:
+        lines.append(f"📂 Плейлистов скачано: {_n(a['batches'])}")
+    if a["exported"]:
+        lines.append(f"📤 Экспортировано: {_n(a['exported'])}")
+
+    lines.append("")
+    lines.append(f"🗓 С нами с: <b>{first_str}</b>")
+
+    await message.answer("\n".join(lines), parse_mode="HTML")
+
 
 @router.message(Command("faq"))
 async def cmd_faq(message: Message, state: FSMContext) -> None:
@@ -192,7 +248,7 @@ async def on_service_share(call: CallbackQuery, state: FSMContext) -> None:
         await state.set_state(YMShareFlow.waiting)
     else:
         await call.message.edit_text(
-            "🔑 Для доступа к плейлистам нужна авторизация в Яндексе.\n\n" + _TOKEN_GUIDE,
+            _TOKEN_GUIDE,
             parse_mode="HTML",
             disable_web_page_preview=True,
             reply_markup=ym_share_token_keyboard(),

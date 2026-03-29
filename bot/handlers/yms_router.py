@@ -1,5 +1,4 @@
 """YMShareFlow handlers: share link/iframe, filter, seek, batch download."""
-import asyncio
 import logging
 
 import aiofiles
@@ -30,11 +29,10 @@ from .common import (
     _filter_by_artist,
     _parse_ym_share,
     _cancel_events,
-    _batch_semaphore,
     _YMS_INPUT_TEXT,
     _show_batch_access_page,
 )
-from .sc_router import _run_batch_download
+from .sc_router import _run_batch_download, _try_start_or_queue
 
 router = Router()
 log = logging.getLogger(__name__)
@@ -147,12 +145,6 @@ async def on_yms_download_all(call: CallbackQuery, state: FSMContext) -> None:
     user_id = call.from_user.id
     if user_id in _cancel_events:
         await call.answer("⚠️ У тебя уже идёт скачивание.", show_alert=True)
-        return
-    if _batch_semaphore.locked():
-        await call.answer(
-            f"⏳ Бот сейчас занят ({settings.SC_MAX_BATCH_DOWNLOADS}/{settings.SC_MAX_BATCH_DOWNLOADS} загрузок). Попробуй чуть позже.",
-            show_alert=True,
-        )
         return
     data = await state.get_data()
     tracks = data.get("yms_tracks", [])
@@ -331,23 +323,13 @@ async def on_yms_seek_confirm(call: CallbackQuery, state: FSMContext) -> None:
     if user_id in _cancel_events:
         await call.answer("⚠️ У тебя уже идёт скачивание.", show_alert=True)
         return
-    if _batch_semaphore.locked():
-        await call.answer(
-            f"⏳ Бот сейчас занят ({settings.SC_MAX_BATCH_DOWNLOADS}/{settings.SC_MAX_BATCH_DOWNLOADS} загрузок). Попробуй чуть позже.",
-            show_alert=True,
-        )
-        return
     data = await state.get_data()
     tracks = data.get("yms_tracks", [])
     start_idx = data.get("yms_resume_idx", 0)
     await state.update_data(sc_tracks=tracks)
-    await call.message.edit_text(
+    await _try_start_or_queue(
+        call, state, user_id, call.from_user.username, tracks, start_idx,
         f"▶️ Начинаю с трека {start_idx + 1}/{len(tracks)}…",
-        reply_markup=sc_stop_keyboard(),
-    )
-    await state.set_state(YMShareFlow.downloading)
-    asyncio.create_task(
-        _run_batch_download(call.message, state, user_id, call.from_user.username, tracks, start_idx)
     )
 
 

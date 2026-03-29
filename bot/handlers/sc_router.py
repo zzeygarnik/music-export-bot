@@ -19,6 +19,7 @@ from bot.keyboards import (
     sc_resume_keyboard,
     sc_resume_confirm_keyboard,
     sc_stop_keyboard,
+    sc_cancel_queue_keyboard,
     sc_offer_keyboard,
     sc_after_download_keyboard,
     sc_batch_token_keyboard,
@@ -43,6 +44,8 @@ from .common import (
     _progress_bar,
     _cancel_events,
     _batch_semaphore,
+    _batch_queue,
+    _BatchQueueItem,
     _TOKEN_GUIDE,
     _SC_MENU_TEXT,
     _SC_URL_TEXT,
@@ -51,6 +54,88 @@ from .common import (
 
 router = Router()
 log = logging.getLogger(__name__)
+
+
+# ── Queue helpers ─────────────────────────────────────────────────────────────
+
+async def _process_queue() -> None:
+    """Start the next queued batch download if a slot is available."""
+    if not _batch_queue:
+        return
+    item = _batch_queue.pop(0)
+
+    # Check the user is still waiting (didn't press /start)
+    data = await item.state.get_data()
+    if not data.get("in_batch_queue"):
+        asyncio.create_task(_process_queue())
+        return
+
+    await item.state.update_data(in_batch_queue=False)
+
+    # Notify remaining users of their new positions
+    for i, queued in enumerate(_batch_queue):
+        try:
+            await queued.bot.send_message(
+                queued.chat_id,
+                f"⏳ Ты теперь <b>#{i + 1}</b> в очереди.",
+                parse_mode="HTML",
+            )
+        except Exception:
+            pass
+
+    try:
+        msg = await item.bot.send_message(
+            item.chat_id,
+            f"▶️ Твоя очередь! Начинаю скачивание <b>{len(item.tracks)}</b> треков…",
+            parse_mode="HTML",
+            reply_markup=sc_stop_keyboard(),
+        )
+        await item.state.set_state(SCBatchFlow.sc_downloading)
+        asyncio.create_task(
+            _run_batch_download(msg, item.state, item.user_id, item.username, item.tracks, item.start_idx)
+        )
+    except Exception as e:
+        log.warning("Failed to start queued download for user=%s: %s", item.user_id, e)
+        asyncio.create_task(_process_queue())
+
+
+async def _try_start_or_queue(
+    call,
+    state,
+    user_id: int,
+    username,
+    tracks: list,
+    start_idx: int,
+    start_text: str | None = None,
+) -> None:
+    """Start batch download immediately, or add user to queue if all slots are taken."""
+    if _batch_semaphore.locked():
+        if any(item.user_id == user_id for item in _batch_queue):
+            await call.answer("⏳ Ты уже в очереди.", show_alert=True)
+            return
+        pos = len(_batch_queue) + 1
+        _batch_queue.append(_BatchQueueItem(
+            user_id=user_id,
+            username=username,
+            chat_id=call.message.chat.id,
+            bot=call.message.bot,
+            state=state,
+            tracks=tracks,
+            start_idx=start_idx,
+        ))
+        await state.update_data(in_batch_queue=True)
+        await call.message.edit_text(
+            f"⏳ Все слоты заняты ({settings.SC_MAX_BATCH_DOWNLOADS}/{settings.SC_MAX_BATCH_DOWNLOADS}).\n\n"
+            f"Ты <b>#{pos}</b> в очереди — начнём автоматически, как только освободится место.",
+            parse_mode="HTML",
+            reply_markup=sc_cancel_queue_keyboard(),
+        )
+        await state.set_state(SCBatchFlow.sc_queued)
+    else:
+        text = start_text or f"▶️ Начинаю скачивание <b>{len(tracks)}</b> треков…"
+        await call.message.edit_text(text, parse_mode="HTML", reply_markup=sc_stop_keyboard())
+        await state.set_state(SCBatchFlow.sc_downloading)
+        asyncio.create_task(_run_batch_download(call.message, state, user_id, username, tracks, start_idx))
 
 
 # ── SC: Service selection ─────────────────────────────────────────────────────
@@ -113,8 +198,7 @@ async def on_sc_batch_menu(call: CallbackQuery, state: FSMContext) -> None:
         await _show_batch_access_page(call, back_cb="batch_req_back:sc_menu")
         return
     await call.message.edit_text(
-        "📥 <b>Скачать плейлист с SoundCloud</b>\n\n"
-        "Для выбора плейлиста нужна авторизация в Яндекс Музыке.\n\n" + _TOKEN_GUIDE,
+        "📥 <b>Скачать плейлист с SoundCloud</b>\n\n" + _TOKEN_GUIDE,
         parse_mode="HTML",
         disable_web_page_preview=True,
         reply_markup=sc_batch_token_keyboard(),
@@ -673,20 +757,12 @@ async def on_sc_resume_start(call: CallbackQuery, state: FSMContext) -> None:
     if user_id in _cancel_events:
         await call.answer("⚠️ У тебя уже идёт скачивание.", show_alert=True)
         return
-    if _batch_semaphore.locked():
-        await call.answer(
-            f"⏳ Бот сейчас занят ({settings.SC_MAX_BATCH_DOWNLOADS}/{settings.SC_MAX_BATCH_DOWNLOADS} загрузок). Попробуй чуть позже.",
-            show_alert=True,
-        )
-        return
     data = await state.get_data()
     tracks = data.get("sc_tracks", [])
-    await call.message.edit_text(
+    await _try_start_or_queue(
+        call, state, user_id, call.from_user.username, tracks, 0,
         f"▶️ Начинаю с первого трека (всего {len(tracks)})…",
-        reply_markup=sc_stop_keyboard(),
     )
-    await state.set_state(SCBatchFlow.sc_downloading)
-    asyncio.create_task(_run_batch_download(call.message, state, user_id, call.from_user.username, tracks, 0))
 
 
 @router.callback_query(SCBatchFlow.sc_resume_choice, F.data == "sc_resume:start_reversed")
@@ -695,21 +771,13 @@ async def on_sc_resume_start_reversed(call: CallbackQuery, state: FSMContext) ->
     if user_id in _cancel_events:
         await call.answer("⚠️ У тебя уже идёт скачивание.", show_alert=True)
         return
-    if _batch_semaphore.locked():
-        await call.answer(
-            f"⏳ Бот сейчас занят ({settings.SC_MAX_BATCH_DOWNLOADS}/{settings.SC_MAX_BATCH_DOWNLOADS} загрузок). Попробуй чуть позже.",
-            show_alert=True,
-        )
-        return
     data = await state.get_data()
     tracks = list(reversed(data.get("sc_tracks", [])))
     await state.update_data(sc_tracks=tracks)
-    await call.message.edit_text(
+    await _try_start_or_queue(
+        call, state, user_id, call.from_user.username, tracks, 0,
         f"▶️ Начинаю с первого трека (всего {len(tracks)})…",
-        reply_markup=sc_stop_keyboard(),
     )
-    await state.set_state(SCBatchFlow.sc_downloading)
-    asyncio.create_task(_run_batch_download(call.message, state, user_id, call.from_user.username, tracks, 0))
 
 
 @router.callback_query(SCBatchFlow.sc_resume_choice, F.data == "sc_resume:seek")
@@ -774,21 +842,13 @@ async def on_sc_resume_confirm(call: CallbackQuery, state: FSMContext) -> None:
     if user_id in _cancel_events:
         await call.answer("⚠️ У тебя уже идёт скачивание.", show_alert=True)
         return
-    if _batch_semaphore.locked():
-        await call.answer(
-            f"⏳ Бот сейчас занят ({settings.SC_MAX_BATCH_DOWNLOADS}/{settings.SC_MAX_BATCH_DOWNLOADS} загрузок). Попробуй чуть позже.",
-            show_alert=True,
-        )
-        return
     data = await state.get_data()
     tracks = data.get("sc_tracks", [])
     start_idx = data.get("sc_resume_idx", 0)
-    await call.message.edit_text(
+    await _try_start_or_queue(
+        call, state, user_id, call.from_user.username, tracks, start_idx,
         f"▶️ Начинаю с трека {start_idx + 1}/{len(tracks)}…",
-        reply_markup=sc_stop_keyboard(),
     )
-    await state.set_state(SCBatchFlow.sc_downloading)
-    asyncio.create_task(_run_batch_download(call.message, state, user_id, call.from_user.username, tracks, start_idx))
 
 
 @router.callback_query(SCBatchFlow.sc_resume_confirm, F.data == "sc_resume:retry")
@@ -813,17 +873,20 @@ async def on_sc_stop(call: CallbackQuery) -> None:
         await call.answer("Нет активного скачивания.", show_alert=True)
 
 
+@router.callback_query(SCBatchFlow.sc_queued, F.data == "sc:cancel_queue")
+async def on_cancel_queue(call: CallbackQuery, state: FSMContext) -> None:
+    user_id = call.from_user.id
+    _batch_queue[:] = [item for item in _batch_queue if item.user_id != user_id]
+    await state.update_data(in_batch_queue=False)
+    await call.message.edit_text("👋 Привет! Что хочешь сделать?", reply_markup=service_keyboard())
+    await state.set_state(ExportFlow.choosing_service)
+
+
 @router.callback_query(F.data == "sc:retry_failed")
 async def on_sc_retry_failed(call: CallbackQuery, state: FSMContext) -> None:
     user_id = call.from_user.id
     if user_id in _cancel_events:
         await call.answer("⚠️ У тебя уже идёт скачивание.", show_alert=True)
-        return
-    if _batch_semaphore.locked():
-        await call.answer(
-            f"⏳ Бот сейчас занят. Попробуй чуть позже.",
-            show_alert=True,
-        )
         return
     data = await state.get_data()
     retry_tracks = data.get("sc_retry_tracks", [])
@@ -831,14 +894,9 @@ async def on_sc_retry_failed(call: CallbackQuery, state: FSMContext) -> None:
         await call.answer("Нет треков для повтора.", show_alert=True)
         return
     await state.update_data(sc_tracks=retry_tracks, sc_retry_tracks=[])
-    await call.message.edit_text(
+    await _try_start_or_queue(
+        call, state, user_id, call.from_user.username, retry_tracks, 0,
         f"🔄 Повторяю скачивание <b>{len(retry_tracks)}</b> не найденных треков.",
-        parse_mode="HTML",
-        reply_markup=sc_stop_keyboard(),
-    )
-    await state.set_state(SCBatchFlow.sc_downloading)
-    asyncio.create_task(
-        _run_batch_download(call.message, state, user_id, call.from_user.username, retry_tracks, 0)
     )
 
 
@@ -1149,21 +1207,10 @@ async def on_tsel_confirm(call: CallbackQuery, state: FSMContext) -> None:
     if user_id in _cancel_events:
         await call.answer("⚠️ У тебя уже идёт скачивание.", show_alert=True)
         return
-    if _batch_semaphore.locked():
-        await call.answer(
-            f"⏳ Бот сейчас занят ({settings.SC_MAX_BATCH_DOWNLOADS}/{settings.SC_MAX_BATCH_DOWNLOADS} загрузок). Попробуй чуть позже.",
-            show_alert=True,
-        )
-        return
     await state.update_data(sc_tracks=selected)
-    await call.message.edit_text(
+    await _try_start_or_queue(
+        call, state, user_id, call.from_user.username, selected, 0,
         f"▶️ Начинаю скачивание <b>{len(selected)}</b> выбранных треков…",
-        parse_mode="HTML",
-        reply_markup=sc_stop_keyboard(),
-    )
-    await state.set_state(SCBatchFlow.sc_downloading)
-    asyncio.create_task(
-        _run_batch_download(call.message, state, user_id, call.from_user.username, selected, 0)
     )
 
 
@@ -1408,6 +1455,9 @@ async def _run_batch_download(
     finally:
         _cancel_events.pop(user_id, None)
         _batch_semaphore.release()
+
+    # Kick off next queued download (if any) now that a slot is free
+    asyncio.create_task(_process_queue())
 
     batch_result = "stopped" if cancel_event.is_set() else "success"
     log_event(user_id, username, "sc_batch", batch_result,
