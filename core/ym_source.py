@@ -106,10 +106,9 @@ class YandexMusicSource(AbstractMusicSource):
         client = await self._get_client()
 
         def _sync():
-            albums = client.albums_with_tracks([int(album_id)])
-            if not albums:
+            album = client.albums_with_tracks(int(album_id))
+            if album is None:
                 raise ValueError("Альбом не найден или недоступен.")
-            album = albums[0]
             title = album.title or "Альбом"
             tracks: list[dict] = []
             for volume in (album.volumes or []):
