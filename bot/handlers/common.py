@@ -22,6 +22,24 @@ _batch_semaphore = asyncio.Semaphore(settings.SC_MAX_BATCH_DOWNLOADS)
 # Spotify OAuth codes received via callback server {user_id: code}
 _pending_spotify_codes: dict[int, str] = {}
 
+
+class _BatchQueueItem:
+    """Holds everything needed to start a queued batch download."""
+    __slots__ = ('user_id', 'username', 'chat_id', 'bot', 'state', 'tracks', 'start_idx')
+
+    def __init__(self, user_id: int, username, chat_id: int, bot, state, tracks: list, start_idx: int):
+        self.user_id = user_id
+        self.username = username
+        self.chat_id = chat_id
+        self.bot = bot
+        self.state = state
+        self.tracks = tracks
+        self.start_idx = start_idx
+
+
+# Queue of users waiting for a free batch download slot
+_batch_queue: list[_BatchQueueItem] = []
+
 # ── Text constants ────────────────────────────────────────────────────────────
 
 _TOKEN_GUIDE = (

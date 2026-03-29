@@ -56,6 +56,7 @@ Telegram bot with three main sections: **export your music library to `.txt` / `
   - Progress updates after each track; ⛔ Stop button at any time
   - Tracks not found on either platform shown at the end
   - **Retry failed tracks**: after batch completes, a **"🔄 Retry not found (N)"** button starts a new batch with only the failed tracks
+  - **Batch queue**: if all slots are taken (`SC_MAX_BATCH_DOWNLOADS` limit), the user is placed in a numbered queue instead of receiving "bot is busy"; download starts automatically when a slot frees up; users can cancel their position at any time; `/start` also removes them from the queue
   - Concurrency limit: configurable via `SC_MAX_BATCH_DOWNLOADS`
 - **Auto-retry**: one automatic retry on network error before giving up
 
@@ -85,13 +86,16 @@ Telegram bot with three main sections: **export your music library to `.txt` / `
 - **24 h cooldown** while the message is unanswered — attempting to send again shows remaining time (hours + minutes); cooldown resets immediately once admin replies
 - Admin replies by replying to the forwarded message in Telegram → bot delivers the reply to the user
 
+**Personal statistics** (`/mystats`)
+- Per-user download and export stats: tracks downloaded (search + batch), exports, playlists downloaded, date of first activity — broken down into **last 7 days** and **all time**
+
 **General**
 - Streamlit dashboard — **4 tabs**: Yandex Music / Spotify / SC+YouTube / Event log
 - PostgreSQL stores events, live batch state, track file_id cache, banned users, batch whitelist, access requests
 - Redis FSM storage with graceful fallback to MemoryStorage
 - Middleware: **Ban check** → Throttling → Stale-button guard (eternal callbacks exempted) → Callback auto-answer
 - **Batch access control**: `BATCH_ALLOWED_USERS` env var (`*` / `""` / static list) + DB whitelist via admin panel + in-bot request flow
-- **Bot commands** registered on startup: `/start`, `/faq`, `/admin`
+- **Bot commands** registered on startup: `/start`, `/faq`, `/admin`, `/mystats`
 
 ### 🔄 User Flow
 
@@ -114,9 +118,10 @@ Telegram bot with three main sections: **export your music library to `.txt` / `
      │         └─ Liked tracks      → OAuth (browser, automatic) → .txt / .csv  [+ Download | Filter]
      │
      ├─ 🎵 Download MP3
-     │    ├─ 🔍 Find on SoundCloud  → cache check → (⚡ instant) or search → mp3  [+ Download more]
-     │    ├─ 🔍 Find on YouTube     → cache check → (⚡ instant) or search → mp3  [+ Download more]
-     │    └─ 🔗 By URL              → paste SC/YT link → mp3 or batch
+     │    ├─ 🔍 Find on SoundCloud      → cache check → (⚡ instant) or search → mp3  [+ Download more]
+     │    ├─ 🔍 Find on YouTube         → cache check → (⚡ instant) or search → mp3  [+ Download more]
+     │    ├─ 🔗 By URL                  → paste SC/YT link → mp3 or batch
+     │    └─ 📥 Playlist from YM        → enter OAuth token → pick playlist (incl. ❤️ Liked) → pre-download menu → batch mp3
      │
      └─ 🔗 Playlist / Album by link
           → Choose source: Yandex Music | Spotify
@@ -130,8 +135,9 @@ Telegram bot with three main sections: **export your music library to `.txt` / `
                     │                     → batch mp3  [🔄 Retry failed on finish]
                     └─ Filter by artist → enter name → .txt  [+ Download filtered → same pre-download menu]
 
-/faq  → capabilities + privacy policy  [+ Contact admin → write message → forwarded to admin]
-/admin → admin panel (ADMIN_ID only)
+/faq     → capabilities + privacy policy  [+ Contact admin → write message → forwarded to admin]
+/admin   → admin panel (ADMIN_ID only)
+/mystats → personal download & export statistics
 ```
 
 ### 🗂️ Project Structure
@@ -389,6 +395,7 @@ streamlit run dashboard.py
   - Прогресс после каждого трека; кнопка ⛔ в любой момент
   - Ненайденные треки выводятся в конце
   - **Retry**: кнопка **«🔄 Повторить не найденные (N)»** — только проблемные треки
+  - **Очередь загрузок**: если все слоты заняты (лимит `SC_MAX_BATCH_DOWNLOADS`), пользователь встаёт в пронумерованную очередь вместо сообщения «бот занят»; скачивание стартует автоматически при освобождении слота; можно выйти из очереди в любой момент; `/start` также снимает с очереди
   - Ограничение параллельности: `SC_MAX_BATCH_DOWNLOADS`
 - **Авто-повтор**: одна попытка при сетевой ошибке
 
@@ -418,13 +425,16 @@ streamlit run dashboard.py
 - **Cooldown 24 ч** пока сообщение не получило ответа — при повторной попытке бот показывает оставшееся время (часы + минуты); cooldown сбрасывается сразу после ответа администратора
 - Администратор отвечает, сделав Telegram-ответ на это сообщение → бот доставляет ответ пользователю
 
+**Персональная статистика** (`/mystats`)
+- Статистика загрузок и экспортов для текущего пользователя: скачано треков (поиском и плейлистами), экспортировано, плейлистов скачано, дата первой активности — за **последние 7 дней** и **за всё время**
+
 **Общее**
 - Streamlit-дашборд — **4 вкладки**: Яндекс Музыка / Spotify / SC+YouTube / Лог событий
 - PostgreSQL хранит события, состояние батча, кэш file_id, банлист, вайтлист, запросы
 - Redis FSM с graceful fallback на MemoryStorage
 - Стек middleware: **проверка бана** → throttling → защита от устаревших кнопок → авто-ответ на callback
 - **Управление доступом к батчу**: env `BATCH_ALLOWED_USERS` + DB-вайтлист + система запросов в боте
-- **Bot commands** регистрируются при старте: `/start`, `/faq`, `/admin`
+- **Bot commands** регистрируются при старте: `/start`, `/faq`, `/admin`, `/mystats`
 
 ### 🔄 Флоу пользователя
 
@@ -449,7 +459,8 @@ streamlit run dashboard.py
      ├─ 🎵 Скачать MP3
      │    ├─ 🔍 Найти на SoundCloud  → кэш → (⚡ мгновенно) или поиск → mp3  [+ Скачать ещё]
      │    ├─ 🔍 Найти на YouTube     → кэш → (⚡ мгновенно) или поиск → mp3  [+ Скачать ещё]
-     │    └─ 🔗 По ссылке            → ссылка SC/YT → mp3 или батч
+     │    ├─ 🔗 По ссылке            → ссылка SC/YT → mp3 или батч
+     │    └─ 📥 Плейлист из ЯМ       → OAuth-токен → выбор плейлиста (включая ❤️ Лайки) → предстартовое меню → батч mp3
      │
      └─ 🔗 Плейлист / Альбом по ссылке
           → Выбор источника: Яндекс Музыка | Spotify
@@ -463,8 +474,9 @@ streamlit run dashboard.py
                     │                        → батч mp3  [🔄 Retry при ошибках]
                     └─ Фильтр по исполнителю → имя → .txt  [+ Скачать отфильтрованное → то же меню]
 
-/faq   → возможности + политика конфиденциальности  [+ Написать администратору]
-/admin → панель администратора (только ADMIN_ID)
+/faq     → возможности + политика конфиденциальности  [+ Написать администратору]
+/admin   → панель администратора (только ADMIN_ID)
+/mystats → персональная статистика загрузок и экспортов
 ```
 
 ### 🗂️ Структура проекта

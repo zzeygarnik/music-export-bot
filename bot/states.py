@@ -39,6 +39,7 @@ class SCBatchFlow(StatesGroup):
     sc_resume_confirm = State()    # bot shows found track, user confirms
     sc_downloading = State()       # batch download in progress
     track_selection = State()      # user searches and picks specific tracks
+    sc_queued = State()            # waiting in batch download queue
 
 
 class SpotifyFlow(StatesGroup):

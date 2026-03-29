@@ -636,6 +636,64 @@ def mark_contact_replied(user_id: int) -> None:
         put_conn(conn)
 
 
+def get_user_stats(user_id: int) -> dict:
+    """Return per-user statistics based on the events table."""
+    import hashlib
+    user_hash = hashlib.sha256(str(user_id).encode()).hexdigest()[:8]
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    COALESCE(SUM(CASE WHEN action IN ('sc_search','yt_search') AND result='success'
+                                     THEN COALESCE(track_count,1) ELSE 0 END), 0),
+                    COALESCE(SUM(CASE WHEN action='sc_batch' AND result IN ('success','stopped')
+                                     THEN COALESCE(track_count,0) ELSE 0 END), 0),
+                    COUNT(CASE WHEN action='sc_batch' AND result IN ('success','stopped') THEN 1 END),
+                    COALESCE(SUM(CASE WHEN action IN ('export_liked','export_playlist','export_by_link','spotify_export')
+                                      AND result='success'
+                                     THEN COALESCE(track_count,0) ELSE 0 END), 0),
+                    MIN(ts)
+                FROM events WHERE user_hash = %s
+            """, (user_hash,))
+            row = cur.fetchone()
+            if not row or row[4] is None:
+                return {}
+
+            cur.execute("""
+                SELECT
+                    COALESCE(SUM(CASE WHEN action IN ('sc_search','yt_search') AND result='success'
+                                     THEN COALESCE(track_count,1) ELSE 0 END), 0),
+                    COALESCE(SUM(CASE WHEN action='sc_batch' AND result IN ('success','stopped')
+                                     THEN COALESCE(track_count,0) ELSE 0 END), 0),
+                    COALESCE(SUM(CASE WHEN action IN ('export_liked','export_playlist','export_by_link','spotify_export')
+                                      AND result='success'
+                                     THEN COALESCE(track_count,0) ELSE 0 END), 0)
+                FROM events WHERE user_hash = %s AND ts >= NOW() - INTERVAL '7 days'
+            """, (user_hash,))
+            week_row = cur.fetchone()
+
+        return {
+            "all": {
+                "single":   int(row[0]),
+                "batch":    int(row[1]),
+                "batches":  int(row[2]),
+                "exported": int(row[3]),
+                "first_ts": row[4],
+            },
+            "week": {
+                "single":   int(week_row[0]),
+                "batch":    int(week_row[1]),
+                "exported": int(week_row[2]),
+            },
+        }
+    except Exception as e:
+        log.warning("get_user_stats failed: %s", e)
+        return {}
+    finally:
+        put_conn(conn)
+
+
 def get_recent_events(n: int = 20) -> list[dict]:
     conn = get_conn()
     try:

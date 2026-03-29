@@ -27,14 +27,13 @@ from .common import (
     _get_user_info,
     _filter_by_artist,
     _cancel_events,
-    _batch_semaphore,
     _pending_spotify_codes,
     _SPOTIFY_MENU_TEXT,
     _SPOTIFY_PLAYLIST_TEXT,
     _SPOTIFY_AUTH_TEXT,
     _show_batch_access_page,
 )
-from .sc_router import _run_batch_download
+from .sc_router import _run_batch_download, _try_start_or_queue
 
 router = Router()
 log = logging.getLogger(__name__)
@@ -341,12 +340,6 @@ async def on_spotify_download(call: CallbackQuery, state: FSMContext) -> None:
     if call.from_user.id in _cancel_events:
         await call.answer("⚠️ У тебя уже идёт скачивание.", show_alert=True)
         return
-    if _batch_semaphore.locked():
-        await call.answer(
-            f"⏳ Бот сейчас занят ({settings.SC_MAX_BATCH_DOWNLOADS}/{settings.SC_MAX_BATCH_DOWNLOADS} загрузок). Попробуй чуть позже.",
-            show_alert=True,
-        )
-        return
     data = await state.get_data()
     tracks = data.get("spotify_tracks", [])
     await state.update_data(sc_tracks=tracks, sc_resume_back_cb="spotify_actions")
@@ -413,12 +406,6 @@ async def on_spotify_download_filtered(call: CallbackQuery, state: FSMContext) -
         return
     if call.from_user.id in _cancel_events:
         await call.answer("⚠️ У тебя уже идёт скачивание.", show_alert=True)
-        return
-    if _batch_semaphore.locked():
-        await call.answer(
-            f"⏳ Бот сейчас занят ({settings.SC_MAX_BATCH_DOWNLOADS}/{settings.SC_MAX_BATCH_DOWNLOADS} загрузок). Попробуй чуть позже.",
-            show_alert=True,
-        )
         return
     data = await state.get_data()
     filtered = data.get("spotify_filtered_tracks")
