@@ -51,7 +51,7 @@ _LOGIN_HTML = """\
 </head>
 <body>
 <div class="card">
-  <h1>Sonic Curator</h1>
+  <h1>ZGRNK Music</h1>
   <p>Admin access only</p>
   {error}
   <form method="POST" action="/dashboard/login">
