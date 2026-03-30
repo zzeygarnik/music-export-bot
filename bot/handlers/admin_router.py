@@ -14,6 +14,7 @@ from aiogram.types import (
 from bot.states import AdminFlow
 from config import settings
 from utils import db
+from bot.keyboards import admin_batch_request_keyboard, batch_access_pending_keyboard
 
 router = Router()
 log = logging.getLogger(__name__)
@@ -269,6 +270,105 @@ async def on_unban(call: CallbackQuery) -> None:
         parse_mode="HTML",
         reply_markup=_bans_kb(banned),
     )
+
+
+# ── Batch access requests (user-side + admin approve/reject) ─────────────
+
+@router.callback_query(F.data == "batch_req:send")
+async def on_batch_req_send(call: CallbackQuery) -> None:
+    user_id = call.from_user.id
+    username = call.from_user.username
+
+    if db.get_pending_request(user_id) is not None:
+        await call.answer("⏳ Твой запрос уже на рассмотрении.", show_alert=True)
+        return
+
+    request_id = db.create_batch_request(user_id, username)
+    if request_id == -1:
+        await call.answer("❌ Ошибка при отправке запроса. Попробуй позже.", show_alert=True)
+        return
+
+    if settings.ADMIN_ID:
+        name = f"@{username}" if username else f"ID {user_id}"
+        try:
+            msg = await call.bot.send_message(
+                settings.ADMIN_ID,
+                f"📥 <b>Запрос на batch-доступ</b>\n\nПользователь: {name} (<code>{user_id}</code>)",
+                parse_mode="HTML",
+                reply_markup=admin_batch_request_keyboard(request_id),
+            )
+            db.set_request_admin_msg(request_id, msg.message_id, settings.ADMIN_ID)
+        except Exception as e:
+            log.warning("Failed to notify admin about batch request %s: %s", request_id, e)
+
+    await call.message.edit_text(
+        "✅ Запрос отправлен администратору.\nТы получишь уведомление когда он будет рассмотрен.",
+    )
+
+
+@router.callback_query(F.data.startswith("batch_req:approve:"))
+async def on_batch_req_approve(call: CallbackQuery) -> None:
+    if not _is_admin(call.from_user.id):
+        await call.answer("Нет доступа.", show_alert=True)
+        return
+
+    request_id = int(call.data.split(":")[-1])
+    req = db.get_request_by_id(request_id)
+    if not req:
+        await call.answer("Запрос не найден.", show_alert=True)
+        return
+    if req["status"] != "pending":
+        await call.answer("Запрос уже обработан.", show_alert=True)
+        return
+
+    db.resolve_batch_request(request_id, "approved")
+    db.add_batch_whitelist(req["user_id"], req["username"])
+
+    name = f"@{req['username']}" if req["username"] else f"ID {req['user_id']}"
+    await call.message.edit_text(
+        f"✅ <b>Доступ одобрен</b> — {name} (<code>{req['user_id']}</code>)",
+        parse_mode="HTML",
+    )
+    try:
+        await call.bot.send_message(
+            req["user_id"],
+            "✅ Твой запрос на batch-скачивание <b>одобрен</b>! Можешь начинать.",
+            parse_mode="HTML",
+        )
+    except Exception:
+        pass
+
+
+@router.callback_query(F.data.startswith("batch_req:reject:"))
+async def on_batch_req_reject(call: CallbackQuery) -> None:
+    if not _is_admin(call.from_user.id):
+        await call.answer("Нет доступа.", show_alert=True)
+        return
+
+    request_id = int(call.data.split(":")[-1])
+    req = db.get_request_by_id(request_id)
+    if not req:
+        await call.answer("Запрос не найден.", show_alert=True)
+        return
+    if req["status"] != "pending":
+        await call.answer("Запрос уже обработан.", show_alert=True)
+        return
+
+    db.resolve_batch_request(request_id, "rejected")
+
+    name = f"@{req['username']}" if req["username"] else f"ID {req['user_id']}"
+    await call.message.edit_text(
+        f"❌ <b>Отклонено</b> — {name} (<code>{req['user_id']}</code>)",
+        parse_mode="HTML",
+    )
+    try:
+        await call.bot.send_message(
+            req["user_id"],
+            "❌ Твой запрос на batch-скачивание был <b>отклонён</b>.",
+            parse_mode="HTML",
+        )
+    except Exception:
+        pass
 
 
 # ── Helper ────────────────────────────────────────────────────────────────

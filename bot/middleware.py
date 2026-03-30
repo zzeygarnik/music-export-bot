@@ -12,7 +12,7 @@ from utils import db
 _CALLBACK_MAX_AGE_SECONDS = 300  # 5 minutes
 
 # Callback prefixes that are exempt from stale check (must work until explicitly acted on).
-_ETERNAL_CALLBACK_PREFIXES = ("batch_req:approve:", "batch_req:reject:")
+_ETERNAL_CALLBACK_PREFIXES = ("batch_req:approve:", "batch_req:reject:", "batch_req:send")
 
 
 class BanMiddleware(BaseMiddleware):
