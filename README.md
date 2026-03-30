@@ -28,7 +28,7 @@ Telegram bot with three main sections: **export your music library to `.txt` / `
 - **Yandex Music:** send an iframe embed code from the YM app ("Share → HTML code"), a direct playlist link, `lk.UUID` share link, or an **album link** (`music.yandex.ru/album/ID`)
 - **Spotify:** send any `open.spotify.com/playlist/...` or **album link** (`open.spotify.com/album/ID`)
 - Two actions after loading:
-  - **Download all** — opens a pre-download menu: choose order (oldest-first / newest-first), continue from a specific track, or **select specific tracks** (search within playlist, toggle individually, add all by artist); then batch-downloads via SoundCloud (with YouTube fallback)
+  - **Download all** — opens a pre-download menu: choose order (oldest-first / newest-first), continue from a specific track, **select specific tracks** (search within playlist, toggle individually, add all by artist), or **filter by artist** (narrow the playlist to one artist before starting); then batch-downloads via SoundCloud (with YouTube fallback)
   - **Filter by artist** — enter an artist name, get a `.txt` with matching tracks, then optionally batch-download that filtered list
 - If `YM_BOT_TOKEN` is set, users don't need to authenticate — bot reads public playlists with the bot-level token
 
@@ -133,6 +133,7 @@ Telegram bot with three main sections: **export your music library to `.txt` / `
                     ├─ Download all     → oldest-first | newest-first
                     │                     | Continue from track…
                     │                     | Select specific tracks  → search / toggle / add by artist
+                    │                     | Filter by artist        → enter name → filtered list → same menu
                     │                     → batch mp3  [🔄 Retry failed on finish]
                     └─ Filter by artist → enter name → .txt  [+ Download filtered → same pre-download menu]
 
@@ -267,6 +268,13 @@ DASHBOARD_TOKEN=
        proxy_set_header Host $host;
    }
    location /dashboard { proxy_pass http://127.0.0.1:8889; }
+   location /api/ws {
+       proxy_pass http://127.0.0.1:8889;
+       proxy_http_version 1.1;
+       proxy_set_header Upgrade $http_upgrade;
+       proxy_set_header Connection "upgrade";
+       proxy_set_header Host $host;
+   }
    location /api/      { proxy_pass http://127.0.0.1:8889; }
    ```
 4. Set `SPOTIFY_REDIRECT_URI=https://YOUR_DOMAIN/spotify/callback` in `.env`
@@ -332,14 +340,19 @@ This script creates the `music_bot` database, sets up tables, and migrates any e
 ### 📊 Dashboard
 
 The web dashboard is served by the bot itself at `/dashboard` (no separate process needed). It reads from PostgreSQL and is organized into **4 tabs**:
-- **📊 Yandex Music** — all-time/daily export stats, breakdown by export type (liked / playlist / by link)
-- **🟢 Spotify** — playlist/album load counts, liked tracks loads, export stats by format, top playlists
-- **☁️ SC / YouTube** — separate metrics for SoundCloud and YouTube searches, batch stats (avg downloaded/not found), top tracks
-- **📋 Event log** — filterable recent events table (today / 7 days / all time)
-- **🔴 Live batch progress** (always visible at top): real-time progress bar, current track, not-found list
+- **📊 Yandex Music** — all-time/daily stats for track list exports (titles to .txt/.csv, not audio files)
+- **🟢 Spotify** — playlist/album load counts, liked tracks loads, export stats by format
+- **☁️ SC / YouTube** — separate metrics for SoundCloud and YouTube searches, batch stats
+- **📋 Event log** — filterable recent events table
+
+**Real-time updates via WebSocket** — all numbers, charts, and batch progress update automatically every 5 seconds without page refresh. Charts refresh only when underlying data changes. Auto-reconnects on disconnect.
+
+**UX features:**
+- Active tab is saved in the URL hash (`#ym`, `#sc`, `#log`) — survives page refresh
+- Logout button in the sidebar — clears auth cookie
 
 **Access:**
-Set `DASHBOARD_TOKEN` in `.env`, then open `https://YOUR_DOMAIN/dashboard`. Login is cookie-based — token persists until you clear cookies.
+Set `DASHBOARD_TOKEN` in `.env` (generate with `openssl rand -hex 20`), then open `https://YOUR_DOMAIN/dashboard`. Login is cookie-based, valid for 30 days.
 
 ### 📦 Tech Stack
 
@@ -386,7 +399,7 @@ Set `DASHBOARD_TOKEN` in `.env`, then open `https://YOUR_DOMAIN/dashboard`. Logi
 - **Яндекс Музыка:** iframe-код из приложения, прямая ссылка, `lk.UUID` или **ссылка на альбом** (`music.yandex.ru/album/ID`)
 - **Spotify:** ссылка на плейлист (`open.spotify.com/playlist/...`) или **альбом** (`open.spotify.com/album/ID`)
 - Два действия после загрузки:
-  - **Скачать все** — открывает предстартовое меню: выбор порядка (с первого / с последнего), продолжить с конкретного трека или **выбрать конкретные треки** (поиск по плейлисту, переключение по одному, добавить всех от исполнителя); затем батчевое скачивание через SoundCloud (с YouTube-фолбэком)
+  - **Скачать все** — открывает предстартовое меню: выбор порядка (с первого / с последнего), продолжить с конкретного трека, **выбрать конкретные треки** (поиск по плейлисту, переключение по одному, добавить всех от исполнителя) или **фильтр по исполнителю** (сузить плейлист до одного артиста перед стартом); затем батчевое скачивание через SoundCloud (с YouTube-фолбэком)
   - **Фильтр по исполнителю** — введи имя, получи `.txt` с треками, можно скачать отфильтрованный список через то же предстартовое меню
 - Если задан `YM_BOT_TOKEN`, пользователям не нужно авторизоваться — бот читает публичные плейлисты через бот-токен
 
@@ -447,7 +460,7 @@ Set `DASHBOARD_TOKEN` in `.env`, then open `https://YOUR_DOMAIN/dashboard`. Logi
 - Статистика загрузок и экспортов для текущего пользователя: скачано треков (поиском и плейлистами), экспортировано (с **разбивкой ЯМ / Spotify**), плейлистов скачано, дата первой активности — за **последние 7 дней** и **за всё время**
 
 **Общее**
-- **Веб-дашборд** — **4 вкладки**: Яндекс Музыка / Spotify / SC+YouTube / Лог событий; раздаётся ботом по адресу `/dashboard` (защищён паролем через `DASHBOARD_TOKEN`)
+- **Веб-дашборд** — **4 вкладки**: Яндекс Музыка / Spotify / SC+YouTube / Лог событий; раздаётся ботом по `/dashboard`; **real-time обновления через WebSocket** (каждые 5 сек); hash-навигация по вкладкам; кнопка выхода; защита через `DASHBOARD_TOKEN`
 - PostgreSQL хранит события, состояние батча, кэш file_id, банлист, вайтлист, запросы
 - Redis FSM с graceful fallback на MemoryStorage
 - Стек middleware: **проверка бана** → throttling → защита от устаревших кнопок → авто-ответ на callback
@@ -490,6 +503,7 @@ Set `DASHBOARD_TOKEN` in `.env`, then open `https://YOUR_DOMAIN/dashboard`. Logi
                     ├─ Скачать все        → с первого | с последнего
                     │                        | Продолжить с трека…
                     │                        | Выбрать треки  → поиск / переключение / добавить по исполнителю
+                    │                        | Фильтр по исполнителю → имя → отфильтрованный список → то же меню
                     │                        → батч mp3  [🔄 Retry при ошибках]
                     └─ Фильтр по исполнителю → имя → .txt  [+ Скачать отфильтрованное → то же меню]
 
@@ -622,6 +636,13 @@ DASHBOARD_TOKEN=
        proxy_set_header Host $host;
    }
    location /dashboard { proxy_pass http://127.0.0.1:8889; }
+   location /api/ws {
+       proxy_pass http://127.0.0.1:8889;
+       proxy_http_version 1.1;
+       proxy_set_header Upgrade $http_upgrade;
+       proxy_set_header Connection "upgrade";
+       proxy_set_header Host $host;
+   }
    location /api/      { proxy_pass http://127.0.0.1:8889; }
    ```
 4. Пропиши `SPOTIFY_REDIRECT_URI=https://ВАШ_ДОМЕН/spotify/callback` в `.env`
@@ -683,11 +704,14 @@ docker run --rm \
 ### 📊 Дашборд
 
 Веб-дашборд раздаётся самим ботом по адресу `/dashboard` (отдельный процесс не нужен). Читает из PostgreSQL, разбит на **4 вкладки**:
-- **📊 Яндекс Музыка** — статистика экспортов за всё время и по дням, разбивка по типам
-- **🟢 Spotify** — загрузки плейлистов/альбомов, лайков, экспорты по формату, топ плейлистов
-- **☁️ SC / YouTube** — раздельные метрики для SoundCloud и YouTube, статистика батча, топ треков
-- **📋 Лог событий** — таблица с фильтрацией (сегодня / 7 дней / всё время)
-- **🔴 Live-прогресс батча** (всегда вверху): прогресс-бар, текущий трек, список ненайденных
+- **📊 Яндекс Музыка** — статистика экспортов названий треков в .txt/.csv (не аудиофайлов)
+- **🟢 Spotify** — загрузки плейлистов/альбомов, лайков, экспорты по формату
+- **☁️ SC / YouTube** — раздельные метрики для SoundCloud и YouTube, статистика батча
+- **📋 Лог событий** — таблица последних событий с фильтрацией
+
+**Real-time обновления через WebSocket** — все числа, графики и прогресс батча обновляются автоматически каждые 5 секунд без обновления страницы. Графики перезапрашиваются только при изменении данных. Автопереподключение при обрыве.
+
+**UX:** активная вкладка сохраняется в URL hash (`#ym`, `#sc`, `#log`) и восстанавливается при обновлении; кнопка выхода в сайдбаре.
 
 **Доступ:**
 Задай `DASHBOARD_TOKEN` в `.env`, затем открой `https://ВАШ_ДОМЕН/dashboard`. Авторизация через куки — токен остаётся до очистки куков.
