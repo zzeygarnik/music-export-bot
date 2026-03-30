@@ -735,7 +735,7 @@ async def _deliver_tracks(
     if data.get("retention") == "single":
         await state.clear()
         await call.message.answer("Токен удалён. Введи /start для нового экспорта.")
-    else:
+    elif not offer_sc:
         await call.message.answer(_EXPORT_MENU_TEXT, reply_markup=export_type_keyboard())
         await state.set_state(ExportFlow.choosing_export_type)
 
@@ -795,6 +795,6 @@ async def _deliver_tracks_msg(
     if data.get("retention") == "single":
         await state.clear()
         await status_msg.answer("Токен удалён. Введи /start для нового экспорта.")
-    else:
+    elif not offer_sc:
         await status_msg.answer(_EXPORT_MENU_TEXT, reply_markup=export_type_keyboard())
         await state.set_state(ExportFlow.choosing_export_type)
