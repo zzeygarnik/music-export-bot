@@ -700,6 +700,180 @@ def get_user_stats(user_id: int) -> dict:
         put_conn(conn)
 
 
+def get_dashboard_stats() -> dict:
+    """Summary stats for all dashboard tabs."""
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    COALESCE(SUM(CASE WHEN result='success' THEN COALESCE(track_count,0) ELSE 0 END), 0),
+                    COUNT(CASE WHEN result='success' THEN 1 END),
+                    COALESCE(SUM(CASE WHEN result='success' AND ts >= NOW() - INTERVAL '7 days'
+                                     THEN COALESCE(track_count,0) ELSE 0 END), 0),
+                    COUNT(DISTINCT CASE WHEN result='success' THEN user_hash END)
+                FROM events
+                WHERE action IN ('export_liked','export_playlist','export_by_link','export_filtered')
+            """)
+            ym = cur.fetchone()
+
+            cur.execute("""
+                SELECT
+                    COALESCE(SUM(CASE WHEN result='success' THEN COALESCE(track_count,0) ELSE 0 END), 0),
+                    COUNT(CASE WHEN result='success' THEN 1 END),
+                    COALESCE(SUM(CASE WHEN result='success' AND ts >= NOW() - INTERVAL '7 days'
+                                     THEN COALESCE(track_count,0) ELSE 0 END), 0)
+                FROM events WHERE action = 'spotify_export'
+            """)
+            sp = cur.fetchone()
+
+            cur.execute("""
+                SELECT
+                    COALESCE(SUM(CASE WHEN result IN ('success','stopped') THEN COALESCE(track_count,1) ELSE 0 END), 0),
+                    COALESCE(SUM(CASE WHEN result IN ('success','stopped') AND ts >= NOW() - INTERVAL '7 days'
+                                     THEN COALESCE(track_count,1) ELSE 0 END), 0),
+                    COALESCE(SUM(CASE WHEN action IN ('sc_search','sc_batch') AND result IN ('success','stopped')
+                                     THEN COALESCE(track_count,1) ELSE 0 END), 0),
+                    COALESCE(SUM(CASE WHEN action='yt_search' AND result IN ('success','stopped')
+                                     THEN COALESCE(track_count,1) ELSE 0 END), 0)
+                FROM events WHERE action IN ('sc_search','yt_search','sc_batch')
+            """)
+            sc = cur.fetchone()
+
+            cur.execute("SELECT COUNT(*) FROM batch_live WHERE status='running'")
+            active_batches = int(cur.fetchone()[0])
+
+        return {
+            "ym": {
+                "total":  int(ym[0]), "events": int(ym[1]),
+                "week":   int(ym[2]), "users":  int(ym[3]),
+            },
+            "spotify": {
+                "total":  int(sp[0]), "events": int(sp[1]),
+                "week":   int(sp[2]),
+            },
+            "sc": {
+                "total":          int(sc[0]), "week":      int(sc[1]),
+                "sc_tracks":      int(sc[2]), "yt_tracks": int(sc[3]),
+                "active_batches": active_batches,
+            },
+        }
+    except Exception as e:
+        log.warning("get_dashboard_stats failed: %s", e)
+        return {}
+    finally:
+        put_conn(conn)
+
+
+def get_chart_data(source: str, days: int = 7) -> list[dict]:
+    """Per-day track counts for the given source over the last N days (MSK timezone)."""
+    from datetime import datetime, timedelta
+    import zoneinfo
+    _FILTERS = {
+        "ym":      "action IN ('export_liked','export_playlist','export_by_link','export_filtered')",
+        "spotify": "action = 'spotify_export'",
+        "sc":      "action IN ('sc_search','yt_search','sc_batch')",
+    }
+    filter_sql = _FILTERS.get(source, "")
+    if not filter_sql:
+        return []
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"""
+                SELECT DATE(ts AT TIME ZONE 'Europe/Moscow') AS day,
+                       COALESCE(SUM(COALESCE(track_count, 1)), 0) AS tracks
+                FROM events
+                WHERE {filter_sql}
+                  AND result IN ('success','stopped')
+                  AND ts >= NOW() - INTERVAL '{int(days)} days'
+                GROUP BY day ORDER BY day ASC
+            """)
+            rows = cur.fetchall()
+        tz = zoneinfo.ZoneInfo("Europe/Moscow")
+        today = datetime.now(tz).date()
+        day_map = {r[0]: int(r[1]) for r in rows}
+        return [
+            {
+                "day":    (today - timedelta(days=days - 1 - i)).isoformat(),
+                "tracks": day_map.get(today - timedelta(days=days - 1 - i), 0),
+            }
+            for i in range(days)
+        ]
+    except Exception as e:
+        log.warning("get_chart_data failed: %s", e)
+        return []
+    finally:
+        put_conn(conn)
+
+
+def get_events_dashboard(limit: int = 50, source: str = "", offset: int = 0) -> list[dict]:
+    """Events for the dashboard with source filtering and datetime serialization."""
+    _SOURCE_FILTERS = {
+        "ym":      "('export_liked','export_playlist','export_by_link','export_filtered')",
+        "spotify": "('spotify_export',)",
+        "sc":      "('sc_search','yt_search','sc_batch')",
+    }
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            if source in _SOURCE_FILTERS:
+                cur.execute(f"""
+                    SELECT ts, username, action, result, track_count, detail
+                    FROM events
+                    WHERE action IN {_SOURCE_FILTERS[source]}
+                    ORDER BY ts DESC LIMIT %s OFFSET %s
+                """, (limit, offset))
+            else:
+                cur.execute("""
+                    SELECT ts, username, action, result, track_count, detail
+                    FROM events ORDER BY ts DESC LIMIT %s OFFSET %s
+                """, (limit, offset))
+            return [
+                {
+                    "ts":          r[0].isoformat() if r[0] else None,
+                    "username":    r[1] or "—",
+                    "action":      r[2],
+                    "result":      r[3],
+                    "track_count": r[4],
+                    "detail":      r[5],
+                }
+                for r in cur.fetchall()
+            ]
+    except Exception as e:
+        log.warning("get_events_dashboard failed: %s", e)
+        return []
+    finally:
+        put_conn(conn)
+
+
+def get_batch_live_data() -> list[dict]:
+    """Currently running batch downloads."""
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT user_label, total, current_idx, current_track, downloaded, status
+                FROM batch_live WHERE status = 'running' ORDER BY started_at ASC
+            """)
+            return [
+                {
+                    "user_label":    r[0] or "unknown",
+                    "total":         r[1] or 0,
+                    "current_idx":   r[2] or 0,
+                    "current_track": r[3] or "",
+                    "downloaded":    r[4] or 0,
+                    "status":        r[5],
+                }
+                for r in cur.fetchall()
+            ]
+    except Exception as e:
+        log.warning("get_batch_live_data failed: %s", e)
+        return []
+    finally:
+        put_conn(conn)
+
+
 def get_recent_events(n: int = 20) -> list[dict]:
     conn = get_conn()
     try:

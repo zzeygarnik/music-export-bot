@@ -1,5 +1,7 @@
 import asyncio
+import json
 import logging
+import os
 
 from aiohttp import web as aiohttp_web
 from aiogram import Bot, Dispatcher
@@ -16,6 +18,130 @@ from bot.middleware import BanMiddleware, ThrottlingMiddleware, StaleButtonMiddl
 from utils import db
 
 log = logging.getLogger(__name__)
+
+_DASHBOARD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard_web")
+
+_LOGIN_HTML = """\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard — Login</title>
+<style>
+  *{{margin:0;padding:0;box-sizing:border-box}}
+  body{{background:#0d0d14;color:#e4e1ec;font-family:Inter,sans-serif;
+        display:flex;align-items:center;justify-content:center;min-height:100vh}}
+  .card{{background:rgba(19,19,26,.9);border:1px solid rgba(124,58,237,.2);
+         border-radius:1.5rem;padding:2.5rem;width:100%;max-width:360px;
+         box-shadow:0 8px 32px rgba(0,0,0,.4)}}
+  h1{{font-size:1.1rem;font-weight:800;letter-spacing:.2em;text-transform:uppercase;
+      color:#d2bbff;margin-bottom:.4rem}}
+  p{{font-size:.65rem;color:#8a8198;margin-bottom:2rem;letter-spacing:.1em;text-transform:uppercase}}
+  input{{width:100%;background:#1f1f26;border:1px solid #4a4455;border-radius:.75rem;
+         color:#e4e1ec;padding:.875rem 1rem;font-size:.875rem;outline:none;
+         margin-bottom:1rem;transition:border-color .2s}}
+  input:focus{{border-color:#7c3aed}}
+  button{{width:100%;background:#7c3aed;color:#fff;border:none;border-radius:.75rem;
+          padding:.875rem;font-size:.65rem;font-weight:700;letter-spacing:.2em;
+          text-transform:uppercase;cursor:pointer;transition:filter .2s}}
+  button:hover{{filter:brightness(1.1)}}
+  .err{{color:#f87171;font-size:.65rem;margin-bottom:1rem;text-align:center}}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Sonic Curator</h1>
+  <p>Admin access only</p>
+  {error}
+  <form method="POST" action="/dashboard/login">
+    <input type="password" name="token" placeholder="Access token" autofocus>
+    <button type="submit">Enter</button>
+  </form>
+</div>
+</body>
+</html>"""
+
+
+def _check_auth(request: aiohttp_web.Request) -> bool:
+    token = settings.DASHBOARD_TOKEN
+    if not token:
+        return False
+    return request.cookies.get("dashboard_auth", "") == token
+
+
+async def _dashboard_handler(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    if not _check_auth(request):
+        raise aiohttp_web.HTTPFound("/dashboard/login")
+    html_path = os.path.join(_DASHBOARD_DIR, "index.html")
+    try:
+        with open(html_path, "r", encoding="utf-8") as f:
+            content = f.read()
+    except FileNotFoundError:
+        return aiohttp_web.Response(text="Dashboard HTML not found", status=404)
+    return aiohttp_web.Response(text=content, content_type="text/html")
+
+
+async def _dashboard_login_get(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    return aiohttp_web.Response(
+        text=_LOGIN_HTML.format(error=""), content_type="text/html"
+    )
+
+
+async def _dashboard_login_post(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    data = await request.post()
+    token = data.get("token", "")
+    if token and token == settings.DASHBOARD_TOKEN:
+        response = aiohttp_web.HTTPFound("/dashboard")
+        response.set_cookie(
+            "dashboard_auth", token,
+            max_age=86400 * 30, httponly=True, samesite="Strict",
+        )
+        return response
+    return aiohttp_web.Response(
+        text=_LOGIN_HTML.format(error='<p class="err">Wrong token</p>'),
+        content_type="text/html",
+    )
+
+
+async def _api_stats(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    if not _check_auth(request):
+        return aiohttp_web.Response(status=401)
+    data = await asyncio.to_thread(db.get_dashboard_stats)
+    return aiohttp_web.Response(text=json.dumps(data), content_type="application/json")
+
+
+async def _api_events(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    if not _check_auth(request):
+        return aiohttp_web.Response(status=401)
+    try:
+        limit  = min(int(request.query.get("limit", 50)), 200)
+        offset = max(int(request.query.get("offset", 0)), 0)
+    except ValueError:
+        limit, offset = 50, 0
+    source = request.query.get("source", "")
+    data = await asyncio.to_thread(db.get_events_dashboard, limit, source, offset)
+    return aiohttp_web.Response(text=json.dumps(data), content_type="application/json")
+
+
+async def _api_chart(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    if not _check_auth(request):
+        return aiohttp_web.Response(status=401)
+    source = request.query.get("source", "sc")
+    try:
+        days = min(int(request.query.get("days", 7)), 30)
+    except ValueError:
+        days = 7
+    data = await asyncio.to_thread(db.get_chart_data, source, days)
+    return aiohttp_web.Response(text=json.dumps(data), content_type="application/json")
+
+
+async def _api_batch_live(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    if not _check_auth(request):
+        return aiohttp_web.Response(status=401)
+    data = await asyncio.to_thread(db.get_batch_live_data)
+    return aiohttp_web.Response(text=json.dumps(data), content_type="application/json")
+
 
 _SPOTIFY_CALLBACK_HTML_OK = """<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Spotify</title></head>
@@ -121,6 +247,7 @@ async def main() -> None:
     need_server = bool(
         (settings.SPOTIFY_CLIENT_ID and settings.SPOTIFY_CALLBACK_PORT)
         or settings.WEBHOOK_URL
+        or settings.DASHBOARD_TOKEN
     )
     if need_server:
         web_app = aiohttp_web.Application()
@@ -128,6 +255,16 @@ async def main() -> None:
         if settings.SPOTIFY_CLIENT_ID and settings.SPOTIFY_CALLBACK_PORT:
             web_app.router.add_get("/spotify/callback", _make_spotify_callback(bot))
             log.info("Spotify OAuth callback registered at /spotify/callback")
+
+        if settings.DASHBOARD_TOKEN:
+            web_app.router.add_get("/dashboard",        _dashboard_handler)
+            web_app.router.add_get("/dashboard/login",  _dashboard_login_get)
+            web_app.router.add_post("/dashboard/login", _dashboard_login_post)
+            web_app.router.add_get("/api/stats",        _api_stats)
+            web_app.router.add_get("/api/events",       _api_events)
+            web_app.router.add_get("/api/chart",        _api_chart)
+            web_app.router.add_get("/api/batch_live",   _api_batch_live)
+            log.info("Dashboard registered at /dashboard")
 
         if settings.WEBHOOK_URL:
             webhook_path = "/bot/webhook"
