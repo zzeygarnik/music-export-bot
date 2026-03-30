@@ -356,21 +356,29 @@ def ym_share_cancel_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
-def ym_share_actions_keyboard() -> InlineKeyboardMarkup:
+def ym_share_actions_keyboard(filter_artists: list | None = None) -> InlineKeyboardMarkup:
     """Actions after a shared YM playlist is loaded."""
-    return InlineKeyboardMarkup(inline_keyboard=[
+    has_filter = bool(filter_artists)
+    rows = [
         [InlineKeyboardButton(
             text="Скачать все треки",
             callback_data="yms:download_all",
             icon_custom_emoji_id="6039802767931871481",
         )],
         [InlineKeyboardButton(
-            text="Фильтр по исполнителю",
+            text="Добавить ещё исполнителя" if has_filter else "Фильтр по исполнителю",
             callback_data="yms:filter_artist",
             icon_custom_emoji_id="6037397706505195857",
         )],
-        [InlineKeyboardButton(text="Назад", callback_data="yms:back_to_input")],
-    ])
+    ]
+    if has_filter:
+        for i, artist in enumerate(filter_artists):
+            rows.append([InlineKeyboardButton(
+                text=f"❌ {artist}",
+                callback_data=f"yms:rm_artist:{i}",
+            )])
+    rows.append([InlineKeyboardButton(text="Назад", callback_data="yms:back_to_input")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def ym_share_back_keyboard() -> InlineKeyboardMarkup:
@@ -388,7 +396,6 @@ def ym_share_filter_result_keyboard() -> InlineKeyboardMarkup:
             callback_data="yms:download_filtered",
             icon_custom_emoji_id="6039802767931871481",
         )],
-        [InlineKeyboardButton(text="Назад", callback_data="yms:back_to_actions")],
     ])
 
 
