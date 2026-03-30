@@ -948,7 +948,7 @@ def _search_in_playlist(query: str, tracks: list[dict]) -> list[dict]:
         if score >= 70:
             scored.append((score, t))
     scored.sort(key=lambda x: x[0], reverse=True)
-    return [t for _, t in scored[:6]]
+    return [t for _, t in scored[:2]]
 
 
 def _tsel_panel_text(sel_count: int, total: int) -> str:
