@@ -10,6 +10,7 @@ from rapidfuzz import fuzz
 from bot.states import ExportFlow, SCBatchFlow, YMShareFlow
 from bot.keyboards import (
     service_keyboard,
+    share_source_keyboard,
     ym_share_token_keyboard,
     ym_share_cancel_keyboard,
     ym_share_actions_keyboard,
@@ -188,7 +189,7 @@ async def on_yms_back_to_input(call: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "yms:cancel")
 async def on_yms_cancel(call: CallbackQuery, state: FSMContext) -> None:
-    await call.message.edit_text("👋 Привет! Что хочешь сделать?", reply_markup=service_keyboard())
+    await call.message.edit_text("Выбери источник плейлиста:", reply_markup=share_source_keyboard())
     await state.set_state(ExportFlow.choosing_service)
 
 
