@@ -128,7 +128,7 @@ async def on_yms_waiting(message: Message, state: FSMContext) -> None:
         return
 
     log_event(user_id, username, "yms_load", "success", track_count=len(tracks), detail=title)
-    await state.update_data(yms_tracks=tracks, yms_playlist_title=title)
+    await state.update_data(yms_tracks=tracks, yms_playlist_title=title, yms_filter_artists=[], yms_filtered_tracks=None)
     safe_title = title[:50] if title else "Плейлист"
     await status_msg.edit_text(
         f'✅ Загружено <b>«{safe_title}»</b> — {len(tracks)} треков.\n\nЧто делаем?',
@@ -199,12 +199,47 @@ async def on_yms_back_to_actions(call: CallbackQuery, state: FSMContext) -> None
     tracks = data.get("yms_tracks", [])
     title = data.get("yms_playlist_title", "Плейлист")
     safe_title = title[:50] if title else "Плейлист"
+    filter_artists = data.get("yms_filter_artists") or None
     await call.message.edit_text(
         f'✅ <b>«{safe_title}»</b> — {len(tracks)} треков.\n\nЧто делаем?',
         parse_mode="HTML",
-        reply_markup=ym_share_actions_keyboard(),
+        reply_markup=ym_share_actions_keyboard(filter_artists=filter_artists),
     )
     await state.set_state(YMShareFlow.actions)
+
+
+@router.callback_query(YMShareFlow.actions, F.data.startswith("yms:rm_artist:"))
+async def on_yms_remove_artist(call: CallbackQuery, state: FSMContext) -> None:
+    try:
+        idx = int(call.data.split(":")[-1])
+    except (ValueError, IndexError):
+        await call.answer()
+        return
+
+    data = await state.get_data()
+    artists = list(data.get("yms_filter_artists") or [])
+    original_tracks = data.get("yms_tracks", [])
+    title = data.get("yms_playlist_title", "Плейлист")
+    safe_title = title[:50] if title else "Плейлист"
+
+    if 0 <= idx < len(artists):
+        artists.pop(idx)
+
+    if artists:
+        matched_keys: set[tuple] = set()
+        for a in artists:
+            for t in _filter_by_artist(original_tracks, a):
+                matched_keys.add((t.get("artist", ""), t.get("title", "")))
+        union_tracks = [t for t in original_tracks if (t.get("artist", ""), t.get("title", "")) in matched_keys]
+    else:
+        union_tracks = None
+
+    await state.update_data(yms_filter_artists=artists, yms_filtered_tracks=union_tracks)
+    await call.message.edit_text(
+        f'✅ <b>«{safe_title}»</b> — {len(original_tracks)} треков.\n\nЧто делаем?',
+        parse_mode="HTML",
+        reply_markup=ym_share_actions_keyboard(filter_artists=artists or None),
+    )
 
 
 @router.message(YMShareFlow.filter_input)
@@ -215,9 +250,9 @@ async def on_yms_filter_input(message: Message, state: FSMContext) -> None:
 
     query = message.text.strip()
     data = await state.get_data()
-    tracks = data.get("yms_tracks", [])
+    original_tracks = data.get("yms_tracks", [])
 
-    matched = _filter_by_artist(tracks, query)
+    matched = _filter_by_artist(original_tracks, query)
     if not matched:
         await message.answer(
             f"😔 Исполнитель <b>{query}</b> не найден в плейлисте.\n\nПопробуй другое имя.",
@@ -226,7 +261,19 @@ async def on_yms_filter_input(message: Message, state: FSMContext) -> None:
         )
         return
 
-    await state.update_data(yms_filtered_tracks=matched)
+    artists = list(data.get("yms_filter_artists") or [])
+    if query not in artists:
+        artists.append(query)
+
+    # Recompute filtered tracks as union of all added artists
+    matched_keys: set[tuple] = set()
+    for a in artists:
+        for t in _filter_by_artist(original_tracks, a):
+            matched_keys.add((t.get("artist", ""), t.get("title", "")))
+    union_tracks = [t for t in original_tracks if (t.get("artist", ""), t.get("title", "")) in matched_keys]
+
+    await state.update_data(yms_filter_artists=artists, yms_filtered_tracks=union_tracks)
+
     filename = f"{query}_tracks.txt"
     tmp_path = await build_txt_file(matched, filename)
     try:
@@ -242,6 +289,13 @@ async def on_yms_filter_input(message: Message, state: FSMContext) -> None:
     finally:
         await cleanup(tmp_path)
 
+    title = data.get("yms_playlist_title", "Плейлист")
+    safe_title = title[:50] if title else "Плейлист"
+    await message.answer(
+        f'✅ <b>«{safe_title}»</b> — {len(original_tracks)} треков.\n\nЧто делаем?',
+        parse_mode="HTML",
+        reply_markup=ym_share_actions_keyboard(filter_artists=artists),
+    )
     await state.set_state(YMShareFlow.actions)
 
 
