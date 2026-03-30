@@ -650,14 +650,16 @@ def get_user_stats(user_id: int) -> dict:
                     COALESCE(SUM(CASE WHEN action='sc_batch' AND result IN ('success','stopped')
                                      THEN COALESCE(track_count,0) ELSE 0 END), 0),
                     COUNT(CASE WHEN action='sc_batch' AND result IN ('success','stopped') THEN 1 END),
-                    COALESCE(SUM(CASE WHEN action IN ('export_liked','export_playlist','export_by_link','spotify_export')
+                    COALESCE(SUM(CASE WHEN action IN ('export_liked','export_playlist','export_by_link','export_filtered')
                                       AND result='success'
+                                     THEN COALESCE(track_count,0) ELSE 0 END), 0),
+                    COALESCE(SUM(CASE WHEN action='spotify_export' AND result='success'
                                      THEN COALESCE(track_count,0) ELSE 0 END), 0),
                     MIN(ts)
                 FROM events WHERE user_hash = %s
             """, (user_hash,))
             row = cur.fetchone()
-            if not row or row[4] is None:
+            if not row or row[5] is None:
                 return {}
 
             cur.execute("""
@@ -666,8 +668,10 @@ def get_user_stats(user_id: int) -> dict:
                                      THEN COALESCE(track_count,1) ELSE 0 END), 0),
                     COALESCE(SUM(CASE WHEN action='sc_batch' AND result IN ('success','stopped')
                                      THEN COALESCE(track_count,0) ELSE 0 END), 0),
-                    COALESCE(SUM(CASE WHEN action IN ('export_liked','export_playlist','export_by_link','spotify_export')
+                    COALESCE(SUM(CASE WHEN action IN ('export_liked','export_playlist','export_by_link','export_filtered')
                                       AND result='success'
+                                     THEN COALESCE(track_count,0) ELSE 0 END), 0),
+                    COALESCE(SUM(CASE WHEN action='spotify_export' AND result='success'
                                      THEN COALESCE(track_count,0) ELSE 0 END), 0)
                 FROM events WHERE user_hash = %s AND ts >= NOW() - INTERVAL '7 days'
             """, (user_hash,))
@@ -675,16 +679,18 @@ def get_user_stats(user_id: int) -> dict:
 
         return {
             "all": {
-                "single":   int(row[0]),
-                "batch":    int(row[1]),
-                "batches":  int(row[2]),
-                "exported": int(row[3]),
-                "first_ts": row[4],
+                "single":          int(row[0]),
+                "batch":           int(row[1]),
+                "batches":         int(row[2]),
+                "ym_exported":     int(row[3]),
+                "spotify_exported": int(row[4]),
+                "first_ts":        row[5],
             },
             "week": {
-                "single":   int(week_row[0]),
-                "batch":    int(week_row[1]),
-                "exported": int(week_row[2]),
+                "single":          int(week_row[0]),
+                "batch":           int(week_row[1]),
+                "ym_exported":     int(week_row[2]),
+                "spotify_exported": int(week_row[3]),
             },
         }
     except Exception as e:

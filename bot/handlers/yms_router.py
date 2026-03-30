@@ -237,6 +237,7 @@ async def on_yms_filter_input(message: Message, state: FSMContext) -> None:
             parse_mode="HTML",
             reply_markup=ym_share_filter_result_keyboard(),
         )
+        log_event(message.from_user.id, message.from_user.username, "export_filtered", "success", track_count=len(matched))
     finally:
         await cleanup(tmp_path)
 

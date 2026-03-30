@@ -17,7 +17,9 @@ class Settings(BaseSettings):
     SPOTIFY_CLIENT_ID: str = ""
     SPOTIFY_CLIENT_SECRET: str = ""
     SPOTIFY_REDIRECT_URI: str = "http://localhost/"   # override in .env with https://DOMAIN/spotify/callback
-    SPOTIFY_CALLBACK_PORT: int = 8889                 # local port for OAuth callback HTTP server
+    SPOTIFY_CALLBACK_PORT: int = 8889                 # local port for OAuth callback + webhook HTTP server
+    WEBHOOK_URL: str = ""                             # e.g. https://mus111cbot.duckdns.org — enables webhook mode
+    WEBHOOK_SECRET: str = ""                          # secret token for Telegram webhook verification
 
     def is_batch_allowed(self, user_id: int, username: str | None) -> bool:
         val = self.BATCH_ALLOWED_USERS.strip()

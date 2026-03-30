@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import os
+import re
 import time
 from dataclasses import dataclass
 
@@ -120,13 +122,59 @@ async def download(url: str, user_id: int) -> tuple[str, dict]:
         output_template = f"/tmp/sc_{user_id}_{ts}"
         try:
             ext, meta = await asyncio.to_thread(_download_sync, url, output_template)
-            return f"{output_template}.{ext}", meta
+            path = f"{output_template}.{ext}"
+            meta = await asyncio.to_thread(_fix_metadata_sync, path, meta)
+            return path, meta
         except Exception as e:
             last_exc = e
             if attempt == 0:
                 log.warning("Download attempt 1 failed url=%s: %s — retrying in 3s", url, e)
                 await asyncio.sleep(3)
     raise last_exc  # type: ignore[misc]
+
+
+def _fix_metadata_sync(path: str, meta: dict) -> dict:
+    """
+    Read embedded tags from the downloaded file, fix artist/title if needed,
+    write corrected tags back. Returns updated meta dict.
+    """
+    artist = (meta.get("artist") or "").strip()
+    title = (meta.get("title") or "").strip()
+
+    try:
+        import mutagen
+        audio = mutagen.File(path, easy=True)
+        if audio is not None:
+            tag_artist = ((audio.get("artist") or [""])[0] or "").strip()
+            tag_title = ((audio.get("title") or [""])[0] or "").strip()
+            if tag_title:
+                title = tag_title
+            if tag_artist:
+                artist = tag_artist
+    except Exception:
+        pass
+
+    # If artist is still missing but title looks like "Artist - Title", split it
+    if not artist and " - " in title:
+        left, right = title.split(" - ", 1)
+        artist = left.strip()
+        title = right.strip()
+
+    # Write corrected tags back to file
+    if artist or title:
+        try:
+            import mutagen
+            audio = mutagen.File(path, easy=True)
+            if audio is not None:
+                if title:
+                    audio["title"] = title
+                if artist:
+                    audio["artist"] = artist
+                audio.save()
+        except Exception:
+            pass
+
+    return {"artist": artist, "title": title, "duration": meta.get("duration", 0)}
 
 
 async def extract_url_info(url: str) -> dict:

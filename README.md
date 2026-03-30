@@ -46,7 +46,7 @@ Telegram bot with three main sections: **export your music library to `.txt` / `
 - **Fuzzy cache matching** uses three metrics (rapidfuzz): `partial_ratio`, `token_sort_ratio`, `token_set_ratio` — order-insensitive
 - **Search on SoundCloud**: cache lookup → auto-download if confidence ≥ 80%, otherwise top-5 for manual selection
 - **Search on YouTube**: same cache-first flow — separate button in the menu, logged as `yt_search`
-- **Download by URL**: paste any SoundCloud or YouTube link — track downloads immediately, playlist starts batch download
+- **Download by URL**: paste any SoundCloud or YouTube link — track or album downloads immediately, playlist/album starts batch download
 - **Batch playlist download** (via "Playlist by link" or export flow):
   - Cache checked per track — instant send if already cached (shown as ⚡ in progress)
   - SoundCloud first, **automatic YouTube fallback** if track not found or fails
@@ -87,7 +87,7 @@ Telegram bot with three main sections: **export your music library to `.txt` / `
 - Admin replies by replying to the forwarded message in Telegram → bot delivers the reply to the user
 
 **Personal statistics** (`/mystats`)
-- Per-user download and export stats: tracks downloaded (search + batch), exports, playlists downloaded, date of first activity — broken down into **last 7 days** and **all time**
+- Per-user download and export stats: tracks downloaded (search + batch), exports (with **YM / Spotify breakdown**), playlists downloaded, date of first activity — broken down into **last 7 days** and **all time**
 
 **General**
 - Streamlit dashboard — **4 tabs**: Yandex Music / Spotify / SC+YouTube / Event log
@@ -95,7 +95,8 @@ Telegram bot with three main sections: **export your music library to `.txt` / `
 - Redis FSM storage with graceful fallback to MemoryStorage
 - Middleware: **Ban check** → Throttling → Stale-button guard (eternal callbacks exempted) → Callback auto-answer
 - **Batch access control**: `BATCH_ALLOWED_USERS` env var (`*` / `""` / static list) + DB whitelist via admin panel + in-bot request flow
-- **Bot commands** registered on startup: `/start`, `/faq`, `/admin`, `/mystats`
+- **Bot commands** registered on startup: `/start`, `/faq`, `/mystats` (`/admin` is intentionally omitted from the command list)
+- **Webhook mode**: set `WEBHOOK_URL` in `.env` to switch from polling to webhook — bot receives updates instantly via HTTPS; falls back to long polling if not set
 
 ### 🔄 User Flow
 
@@ -120,7 +121,7 @@ Telegram bot with three main sections: **export your music library to `.txt` / `
      ├─ 🎵 Download MP3
      │    ├─ 🔍 Find on SoundCloud      → cache check → (⚡ instant) or search → mp3  [+ Download more]
      │    ├─ 🔍 Find on YouTube         → cache check → (⚡ instant) or search → mp3  [+ Download more]
-     │    ├─ 🔗 By URL                  → paste SC/YT link → mp3 or batch
+     │    ├─ 🔗 By URL                  → paste SC/YT link → mp3, album or batch
      │    └─ 📥 Playlist from YM        → enter OAuth token → pick playlist (incl. ❤️ Liked) → pre-download menu → batch mp3
      │
      └─ 🔗 Playlist / Album by link
@@ -161,13 +162,13 @@ music-export-bot/
 │   ├── base_source.py     # AbstractMusicSource (extensible)
 │   ├── spotify_source.py  # Spotify source: public playlists + albums (client creds) + liked tracks (OAuth)
 │   ├── ym_source.py       # Yandex Music source + batch fetch + share/album link parsing
-│   └── sc_downloader.py   # yt-dlp wrapper: search() + search_youtube() + download() + extract_url_info()
+│   └── sc_downloader.py   # yt-dlp wrapper: search() + search_youtube() + download() + extract_url_info(); post-download metadata fix via mutagen
 ├── utils/
 │   ├── export.py          # Async .txt / .csv writer
 │   ├── db.py              # PostgreSQL connection pool + schema creation
 │   └── event_log.py       # Event logging → PostgreSQL (events + batch_live tables)
 ├── dashboard.py           # Streamlit analytics dashboard (4 tabs, reads from PostgreSQL)
-├── main.py                # Entry point, DB/Redis init, Spotify OAuth callback server (aiohttp)
+├── main.py                # Entry point, DB/Redis init, aiohttp server (Spotify OAuth callback + webhook)
 ├── config.py              # Settings via pydantic-settings + .env
 ├── migrate_to_postgres.py # One-time migration script: events.jsonl → PostgreSQL
 ├── Dockerfile             # Development image
@@ -223,8 +224,14 @@ SPOTIFY_CLIENT_SECRET=
 # For local testing only: SPOTIFY_REDIRECT_URI=http://localhost:8889/spotify/callback
 SPOTIFY_REDIRECT_URI=
 
-# Port for the built-in Spotify OAuth callback server (default: 8889)
+# Port for the built-in HTTP server (Spotify OAuth callback + webhook, default: 8889)
 SPOTIFY_CALLBACK_PORT=8889
+
+# Webhook mode (optional — leave empty to use long polling)
+# Set to your public HTTPS domain, e.g. https://yourdomain.duckdns.org
+# The bot will register https://WEBHOOK_URL/bot/webhook with Telegram automatically
+WEBHOOK_URL=
+WEBHOOK_SECRET=
 ```
 
 > **Note on `SC_PROXY`:** If Telegram is blocked by your provider, this variable is required — without it the bot won't connect to Telegram at all. Requires `aiohttp-socks` (already in `requirements.txt`).
@@ -244,15 +251,20 @@ SPOTIFY_CALLBACK_PORT=8889
 
 1. Get a free subdomain from [DuckDNS](https://www.duckdns.org/) pointing to your VPS IP
 2. Install nginx and certbot, get a Let's Encrypt certificate for your domain
-3. Add a proxy block in your nginx config:
+3. Add proxy blocks in your nginx config:
    ```nginx
    location /spotify/callback {
+       proxy_pass http://127.0.0.1:8889;
+       proxy_set_header Host $host;
+   }
+   location /bot/webhook {
        proxy_pass http://127.0.0.1:8889;
        proxy_set_header Host $host;
    }
    ```
 4. Set `SPOTIFY_REDIRECT_URI=https://YOUR_DOMAIN/spotify/callback` in `.env`
 5. Register the same URL as redirect URI in your [Spotify Developer app](https://developer.spotify.com/dashboard)
+6. Optionally enable webhook mode: set `WEBHOOK_URL=https://YOUR_DOMAIN` and `WEBHOOK_SECRET=random_string` in `.env`
 
 ### 🚀 Deployment
 
@@ -267,7 +279,7 @@ docker compose up --build
 **Linux VPS (production, recommended):**
 
 ```bash
-# Build image (add --dns 8.8.8.8 if your server has DNS issues):
+# Build image:
 docker build -f Dockerfile.prod -t music-export-bot:latest .
 
 # Run container (source mounted as volume — code updates apply on restart, no rebuild needed):
@@ -333,7 +345,8 @@ streamlit run dashboard.py
 | Spotify API | [spotipy](https://github.com/spotipy-dev/spotipy) 2.x |
 | SoundCloud downloader | [yt-dlp](https://github.com/yt-dlp/yt-dlp) |
 | Fuzzy matching | [rapidfuzz](https://github.com/rapidfuzz/RapidFuzz) |
-| OAuth callback server | aiohttp (built into bot process) |
+| OAuth callback + webhook | aiohttp (built into bot process) |
+| Audio metadata | [mutagen](https://github.com/quodlibet/mutagen) |
 | Audio processing | ffmpeg (in Docker image) |
 | FSM storage | Redis / MemoryStorage fallback |
 | Event storage | PostgreSQL (psycopg2) |
@@ -385,7 +398,7 @@ streamlit run dashboard.py
 - **Fuzzy-матч** по кэшу: три метрики rapidfuzz, нечувствителен к порядку слов
 - **Поиск на SoundCloud**: кэш → автоскачивание при совпадении ≥ 80%, иначе топ-5
 - **Поиск на YouTube**: тот же флоу, отдельная кнопка, логируется как `yt_search`
-- **Скачивание по ссылке**: вставь ссылку на трек или плейлист SC/YT
+- **Скачивание по ссылке**: вставь ссылку на трек, альбом или плейлист SC/YT
 - **Батчевое скачивание** (через «Плейлист по ссылке» или экспортный флоу):
   - Кэш проверяется на каждый трек, при хите — мгновенно с отметкой ⚡
   - SoundCloud сначала, **автоматический фолбэк на YouTube**
@@ -426,7 +439,7 @@ streamlit run dashboard.py
 - Администратор отвечает, сделав Telegram-ответ на это сообщение → бот доставляет ответ пользователю
 
 **Персональная статистика** (`/mystats`)
-- Статистика загрузок и экспортов для текущего пользователя: скачано треков (поиском и плейлистами), экспортировано, плейлистов скачано, дата первой активности — за **последние 7 дней** и **за всё время**
+- Статистика загрузок и экспортов для текущего пользователя: скачано треков (поиском и плейлистами), экспортировано (с **разбивкой ЯМ / Spotify**), плейлистов скачано, дата первой активности — за **последние 7 дней** и **за всё время**
 
 **Общее**
 - Streamlit-дашборд — **4 вкладки**: Яндекс Музыка / Spotify / SC+YouTube / Лог событий
@@ -434,7 +447,8 @@ streamlit run dashboard.py
 - Redis FSM с graceful fallback на MemoryStorage
 - Стек middleware: **проверка бана** → throttling → защита от устаревших кнопок → авто-ответ на callback
 - **Управление доступом к батчу**: env `BATCH_ALLOWED_USERS` + DB-вайтлист + система запросов в боте
-- **Bot commands** регистрируются при старте: `/start`, `/faq`, `/admin`, `/mystats`
+- **Bot commands** регистрируются при старте: `/start`, `/faq`, `/mystats` (`/admin` намеренно не добавлен в список подсказок)
+- **Webhook-режим**: задай `WEBHOOK_URL` в `.env` для переключения с polling на webhook — бот получает апдейты мгновенно через HTTPS; без этой переменной используется long polling
 
 ### 🔄 Флоу пользователя
 
@@ -459,7 +473,7 @@ streamlit run dashboard.py
      ├─ 🎵 Скачать MP3
      │    ├─ 🔍 Найти на SoundCloud  → кэш → (⚡ мгновенно) или поиск → mp3  [+ Скачать ещё]
      │    ├─ 🔍 Найти на YouTube     → кэш → (⚡ мгновенно) или поиск → mp3  [+ Скачать ещё]
-     │    ├─ 🔗 По ссылке            → ссылка SC/YT → mp3 или батч
+     │    ├─ 🔗 По ссылке            → ссылка SC/YT → mp3, альбом или батч
      │    └─ 📥 Плейлист из ЯМ       → OAuth-токен → выбор плейлиста (включая ❤️ Лайки) → предстартовое меню → батч mp3
      │
      └─ 🔗 Плейлист / Альбом по ссылке
@@ -500,13 +514,13 @@ music-export-bot/
 │   ├── base_source.py     # AbstractMusicSource (расширяемо)
 │   ├── spotify_source.py  # Spotify: публичные плейлисты + альбомы + лайки OAuth
 │   ├── ym_source.py       # YM: batch fetch + парсинг ссылок плейлистов и альбомов
-│   └── sc_downloader.py   # yt-dlp: search() + search_youtube() + download() + extract_url_info()
+│   └── sc_downloader.py   # yt-dlp: search() + search_youtube() + download() + extract_url_info(); исправление метаданных через mutagen
 ├── utils/
 │   ├── export.py          # Асинхронная запись .txt / .csv
 │   ├── db.py              # Пул соединений PostgreSQL + создание схемы
 │   └── event_log.py       # Логирование → PostgreSQL (таблицы events + batch_live)
 ├── dashboard.py           # Streamlit-дашборд (4 вкладки, читает из PostgreSQL)
-├── main.py                # Точка входа, инициализация БД/Redis, Spotify OAuth callback (aiohttp)
+├── main.py                # Точка входа, инициализация БД/Redis, aiohttp-сервер (Spotify OAuth callback + webhook)
 ├── config.py              # Настройки через pydantic-settings + .env
 ├── migrate_to_postgres.py # Одноразовая миграция events.jsonl → PostgreSQL
 ├── Dockerfile             # Dev-образ
@@ -560,8 +574,14 @@ SPOTIFY_CLIENT_SECRET=
 # SPOTIFY_REDIRECT_URI=https://ВАШ_ДОМЕН/spotify/callback
 SPOTIFY_REDIRECT_URI=
 
-# Порт встроенного callback-сервера для Spotify OAuth (по умолчанию: 8889)
+# Порт встроенного HTTP-сервера (Spotify OAuth callback + webhook, по умолчанию: 8889)
 SPOTIFY_CALLBACK_PORT=8889
+
+# Webhook-режим (опционально — без этой переменной используется long polling)
+# Укажи публичный HTTPS-домен, например https://yourdomain.duckdns.org
+# Бот автоматически зарегистрирует https://WEBHOOK_URL/bot/webhook у Telegram
+WEBHOOK_URL=
+WEBHOOK_SECRET=
 ```
 
 > **Про `SC_PROXY`:** Если Telegram заблокирован — переменная обязательна, без неё бот не подключится вообще. Требует `aiohttp-socks` (уже в `requirements.txt`).
@@ -587,9 +607,14 @@ SPOTIFY_CALLBACK_PORT=8889
        proxy_pass http://127.0.0.1:8889;
        proxy_set_header Host $host;
    }
+   location /bot/webhook {
+       proxy_pass http://127.0.0.1:8889;
+       proxy_set_header Host $host;
+   }
    ```
 4. Пропиши `SPOTIFY_REDIRECT_URI=https://ВАШ_ДОМЕН/spotify/callback` в `.env`
 5. Зарегистрируй тот же URI в приложении на [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
+6. Опционально включи webhook: задай `WEBHOOK_URL=https://ВАШ_ДОМЕН` и `WEBHOOK_SECRET=случайная_строка` в `.env`
 
 ### 🚀 Развёртывание
 
@@ -604,7 +629,7 @@ docker compose up --build
 **Linux VPS (продакшн, рекомендуется):**
 
 ```bash
-# Сборка образа (добавь --dns 8.8.8.8 если проблемы с DNS на сервере):
+# Сборка образа:
 docker build -f Dockerfile.prod -t music-export-bot:latest .
 
 # Запуск (код монтируется как volume — обновления применяются после рестарта, без пересборки):
@@ -666,7 +691,8 @@ streamlit run dashboard.py
 | API Spotify | [spotipy](https://github.com/spotipy-dev/spotipy) 2.x |
 | Загрузчик SC/YT | [yt-dlp](https://github.com/yt-dlp/yt-dlp) |
 | Fuzzy-матч | [rapidfuzz](https://github.com/rapidfuzz/RapidFuzz) |
-| OAuth callback-сервер | aiohttp (встроен в процесс бота) |
+| OAuth callback + webhook | aiohttp (встроен в процесс бота) |
+| Метаданные аудио | [mutagen](https://github.com/quodlibet/mutagen) |
 | Аудио | ffmpeg (в Docker-образе) |
 | FSM-хранилище | Redis / MemoryStorage fallback |
 | Хранилище событий | PostgreSQL (psycopg2) |
