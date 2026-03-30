@@ -204,8 +204,9 @@ def sc_playlists_keyboard(playlists: list[dict]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def sc_resume_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
+def sc_resume_keyboard(filter_artists: list | None = None) -> InlineKeyboardMarkup:
+    has_filter = bool(filter_artists)
+    rows = [
         [InlineKeyboardButton(
             text="От первого добавленного к последнему",
             callback_data="sc_resume:start_reversed",
@@ -227,12 +228,19 @@ def sc_resume_keyboard() -> InlineKeyboardMarkup:
             icon_custom_emoji_id="6037397706505195857",
         )],
         [InlineKeyboardButton(
-            text="Фильтр по исполнителю",
+            text="Добавить ещё исполнителя" if has_filter else "Фильтр по исполнителю",
             callback_data="sc_resume:filter_artist",
             icon_custom_emoji_id="6037397706505195857",
         )],
-        [InlineKeyboardButton(text="← Назад", callback_data="sc_resume:back")],
-    ])
+    ]
+    if has_filter:
+        for i, artist in enumerate(filter_artists):
+            rows.append([InlineKeyboardButton(
+                text=f"❌ {artist}",
+                callback_data=f"sc_resume:rm_artist:{i}",
+            )])
+    rows.append([InlineKeyboardButton(text="← Назад", callback_data="sc_resume:back")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def sc_resume_confirm_keyboard() -> InlineKeyboardMarkup:
