@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sonic Curator | Dashboard</title>
+    <title>ZGRNK Music | Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Manrope:wght@200;400;600;800&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet" />
@@ -126,7 +126,7 @@
         <!-- Sidebar -->
         <aside class="w-64 bg-[#0e0e15]/90 border-r border-outline/10 flex flex-col fixed h-full z-50 backdrop-blur-md">
             <div class="p-8">
-                <h1 class="text-xl font-black text-primary font-headline tracking-widest uppercase glow-text">Sonic Curator</h1>
+                <h1 class="text-xl font-black text-primary font-headline tracking-widest uppercase glow-text">ZGRNK Music</h1>
                 <p class="text-[10px] text-on-surface-variant font-bold tracking-[0.3em] uppercase mt-1 opacity-50">Admin Dashboard</p>
             </div>
 
@@ -190,7 +190,7 @@
                 <div id="tab-ym" class="tab-content">
                     <div class="mb-10">
                         <h2 class="text-4xl font-extrabold font-headline tracking-tight text-on-surface glow-text">Yandex Music</h2>
-                        <p class="text-on-surface-variant mt-2 text-lg">Export statistics.</p>
+                        <p class="text-on-surface-variant mt-2 text-lg">Track list exports — titles &amp; artists to .txt/.csv, not audio files.</p>
                     </div>
 
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
@@ -198,10 +198,11 @@
                             <div class="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
                                 <span class="material-symbols-outlined text-9xl">library_music</span>
                             </div>
-                            <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-[0.2em] mb-4">Total Exported</p>
+                            <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-[0.2em] mb-4">Titles Exported</p>
                             <div class="flex items-baseline gap-3">
                                 <span id="ym-total" class="text-5xl font-light font-headline skeleton w-24 h-10 inline-block">&nbsp;</span>
                             </div>
+                            <p class="text-[10px] text-on-surface-variant/50 mt-3 tracking-wide">track names in .txt/.csv</p>
                         </div>
                         <div class="glass-card p-8 relative overflow-hidden group">
                             <div class="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
