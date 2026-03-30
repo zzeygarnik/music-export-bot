@@ -3,7 +3,7 @@
 ![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python&logoColor=white)
 ![aiogram](https://img.shields.io/badge/aiogram-3.13-2CA5E0?logo=telegram&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Container-2496ED?logo=docker&logoColor=white)
-![Streamlit](https://img.shields.io/badge/Dashboard-Streamlit-FF4B4B?logo=streamlit&logoColor=white)
+![Dashboard](https://img.shields.io/badge/Dashboard-Web%20UI-7c3aed?logo=aiohttp&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Database-336791?logo=postgresql&logoColor=white)
 
 Telegram bot with three main sections: **export your music library to `.txt` / `.csv`** (Yandex Music and Spotify), **download tracks from SoundCloud / YouTube as `.mp3`**, and **load any shared playlist or album by link** (YM, Spotify). Self-hosted, containerized, ready for any Linux VPS or TrueNAS.
@@ -90,7 +90,7 @@ Telegram bot with three main sections: **export your music library to `.txt` / `
 - Per-user download and export stats: tracks downloaded (search + batch), exports (with **YM / Spotify breakdown**), playlists downloaded, date of first activity — broken down into **last 7 days** and **all time**
 
 **General**
-- Streamlit dashboard — **4 tabs**: Yandex Music / Spotify / SC+YouTube / Event log
+- **Web dashboard** — **4 tabs**: Yandex Music / Spotify / SC+YouTube / Event log; served by the bot at `/dashboard` (password-protected via `DASHBOARD_TOKEN`)
 - PostgreSQL stores events, live batch state, track file_id cache, banned users, batch whitelist, access requests
 - Redis FSM storage with graceful fallback to MemoryStorage
 - Middleware: **Ban check** → Throttling → Stale-button guard (eternal callbacks exempted) → Callback auto-answer
@@ -167,8 +167,9 @@ music-export-bot/
 │   ├── export.py          # Async .txt / .csv writer
 │   ├── db.py              # PostgreSQL connection pool + schema creation
 │   └── event_log.py       # Event logging → PostgreSQL (events + batch_live tables)
-├── dashboard.py           # Streamlit analytics dashboard (4 tabs, reads from PostgreSQL)
-├── main.py                # Entry point, DB/Redis init, aiohttp server (Spotify OAuth callback + webhook)
+├── dashboard_web/
+│   └── index.html         # Web dashboard UI (served by bot at /dashboard, auth via DASHBOARD_TOKEN cookie)
+├── main.py                # Entry point, DB/Redis init, aiohttp server (Spotify OAuth callback + webhook + dashboard)
 ├── config.py              # Settings via pydantic-settings + .env
 ├── migrate_to_postgres.py # One-time migration script: events.jsonl → PostgreSQL
 ├── Dockerfile             # Development image
@@ -232,6 +233,10 @@ SPOTIFY_CALLBACK_PORT=8889
 # The bot will register https://WEBHOOK_URL/bot/webhook with Telegram automatically
 WEBHOOK_URL=
 WEBHOOK_SECRET=
+
+# Web dashboard access token (required to enable /dashboard)
+# Generate with: openssl rand -hex 20
+DASHBOARD_TOKEN=
 ```
 
 > **Note on `SC_PROXY`:** If Telegram is blocked by your provider, this variable is required — without it the bot won't connect to Telegram at all. Requires `aiohttp-socks` (already in `requirements.txt`).
@@ -261,10 +266,13 @@ WEBHOOK_SECRET=
        proxy_pass http://127.0.0.1:8889;
        proxy_set_header Host $host;
    }
+   location /dashboard { proxy_pass http://127.0.0.1:8889; }
+   location /api/      { proxy_pass http://127.0.0.1:8889; }
    ```
 4. Set `SPOTIFY_REDIRECT_URI=https://YOUR_DOMAIN/spotify/callback` in `.env`
 5. Register the same URL as redirect URI in your [Spotify Developer app](https://developer.spotify.com/dashboard)
 6. Optionally enable webhook mode: set `WEBHOOK_URL=https://YOUR_DOMAIN` and `WEBHOOK_SECRET=random_string` in `.env`
+7. Optionally enable the web dashboard: set `DASHBOARD_TOKEN=random_string` in `.env`, then open `https://YOUR_DOMAIN/dashboard`
 
 ### 🚀 Deployment
 
@@ -273,7 +281,7 @@ WEBHOOK_SECRET=
 ```bash
 cp .env.example .env  # fill in BOT_TOKEN and POSTGRES_URL
 docker compose up --build
-# Bot + Redis + Streamlit dashboard on :8501
+# Bot + Redis; dashboard available at /dashboard if DASHBOARD_TOKEN is set
 ```
 
 **Linux VPS (production, recommended):**
@@ -323,18 +331,15 @@ This script creates the `music_bot` database, sets up tables, and migrates any e
 
 ### 📊 Dashboard
 
-The Streamlit dashboard reads from PostgreSQL and is organized into **4 tabs**:
+The web dashboard is served by the bot itself at `/dashboard` (no separate process needed). It reads from PostgreSQL and is organized into **4 tabs**:
 - **📊 Yandex Music** — all-time/daily export stats, breakdown by export type (liked / playlist / by link)
 - **🟢 Spotify** — playlist/album load counts, liked tracks loads, export stats by format, top playlists
 - **☁️ SC / YouTube** — separate metrics for SoundCloud and YouTube searches, batch stats (avg downloaded/not found), top tracks
 - **📋 Event log** — filterable recent events table (today / 7 days / all time)
 - **🔴 Live batch progress** (always visible at top): real-time progress bar, current track, not-found list
 
-**Local:**
-```bash
-streamlit run dashboard.py
-# Open http://localhost:8501
-```
+**Access:**
+Set `DASHBOARD_TOKEN` in `.env`, then open `https://YOUR_DOMAIN/dashboard`. Login is cookie-based — token persists until you clear cookies.
 
 ### 📦 Tech Stack
 
@@ -350,7 +355,7 @@ streamlit run dashboard.py
 | Audio processing | ffmpeg (in Docker image) |
 | FSM storage | Redis / MemoryStorage fallback |
 | Event storage | PostgreSQL (psycopg2) |
-| Dashboard | [Streamlit](https://streamlit.io/) + pandas |
+| Dashboard | Custom web UI (aiohttp + vanilla JS) |
 | Containerization | Docker |
 | Hosting | Aeza VPS / TrueNAS Scale / any Linux server |
 
@@ -442,7 +447,7 @@ streamlit run dashboard.py
 - Статистика загрузок и экспортов для текущего пользователя: скачано треков (поиском и плейлистами), экспортировано (с **разбивкой ЯМ / Spotify**), плейлистов скачано, дата первой активности — за **последние 7 дней** и **за всё время**
 
 **Общее**
-- Streamlit-дашборд — **4 вкладки**: Яндекс Музыка / Spotify / SC+YouTube / Лог событий
+- **Веб-дашборд** — **4 вкладки**: Яндекс Музыка / Spotify / SC+YouTube / Лог событий; раздаётся ботом по адресу `/dashboard` (защищён паролем через `DASHBOARD_TOKEN`)
 - PostgreSQL хранит события, состояние батча, кэш file_id, банлист, вайтлист, запросы
 - Redis FSM с graceful fallback на MemoryStorage
 - Стек middleware: **проверка бана** → throttling → защита от устаревших кнопок → авто-ответ на callback
@@ -519,8 +524,9 @@ music-export-bot/
 │   ├── export.py          # Асинхронная запись .txt / .csv
 │   ├── db.py              # Пул соединений PostgreSQL + создание схемы
 │   └── event_log.py       # Логирование → PostgreSQL (таблицы events + batch_live)
-├── dashboard.py           # Streamlit-дашборд (4 вкладки, читает из PostgreSQL)
-├── main.py                # Точка входа, инициализация БД/Redis, aiohttp-сервер (Spotify OAuth callback + webhook)
+├── dashboard_web/
+│   └── index.html         # Веб-дашборд (раздаётся ботом по /dashboard, авторизация через куки DASHBOARD_TOKEN)
+├── main.py                # Точка входа, инициализация БД/Redis, aiohttp-сервер (Spotify OAuth callback + webhook + дашборд)
 ├── config.py              # Настройки через pydantic-settings + .env
 ├── migrate_to_postgres.py # Одноразовая миграция events.jsonl → PostgreSQL
 ├── Dockerfile             # Dev-образ
@@ -582,6 +588,10 @@ SPOTIFY_CALLBACK_PORT=8889
 # Бот автоматически зарегистрирует https://WEBHOOK_URL/bot/webhook у Telegram
 WEBHOOK_URL=
 WEBHOOK_SECRET=
+
+# Токен доступа к веб-дашборду (нужен чтобы включить /dashboard)
+# Сгенерировать: openssl rand -hex 20
+DASHBOARD_TOKEN=
 ```
 
 > **Про `SC_PROXY`:** Если Telegram заблокирован — переменная обязательна, без неё бот не подключится вообще. Требует `aiohttp-socks` (уже в `requirements.txt`).
@@ -611,10 +621,13 @@ WEBHOOK_SECRET=
        proxy_pass http://127.0.0.1:8889;
        proxy_set_header Host $host;
    }
+   location /dashboard { proxy_pass http://127.0.0.1:8889; }
+   location /api/      { proxy_pass http://127.0.0.1:8889; }
    ```
 4. Пропиши `SPOTIFY_REDIRECT_URI=https://ВАШ_ДОМЕН/spotify/callback` в `.env`
 5. Зарегистрируй тот же URI в приложении на [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
 6. Опционально включи webhook: задай `WEBHOOK_URL=https://ВАШ_ДОМЕН` и `WEBHOOK_SECRET=случайная_строка` в `.env`
+7. Опционально включи веб-дашборд: задай `DASHBOARD_TOKEN=случайная_строка` в `.env`, затем открой `https://ВАШ_ДОМЕН/dashboard`
 
 ### 🚀 Развёртывание
 
@@ -623,7 +636,7 @@ WEBHOOK_SECRET=
 ```bash
 cp .env.example .env  # заполни BOT_TOKEN и POSTGRES_URL
 docker compose up --build
-# Бот + Redis + Streamlit дашборд на :8501
+# Бот + Redis; дашборд доступен по /dashboard если задан DASHBOARD_TOKEN
 ```
 
 **Linux VPS (продакшн, рекомендуется):**
@@ -669,18 +682,15 @@ docker run --rm \
 
 ### 📊 Дашборд
 
-Streamlit-дашборд читает из PostgreSQL и разбит на **4 вкладки**:
+Веб-дашборд раздаётся самим ботом по адресу `/dashboard` (отдельный процесс не нужен). Читает из PostgreSQL, разбит на **4 вкладки**:
 - **📊 Яндекс Музыка** — статистика экспортов за всё время и по дням, разбивка по типам
 - **🟢 Spotify** — загрузки плейлистов/альбомов, лайков, экспорты по формату, топ плейлистов
 - **☁️ SC / YouTube** — раздельные метрики для SoundCloud и YouTube, статистика батча, топ треков
 - **📋 Лог событий** — таблица с фильтрацией (сегодня / 7 дней / всё время)
 - **🔴 Live-прогресс батча** (всегда вверху): прогресс-бар, текущий трек, список ненайденных
 
-**Локально:**
-```bash
-streamlit run dashboard.py
-# Открыть http://localhost:8501
-```
+**Доступ:**
+Задай `DASHBOARD_TOKEN` в `.env`, затем открой `https://ВАШ_ДОМЕН/dashboard`. Авторизация через куки — токен остаётся до очистки куков.
 
 ### 📦 Технологии
 
@@ -696,7 +706,7 @@ streamlit run dashboard.py
 | Аудио | ffmpeg (в Docker-образе) |
 | FSM-хранилище | Redis / MemoryStorage fallback |
 | Хранилище событий | PostgreSQL (psycopg2) |
-| Дашборд | [Streamlit](https://streamlit.io/) + pandas |
+| Дашборд | Кастомный веб-интерфейс (aiohttp + vanilla JS) |
 | Контейнеризация | Docker |
 | Хостинг | Aeza VPS / TrueNAS Scale / любой Linux-сервер |
 

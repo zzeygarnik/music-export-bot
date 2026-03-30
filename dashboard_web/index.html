@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sonic Curator | Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Manrope:wght@200;400;600;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/tsparticles@2.12.0/tsparticles.bundle.min.js"></script>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        background: '#0d0d14',
+                        surface: '#13131a',
+                        'surface-container': '#1f1f26',
+                        'surface-container-high': '#2a2931',
+                        primary: '#d2bbff',
+                        'primary-container': '#7c3aed',
+                        secondary: '#ddb7ff',
+                        'on-surface': '#e4e1ec',
+                        'on-surface-variant': '#ccc3d8',
+                        outline: '#4a4455',
+                    },
+                    fontFamily: {
+                        headline: ['Manrope', 'sans-serif'],
+                        body: ['Inter', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            background-color: #0d0d14;
+            color: #e4e1ec;
+            font-family: 'Inter', sans-serif;
+            overflow-x: hidden;
+        }
+        .glass-card {
+            background: rgba(19,19,26,.6);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(124,58,237,.1);
+            border-radius: 1.5rem;
+            box-shadow: 0 8px 32px rgba(0,0,0,.37);
+        }
+        .sidebar-link { border-left: 4px solid transparent; }
+        .sidebar-link.sidebar-active {
+            background: rgba(124,58,237,.15);
+            border-left-color: #7c3aed;
+            color: #d2bbff;
+        }
+        #tsparticles {
+            position: fixed; width: 100%; height: 100%;
+            top: 0; left: 0; z-index: 0; pointer-events: none;
+        }
+        .layout-wrapper { position: relative; z-index: 1; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0d0d14; }
+        ::-webkit-scrollbar-thumb { background: #2a2931; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #7c3aed; }
+
+        .chart-bar {
+            background: linear-gradient(to top, rgba(124,58,237,.2), rgba(124,58,237,.5));
+            transition: all .4s cubic-bezier(.4,0,.2,1);
+            position: relative;
+        }
+        .chart-bar:hover { background: linear-gradient(to top, #7c3aed, #d2bbff) !important; }
+        .chart-bar.peak {
+            background: #7c3aed !important;
+            box-shadow: 0 0 20px rgba(124,58,237,.4);
+            border-top: 2px solid #d2bbff;
+        }
+        .chart-tooltip {
+            position: absolute; top: -2rem; left: 50%;
+            transform: translateX(-50%);
+            background: #2a2931; padding: .15rem .5rem;
+            border-radius: 4px; font-size: 10px; font-weight: 700;
+            white-space: nowrap; pointer-events: none;
+        }
+        .glow-text { text-shadow: 0 0 10px rgba(210,187,255,.3); }
+        .progress-glow { box-shadow: 0 0 15px rgba(124,58,237,.6); }
+
+        .tab-content { display: none; }
+        .tab-content.active { display: block; animation: fadeIn .25s ease; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        .skeleton {
+            background: linear-gradient(90deg, #1f1f26 25%, #2a2931 50%, #1f1f26 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+            border-radius: .5rem;
+        }
+        @keyframes shimmer {
+            0%   { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        .filter-btn { transition: all .15s; }
+        .filter-btn.active {
+            background: #7c3aed;
+            color: white;
+        }
+
+        .period-btn { transition: all .15s; }
+        .period-btn.active {
+            background: #7c3aed;
+            color: white;
+        }
+
+        tr.loading td { opacity: .4; }
+    </style>
+</head>
+<body class="font-body">
+    <div id="tsparticles"></div>
+
+    <div class="layout-wrapper flex min-h-screen">
+        <!-- Sidebar -->
+        <aside class="w-64 bg-[#0e0e15]/90 border-r border-outline/10 flex flex-col fixed h-full z-50 backdrop-blur-md">
+            <div class="p-8">
+                <h1 class="text-xl font-black text-primary font-headline tracking-widest uppercase glow-text">Sonic Curator</h1>
+                <p class="text-[10px] text-on-surface-variant font-bold tracking-[0.3em] uppercase mt-1 opacity-50">Admin Dashboard</p>
+            </div>
+
+            <nav class="flex-1 px-4 space-y-2">
+                <a href="#" data-tab="ym" class="sidebar-link flex items-center gap-4 px-4 py-3 text-on-surface-variant hover:bg-surface-container/50 rounded-xl transition-all group">
+                    <span class="material-symbols-outlined opacity-60 group-hover:opacity-100">library_music</span>
+                    <span class="text-xs font-bold font-headline tracking-widest uppercase">Yandex Music</span>
+                </a>
+                <a href="#" data-tab="spotify" class="sidebar-link flex items-center gap-4 px-4 py-3 text-on-surface-variant hover:bg-surface-container/50 rounded-xl transition-all group">
+                    <span class="material-symbols-outlined opacity-60 group-hover:opacity-100">podcasts</span>
+                    <span class="text-xs font-bold font-headline tracking-widest uppercase">Spotify</span>
+                </a>
+                <a href="#" data-tab="sc" class="sidebar-link flex items-center gap-4 px-4 py-3 text-on-surface-variant hover:bg-surface-container/50 rounded-xl transition-all group">
+                    <span class="material-symbols-outlined opacity-60 group-hover:opacity-100">subscriptions</span>
+                    <span class="text-xs font-bold font-headline tracking-widest uppercase">SoundCloud / YT</span>
+                </a>
+                <a href="#" data-tab="log" class="sidebar-link flex items-center gap-4 px-4 py-3 text-on-surface-variant hover:bg-surface-container/50 rounded-xl transition-all group">
+                    <span class="material-symbols-outlined opacity-60 group-hover:opacity-100">list_alt</span>
+                    <span class="text-xs font-bold font-headline tracking-widest uppercase">Event Log</span>
+                </a>
+            </nav>
+
+            <div class="p-6">
+                <div class="flex items-center gap-3">
+                    <span class="w-2 h-2 rounded-full bg-green-400 shadow-[0_0_6px_#4ade80] animate-pulse"></span>
+                    <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Bot Online</span>
+                </div>
+                <p id="last-updated" class="text-[9px] text-outline mt-1 tracking-wide"></p>
+            </div>
+        </aside>
+
+        <!-- Main -->
+        <main class="flex-1 ml-64">
+            <!-- Header: batch progress -->
+            <header class="h-16 border-b border-outline/10 bg-background/80 backdrop-blur-md flex items-center px-8 sticky top-0 z-40 gap-6">
+                <div id="header-idle" class="flex items-center gap-2 text-on-surface-variant">
+                    <span class="material-symbols-outlined text-base opacity-40">download</span>
+                    <span class="text-[10px] font-bold uppercase tracking-widest opacity-40">No active downloads</span>
+                </div>
+                <div id="header-batch" class="hidden flex-1 flex flex-col justify-center max-w-sm">
+                    <div class="flex justify-between items-end mb-1">
+                        <span id="batch-track" class="text-[9px] font-bold text-primary uppercase tracking-tighter truncate max-w-[200px]"></span>
+                        <span id="batch-pct" class="text-[9px] font-bold text-on-surface-variant ml-2 shrink-0"></span>
+                    </div>
+                    <div class="h-1 w-full bg-surface-container rounded-full overflow-hidden">
+                        <div id="batch-bar" class="h-full bg-primary-container transition-all progress-glow" style="width:0%"></div>
+                    </div>
+                    <span id="batch-meta" class="text-[9px] text-on-surface-variant mt-1"></span>
+                </div>
+            </header>
+
+            <div class="p-10 max-w-7xl mx-auto">
+
+                <!-- ════════════════════════════════ -->
+                <!-- TAB: YANDEX MUSIC               -->
+                <!-- ════════════════════════════════ -->
+                <div id="tab-ym" class="tab-content">
+                    <div class="mb-10">
+                        <h2 class="text-4xl font-extrabold font-headline tracking-tight text-on-surface glow-text">Yandex Music</h2>
+                        <p class="text-on-surface-variant mt-2 text-lg">Export statistics.</p>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+                        <div class="glass-card p-8 relative overflow-hidden group">
+                            <div class="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                                <span class="material-symbols-outlined text-9xl">library_music</span>
+                            </div>
+                            <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-[0.2em] mb-4">Total Exported</p>
+                            <div class="flex items-baseline gap-3">
+                                <span id="ym-total" class="text-5xl font-light font-headline skeleton w-24 h-10 inline-block">&nbsp;</span>
+                            </div>
+                        </div>
+                        <div class="glass-card p-8 relative overflow-hidden group">
+                            <div class="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                                <span class="material-symbols-outlined text-9xl">queue_music</span>
+                            </div>
+                            <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-[0.2em] mb-4">Export Sessions</p>
+                            <div class="flex items-baseline gap-3">
+                                <span id="ym-events" class="text-5xl font-light font-headline skeleton w-20 h-10 inline-block">&nbsp;</span>
+                            </div>
+                        </div>
+                        <div class="glass-card p-8 relative overflow-hidden group">
+                            <div class="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                                <span class="material-symbols-outlined text-9xl">today</span>
+                            </div>
+                            <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-[0.2em] mb-4">This Week</p>
+                            <div class="flex flex-col gap-2">
+                                <span id="ym-week" class="text-5xl font-light font-headline skeleton w-20 h-10 inline-block">&nbsp;</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                        <div class="lg:col-span-8 space-y-8">
+                            <div class="glass-card p-8">
+                                <div class="flex justify-between items-center mb-10">
+                                    <div>
+                                        <h3 class="text-xl font-bold font-headline">Export Velocity</h3>
+                                        <p class="text-sm text-on-surface-variant">Tracks exported per day</p>
+                                    </div>
+                                    <div class="flex gap-2">
+                                        <button class="period-btn active px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest" data-tab-src="ym" data-days="7">Week</button>
+                                        <button class="period-btn px-3 py-1.5 rounded-lg text-[10px] font-bold text-on-surface-variant uppercase tracking-widest hover:bg-surface-container transition-colors" data-tab-src="ym" data-days="30">Month</button>
+                                    </div>
+                                </div>
+                                <div id="chart-ym" class="h-64 flex items-end gap-2 px-2"></div>
+                                <div id="chart-ym-labels" class="flex justify-between mt-4 px-2 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest"></div>
+                            </div>
+
+                            <div class="glass-card overflow-hidden">
+                                <div class="p-8 border-b border-outline/10">
+                                    <h3 class="text-xl font-bold font-headline">Recent Exports</h3>
+                                </div>
+                                <div class="overflow-x-auto">
+                                    <table class="w-full text-left">
+                                        <thead>
+                                            <tr class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest bg-surface-container/30">
+                                                <th class="px-8 py-4">Time (MSK)</th>
+                                                <th class="px-8 py-4">User</th>
+                                                <th class="px-8 py-4">Action</th>
+                                                <th class="px-8 py-4">Tracks</th>
+                                                <th class="px-8 py-4 text-right">Result</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="tbl-ym" class="divide-y divide-outline/5"></tbody>
+                                    </table>
+                                </div>
+                                <div class="p-4 flex justify-center bg-surface-container/10">
+                                    <button id="more-ym" class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest hover:text-primary transition-colors">Load More</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="lg:col-span-4 space-y-6">
+                            <div class="glass-card p-8 relative overflow-hidden">
+                                <div class="absolute inset-0 bg-gradient-to-br from-primary-container/10 to-transparent pointer-events-none"></div>
+                                <h4 class="text-xs font-bold font-headline uppercase tracking-[0.2em] mb-6">All-time Stats</h4>
+                                <div class="space-y-5">
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Total tracks</span>
+                                        <span id="ym-stat-total" class="text-sm font-bold text-primary">—</span>
+                                    </div>
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Sessions</span>
+                                        <span id="ym-stat-events" class="text-sm font-bold text-primary">—</span>
+                                    </div>
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Unique users</span>
+                                        <span id="ym-stat-users" class="text-sm font-bold text-primary">—</span>
+                                    </div>
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Avg / session</span>
+                                        <span id="ym-stat-avg" class="text-sm font-bold text-primary">—</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ════════════════════════════════ -->
+                <!-- TAB: SPOTIFY                    -->
+                <!-- ════════════════════════════════ -->
+                <div id="tab-spotify" class="tab-content">
+                    <div class="mb-10">
+                        <h2 class="text-4xl font-extrabold font-headline tracking-tight text-on-surface glow-text">Spotify</h2>
+                        <p class="text-on-surface-variant mt-2 text-lg">Export statistics.</p>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+                        <div class="glass-card p-8 relative overflow-hidden group">
+                            <div class="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                                <span class="material-symbols-outlined text-9xl">favorite</span>
+                            </div>
+                            <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-[0.2em] mb-4">Total Exported</p>
+                            <span id="sp-total" class="text-5xl font-light font-headline skeleton w-24 h-10 inline-block">&nbsp;</span>
+                        </div>
+                        <div class="glass-card p-8 relative overflow-hidden group">
+                            <div class="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                                <span class="material-symbols-outlined text-9xl">playlist_play</span>
+                            </div>
+                            <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-[0.2em] mb-4">Export Sessions</p>
+                            <span id="sp-events" class="text-5xl font-light font-headline skeleton w-20 h-10 inline-block">&nbsp;</span>
+                        </div>
+                        <div class="glass-card p-8 relative overflow-hidden group">
+                            <div class="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                                <span class="material-symbols-outlined text-9xl">sync</span>
+                            </div>
+                            <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-[0.2em] mb-4">This Week</p>
+                            <span id="sp-week" class="text-5xl font-light font-headline skeleton w-20 h-10 inline-block">&nbsp;</span>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                        <div class="lg:col-span-8 space-y-8">
+                            <div class="glass-card p-8">
+                                <div class="flex justify-between items-center mb-10">
+                                    <div>
+                                        <h3 class="text-xl font-bold font-headline">Sync Activity</h3>
+                                        <p class="text-sm text-on-surface-variant">Tracks exported per day</p>
+                                    </div>
+                                    <div class="flex gap-2">
+                                        <button class="period-btn active px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest" data-tab-src="spotify" data-days="7">Week</button>
+                                        <button class="period-btn px-3 py-1.5 rounded-lg text-[10px] font-bold text-on-surface-variant uppercase tracking-widest hover:bg-surface-container transition-colors" data-tab-src="spotify" data-days="30">Month</button>
+                                    </div>
+                                </div>
+                                <div id="chart-spotify" class="h-64 flex items-end gap-2 px-2"></div>
+                                <div id="chart-spotify-labels" class="flex justify-between mt-4 px-2 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest"></div>
+                            </div>
+
+                            <div class="glass-card overflow-hidden">
+                                <div class="p-8 border-b border-outline/10">
+                                    <h3 class="text-xl font-bold font-headline">Recent Exports</h3>
+                                </div>
+                                <div class="overflow-x-auto">
+                                    <table class="w-full text-left">
+                                        <thead>
+                                            <tr class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest bg-surface-container/30">
+                                                <th class="px-8 py-4">Time (MSK)</th>
+                                                <th class="px-8 py-4">User</th>
+                                                <th class="px-8 py-4">Action</th>
+                                                <th class="px-8 py-4">Tracks</th>
+                                                <th class="px-8 py-4 text-right">Result</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="tbl-spotify" class="divide-y divide-outline/5"></tbody>
+                                    </table>
+                                </div>
+                                <div class="p-4 flex justify-center bg-surface-container/10">
+                                    <button id="more-spotify" class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest hover:text-primary transition-colors">Load More</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="lg:col-span-4 space-y-6">
+                            <div class="glass-card p-8 relative overflow-hidden">
+                                <div class="absolute inset-0 bg-gradient-to-br from-green-500/5 to-transparent pointer-events-none"></div>
+                                <h4 class="text-xs font-bold font-headline uppercase tracking-[0.2em] mb-5">Account Status</h4>
+                                <div class="flex items-center gap-3 mb-3">
+                                    <span class="w-3 h-3 rounded-full bg-green-400 shadow-[0_0_8px_#4ade80]"></span>
+                                    <span class="text-sm font-bold text-green-400">Authorized</span>
+                                </div>
+                                <p class="text-[10px] text-on-surface-variant uppercase tracking-widest mb-1">Development Mode</p>
+                                <p class="text-[10px] text-on-surface-variant uppercase tracking-widest mb-4">Owner access only</p>
+                                <a href="https://developer.spotify.com/dashboard" target="_blank"
+                                   class="text-[10px] font-bold text-orange-400 uppercase tracking-widest flex items-center gap-1 group">
+                                    Request Extended Quota
+                                    <span class="material-symbols-outlined text-sm group-hover:translate-x-1 transition-transform">arrow_forward</span>
+                                </a>
+                            </div>
+                            <div class="glass-card p-8 relative overflow-hidden">
+                                <div class="absolute inset-0 bg-gradient-to-br from-primary-container/10 to-transparent pointer-events-none"></div>
+                                <h4 class="text-xs font-bold font-headline uppercase tracking-[0.2em] mb-6">All-time Stats</h4>
+                                <div class="space-y-5">
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Total tracks</span>
+                                        <span id="sp-stat-total" class="text-sm font-bold text-primary">—</span>
+                                    </div>
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Sessions</span>
+                                        <span id="sp-stat-events" class="text-sm font-bold text-primary">—</span>
+                                    </div>
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Avg / session</span>
+                                        <span id="sp-stat-avg" class="text-sm font-bold text-primary">—</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ════════════════════════════════ -->
+                <!-- TAB: SOUNDCLOUD / YOUTUBE       -->
+                <!-- ════════════════════════════════ -->
+                <div id="tab-sc" class="tab-content">
+                    <div class="mb-10">
+                        <h2 class="text-4xl font-extrabold font-headline tracking-tight text-on-surface glow-text">SoundCloud / YouTube</h2>
+                        <p class="text-on-surface-variant mt-2 text-lg">Download statistics.</p>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+                        <div class="glass-card p-8 relative overflow-hidden group">
+                            <div class="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                                <span class="material-symbols-outlined text-9xl">cloud_download</span>
+                            </div>
+                            <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-[0.2em] mb-4">Total Downloaded</p>
+                            <span id="sc-total" class="text-5xl font-light font-headline skeleton w-24 h-10 inline-block">&nbsp;</span>
+                        </div>
+                        <div class="glass-card p-8 relative overflow-hidden group">
+                            <div class="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                                <span class="material-symbols-outlined text-9xl">sensors</span>
+                            </div>
+                            <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-[0.2em] mb-4">Active Batches</p>
+                            <div class="flex items-baseline gap-3">
+                                <span id="sc-active" class="text-5xl font-light font-headline skeleton w-12 h-10 inline-block">&nbsp;</span>
+                                <div id="sc-active-indicator" class="hidden flex items-center gap-2">
+                                    <span class="w-2 h-2 rounded-full bg-primary animate-pulse shadow-[0_0_8px_#d2bbff]"></span>
+                                    <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Running</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="glass-card p-8 relative overflow-hidden group">
+                            <div class="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                                <span class="material-symbols-outlined text-9xl">download_done</span>
+                            </div>
+                            <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-[0.2em] mb-4">This Week</p>
+                            <span id="sc-week" class="text-5xl font-light font-headline skeleton w-20 h-10 inline-block">&nbsp;</span>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                        <div class="lg:col-span-8 space-y-8">
+                            <div class="glass-card p-8">
+                                <div class="flex justify-between items-center mb-10">
+                                    <div>
+                                        <h3 class="text-xl font-bold font-headline">Download Velocity</h3>
+                                        <p class="text-sm text-on-surface-variant">Tracks downloaded per day</p>
+                                    </div>
+                                    <div class="flex gap-2">
+                                        <button class="period-btn active px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest" data-tab-src="sc" data-days="7">Week</button>
+                                        <button class="period-btn px-3 py-1.5 rounded-lg text-[10px] font-bold text-on-surface-variant uppercase tracking-widest hover:bg-surface-container transition-colors" data-tab-src="sc" data-days="30">Month</button>
+                                    </div>
+                                </div>
+                                <div id="chart-sc" class="h-64 flex items-end gap-2 px-2"></div>
+                                <div id="chart-sc-labels" class="flex justify-between mt-4 px-2 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest"></div>
+                            </div>
+
+                            <div class="glass-card overflow-hidden">
+                                <div class="p-8 border-b border-outline/10">
+                                    <h3 class="text-xl font-bold font-headline">Recent Downloads</h3>
+                                </div>
+                                <div class="overflow-x-auto">
+                                    <table class="w-full text-left">
+                                        <thead>
+                                            <tr class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest bg-surface-container/30">
+                                                <th class="px-8 py-4">Time (MSK)</th>
+                                                <th class="px-8 py-4">User</th>
+                                                <th class="px-8 py-4">Action</th>
+                                                <th class="px-8 py-4">Tracks</th>
+                                                <th class="px-8 py-4 text-right">Result</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="tbl-sc" class="divide-y divide-outline/5"></tbody>
+                                    </table>
+                                </div>
+                                <div class="p-4 flex justify-center bg-surface-container/10">
+                                    <button id="more-sc" class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest hover:text-primary transition-colors">Load More</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="lg:col-span-4 space-y-6">
+                            <div class="glass-card p-8">
+                                <h4 class="text-xs font-bold font-headline uppercase tracking-[0.2em] mb-6">Platform Split</h4>
+                                <div class="space-y-5">
+                                    <div>
+                                        <div class="flex justify-between text-[10px] font-bold mb-2 uppercase tracking-widest">
+                                            <span>SoundCloud</span>
+                                            <span id="sc-pct-sc" class="text-primary">—</span>
+                                        </div>
+                                        <div class="h-2 w-full bg-surface-container rounded-full overflow-hidden">
+                                            <div id="sc-bar-sc" class="h-full bg-orange-500 transition-all duration-700 shadow-[0_0_8px_rgba(249,115,22,.4)]" style="width:0%"></div>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div class="flex justify-between text-[10px] font-bold mb-2 uppercase tracking-widest">
+                                            <span>YouTube</span>
+                                            <span id="sc-pct-yt" class="text-primary">—</span>
+                                        </div>
+                                        <div class="h-2 w-full bg-surface-container rounded-full overflow-hidden">
+                                            <div id="sc-bar-yt" class="h-full bg-red-600 transition-all duration-700 shadow-[0_0_8px_rgba(220,38,38,.4)]" style="width:0%"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="glass-card p-8 relative overflow-hidden">
+                                <div class="absolute inset-0 bg-gradient-to-br from-primary-container/10 to-transparent pointer-events-none"></div>
+                                <h4 class="text-xs font-bold font-headline uppercase tracking-[0.2em] mb-6">All-time Stats</h4>
+                                <div class="space-y-5">
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Total tracks</span>
+                                        <span id="sc-stat-total" class="text-sm font-bold text-primary">—</span>
+                                    </div>
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">This week</span>
+                                        <span id="sc-stat-week" class="text-sm font-bold text-primary">—</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ════════════════════════════════ -->
+                <!-- TAB: EVENT LOG                  -->
+                <!-- ════════════════════════════════ -->
+                <div id="tab-log" class="tab-content">
+                    <div class="mb-10">
+                        <h2 class="text-4xl font-extrabold font-headline tracking-tight text-on-surface glow-text">Event Log</h2>
+                        <p class="text-on-surface-variant mt-2 text-lg">Full activity feed.</p>
+                    </div>
+
+                    <div class="glass-card overflow-hidden">
+                        <div class="p-8 border-b border-outline/10 flex flex-wrap items-center justify-between gap-4">
+                            <h3 class="text-xl font-bold font-headline">All Events</h3>
+                            <div class="flex gap-2 flex-wrap">
+                                <button class="filter-btn active px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest" data-source="">All</button>
+                                <button class="filter-btn px-3 py-1.5 rounded-lg text-[10px] font-bold text-on-surface-variant uppercase tracking-widest hover:bg-surface-container transition-colors" data-source="ym">Yandex Music</button>
+                                <button class="filter-btn px-3 py-1.5 rounded-lg text-[10px] font-bold text-on-surface-variant uppercase tracking-widest hover:bg-surface-container transition-colors" data-source="spotify">Spotify</button>
+                                <button class="filter-btn px-3 py-1.5 rounded-lg text-[10px] font-bold text-on-surface-variant uppercase tracking-widest hover:bg-surface-container transition-colors" data-source="sc">SC / YT</button>
+                            </div>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left">
+                                <thead>
+                                    <tr class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest bg-surface-container/30">
+                                        <th class="px-8 py-4">Time (MSK)</th>
+                                        <th class="px-8 py-4">User</th>
+                                        <th class="px-8 py-4">Action</th>
+                                        <th class="px-8 py-4">Tracks</th>
+                                        <th class="px-8 py-4">Detail</th>
+                                        <th class="px-8 py-4 text-right">Result</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tbl-log" class="divide-y divide-outline/5 font-mono text-xs"></tbody>
+                            </table>
+                        </div>
+                        <div class="p-4 flex justify-center bg-surface-container/10">
+                            <button id="more-log" class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest hover:text-primary transition-colors">Load More</button>
+                        </div>
+                    </div>
+                </div>
+
+            </div><!-- /p-10 -->
+        </main>
+    </div>
+
+    <script>
+    // ─── Auth: redirect on 401 ────────────────────────────────────────────
+    async function apiFetch(url) {
+        const r = await fetch(url);
+        if (r.status === 401) { window.location.href = '/dashboard/login'; return null; }
+        return r.ok ? r.json() : null;
+    }
+
+    // ─── Tab switching ────────────────────────────────────────────────────
+    const tabLinks   = document.querySelectorAll('[data-tab]');
+    const tabPanels  = document.querySelectorAll('.tab-content');
+    const tabLoaded  = {};
+    const tabOffsets = { ym: 0, spotify: 0, sc: 0, log: 0 };
+    let   logFilter  = '';
+
+    function switchTab(id) {
+        tabPanels.forEach(p => p.classList.remove('active'));
+        tabLinks.forEach(l => l.classList.remove('sidebar-active'));
+        document.getElementById('tab-' + id)?.classList.add('active');
+        document.querySelector(`[data-tab="${id}"]`)?.classList.add('sidebar-active');
+        if (!tabLoaded[id]) { loadTabData(id); tabLoaded[id] = true; }
+    }
+
+    tabLinks.forEach(l => l.addEventListener('click', e => {
+        e.preventDefault();
+        switchTab(l.dataset.tab);
+    }));
+
+    // ─── Helpers ──────────────────────────────────────────────────────────
+    function fmt(n) { return n == null ? '—' : n.toLocaleString(); }
+
+    function fmtTs(iso) {
+        if (!iso) return '—';
+        const d = new Date(iso);
+        // Display in MSK (UTC+3)
+        return d.toLocaleString('ru-RU', {
+            timeZone: 'Europe/Moscow',
+            day: '2-digit', month: '2-digit',
+            hour: '2-digit', minute: '2-digit'
+        });
+    }
+
+    function resultBadge(result) {
+        const ok  = result === 'success' || result === 'stopped';
+        const cls = ok
+            ? 'bg-green-500/10 text-green-400'
+            : 'bg-red-500/10 text-red-400';
+        const icon = ok ? 'check_circle' : 'error';
+        const label = result || '—';
+        return `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full ${cls} text-[10px] font-bold uppercase tracking-widest font-sans">
+                    <span class="material-symbols-outlined text-xs">${icon}</span>${label}
+                </span>`;
+    }
+
+    function clearSkeleton(el) {
+        el.classList.remove('skeleton', 'w-24', 'w-20', 'w-12', 'h-10', 'inline-block');
+    }
+
+    // ─── Chart rendering ──────────────────────────────────────────────────
+    function renderChart(chartId, labelsId, data) {
+        const bars   = document.getElementById(chartId);
+        const labels = document.getElementById(labelsId);
+        if (!bars || !labels || !data.length) return;
+
+        const max = Math.max(...data.map(d => d.tracks), 1);
+        const peakIdx = data.reduce((mi, d, i) => d.tracks > data[mi].tracks ? i : mi, 0);
+
+        bars.innerHTML = data.map((d, i) => {
+            const h    = Math.max((d.tracks / max) * 85, 1.5).toFixed(1);
+            const peak = i === peakIdx;
+            return `<div class="flex-1 rounded-t-lg chart-bar${peak ? ' peak' : ''}"
+                         style="height:${h}%" title="${d.tracks} tracks">
+                         ${peak ? `<div class="chart-tooltip">${fmt(d.tracks)}</div>` : ''}
+                    </div>`;
+        }).join('');
+
+        // Show day labels spaced to avoid overflow
+        const step = data.length <= 7 ? 1 : Math.ceil(data.length / 7);
+        labels.innerHTML = data.map((d, i) => {
+            const day = new Date(d.day + 'T12:00:00').toLocaleDateString('en', { weekday: 'short' });
+            return i % step === 0 ? `<span>${day}</span>` : '<span></span>';
+        }).join('');
+    }
+
+    async function loadChart(source, days) {
+        const data = await apiFetch(`/api/chart?source=${source}&days=${days}`);
+        if (data) renderChart(`chart-${source}`, `chart-${source}-labels`, data);
+    }
+
+    // ─── Table rendering ──────────────────────────────────────────────────
+    function renderRows(tbodyId, events, append = false) {
+        const tbody = document.getElementById(tbodyId);
+        if (!tbody) return;
+
+        const isLog = tbodyId === 'tbl-log';
+        const html = events.map(e => {
+            const detail = e.detail ? `<span class="text-on-surface-variant/60 truncate max-w-[160px] block">${e.detail}</span>` : '—';
+            const detailCell = isLog
+                ? `<td class="px-8 py-5 text-xs font-sans text-on-surface-variant max-w-[160px]">${detail}</td>`
+                : '';
+            return `<tr class="hover:bg-surface-container/20 transition-colors">
+                <td class="px-8 py-5 text-xs font-sans text-on-surface-variant whitespace-nowrap">${fmtTs(e.ts)}</td>
+                <td class="px-8 py-5 text-xs font-sans font-bold">${e.username || '—'}</td>
+                <td class="px-8 py-5 text-xs text-primary">${e.action}</td>
+                <td class="px-8 py-5 text-xs font-sans text-on-surface-variant">${fmt(e.track_count)}</td>
+                ${detailCell}
+                <td class="px-8 py-5 text-right">${resultBadge(e.result)}</td>
+            </tr>`;
+        }).join('');
+
+        if (append) tbody.insertAdjacentHTML('beforeend', html);
+        else        tbody.innerHTML = html;
+
+        if (!events.length && !append) {
+            const cols = isLog ? 6 : 5;
+            tbody.innerHTML = `<tr><td colspan="${cols}" class="px-8 py-8 text-center text-on-surface-variant text-sm">No events yet</td></tr>`;
+        }
+    }
+
+    async function loadTable(source, tbodyId, offset = 0, append = false) {
+        const src = source ? `&source=${source}` : '';
+        const data = await apiFetch(`/api/events?limit=15&offset=${offset}${src}`);
+        if (data) renderRows(tbodyId, data, append);
+        return data ? data.length : 0;
+    }
+
+    // ─── Tab data loading ─────────────────────────────────────────────────
+    let stats = null;
+
+    async function loadStats() {
+        stats = await apiFetch('/api/stats');
+        if (!stats) return;
+
+        // YM
+        const ym = stats.ym || {};
+        const ymSet = el => clearSkeleton(el);
+        ['ym-total', 'ym-events', 'ym-week'].forEach(id => clearSkeleton(document.getElementById(id)));
+        document.getElementById('ym-total').textContent  = fmt(ym.total);
+        document.getElementById('ym-events').textContent = fmt(ym.events);
+        document.getElementById('ym-week').textContent   = fmt(ym.week);
+        document.getElementById('ym-stat-total').textContent  = fmt(ym.total);
+        document.getElementById('ym-stat-events').textContent = fmt(ym.events);
+        document.getElementById('ym-stat-users').textContent  = fmt(ym.users);
+        const ymAvg = ym.events ? Math.round(ym.total / ym.events) : 0;
+        document.getElementById('ym-stat-avg').textContent = fmt(ymAvg);
+
+        // Spotify
+        const sp = stats.spotify || {};
+        ['sp-total', 'sp-events', 'sp-week'].forEach(id => clearSkeleton(document.getElementById(id)));
+        document.getElementById('sp-total').textContent  = fmt(sp.total);
+        document.getElementById('sp-events').textContent = fmt(sp.events);
+        document.getElementById('sp-week').textContent   = fmt(sp.week);
+        document.getElementById('sp-stat-total').textContent  = fmt(sp.total);
+        document.getElementById('sp-stat-events').textContent = fmt(sp.events);
+        const spAvg = sp.events ? Math.round(sp.total / sp.events) : 0;
+        document.getElementById('sp-stat-avg').textContent = fmt(spAvg);
+
+        // SC
+        const sc = stats.sc || {};
+        ['sc-total', 'sc-active', 'sc-week'].forEach(id => clearSkeleton(document.getElementById(id)));
+        document.getElementById('sc-total').textContent  = fmt(sc.total);
+        document.getElementById('sc-active').textContent = fmt(sc.active_batches);
+        document.getElementById('sc-week').textContent   = fmt(sc.week);
+        document.getElementById('sc-stat-total').textContent = fmt(sc.total);
+        document.getElementById('sc-stat-week').textContent  = fmt(sc.week);
+        if (sc.active_batches > 0) {
+            document.getElementById('sc-active-indicator').classList.remove('hidden');
+        }
+
+        // Platform split
+        const total = (sc.sc_tracks || 0) + (sc.yt_tracks || 0);
+        if (total > 0) {
+            const scPct = Math.round(sc.sc_tracks / total * 100);
+            const ytPct = 100 - scPct;
+            document.getElementById('sc-pct-sc').textContent = scPct + '%';
+            document.getElementById('sc-pct-yt').textContent = ytPct + '%';
+            document.getElementById('sc-bar-sc').style.width = scPct + '%';
+            document.getElementById('sc-bar-yt').style.width = ytPct + '%';
+        }
+
+        document.getElementById('last-updated').textContent =
+            'Updated ' + new Date().toLocaleTimeString('ru-RU', { timeZone: 'Europe/Moscow', hour: '2-digit', minute: '2-digit' }) + ' MSK';
+    }
+
+    async function loadTabData(id) {
+        if (id === 'ym') {
+            await loadTable('ym', 'tbl-ym', 0, false);
+            await loadChart('ym', 7);
+        } else if (id === 'spotify') {
+            await loadTable('spotify', 'tbl-spotify', 0, false);
+            await loadChart('spotify', 7);
+        } else if (id === 'sc') {
+            await loadTable('sc', 'tbl-sc', 0, false);
+            await loadChart('sc', 7);
+        } else if (id === 'log') {
+            tabOffsets.log = 0;
+            await loadTable('', 'tbl-log', 0, false);
+        }
+    }
+
+    // ─── Week / Month toggle ──────────────────────────────────────────────
+    document.querySelectorAll('.period-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const src  = btn.dataset.tabSrc;
+            const days = parseInt(btn.dataset.days);
+            document.querySelectorAll(`.period-btn[data-tab-src="${src}"]`).forEach(b => {
+                b.classList.remove('active');
+                b.classList.add('text-on-surface-variant');
+            });
+            btn.classList.add('active');
+            btn.classList.remove('text-on-surface-variant');
+            loadChart(src, days);
+        });
+    });
+
+    // ─── Load More buttons ────────────────────────────────────────────────
+    async function handleLoadMore(source, tbodyId, offsetKey) {
+        tabOffsets[offsetKey] += 15;
+        const loaded = await loadTable(source, tbodyId, tabOffsets[offsetKey], true);
+        if (loaded < 15) {
+            document.getElementById('more-' + offsetKey).textContent = 'All loaded';
+            document.getElementById('more-' + offsetKey).disabled = true;
+        }
+    }
+
+    document.getElementById('more-ym')
+        .addEventListener('click', () => handleLoadMore('ym', 'tbl-ym', 'ym'));
+    document.getElementById('more-spotify')
+        .addEventListener('click', () => handleLoadMore('spotify', 'tbl-spotify', 'spotify'));
+    document.getElementById('more-sc')
+        .addEventListener('click', () => handleLoadMore('sc', 'tbl-sc', 'sc'));
+    document.getElementById('more-log')
+        .addEventListener('click', () => handleLoadMore('', 'tbl-log', 'log'));
+
+    // ─── Event log source filter ──────────────────────────────────────────
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.filter-btn').forEach(b => {
+                b.classList.remove('active');
+                b.classList.add('text-on-surface-variant');
+            });
+            btn.classList.add('active');
+            btn.classList.remove('text-on-surface-variant');
+            logFilter = btn.dataset.source;
+            tabOffsets.log = 0;
+            // Reset "Load More" button
+            const moreBtn = document.getElementById('more-log');
+            moreBtn.textContent = 'Load More';
+            moreBtn.disabled = false;
+            loadTable(logFilter, 'tbl-log', 0, false);
+        });
+    });
+
+    // ─── Batch live polling ───────────────────────────────────────────────
+    async function pollBatchLive() {
+        const data = await apiFetch('/api/batch_live');
+        if (!data) return;
+
+        const idle  = document.getElementById('header-idle');
+        const batch = document.getElementById('header-batch');
+
+        if (data.length === 0) {
+            idle.classList.remove('hidden');
+            batch.classList.add('hidden');
+        } else {
+            const b   = data[0];
+            const pct = b.total > 0 ? Math.round((b.current_idx / b.total) * 100) : 0;
+            idle.classList.add('hidden');
+            batch.classList.remove('hidden');
+            document.getElementById('batch-track').textContent = b.current_track || '…';
+            document.getElementById('batch-pct').textContent   = pct + '%';
+            document.getElementById('batch-bar').style.width   = pct + '%';
+            document.getElementById('batch-meta').textContent  =
+                `${b.user_label} · ${b.downloaded}/${b.total} downloaded`;
+
+            // Refresh SC stat card
+            document.getElementById('sc-active').textContent = data.length;
+            if (data.length > 0) {
+                document.getElementById('sc-active-indicator').classList.remove('hidden');
+            }
+        }
+    }
+
+    // ─── Init ─────────────────────────────────────────────────────────────
+    (async () => {
+        await loadStats();
+        switchTab('ym');
+        await pollBatchLive();
+        setInterval(pollBatchLive, 5000);
+        setInterval(loadStats, 60000);
+    })();
+
+    // ─── Particles ────────────────────────────────────────────────────────
+    document.addEventListener("DOMContentLoaded", () => {
+        tsParticles.load("tsparticles", {
+            fpsLimit: 60,
+            particles: {
+                number: { value: 90, density: { enable: true, area: 900 } },
+                color:  { value: "#ffffff" },
+                shape:  { type: "circle" },
+                opacity: {
+                    value: 0.45, random: true,
+                    anim: { enable: true, speed: 0.8, opacity_min: 0.05, sync: false }
+                },
+                size: { value: 3, random: { enable: true, minimumValue: 1 } },
+                links: { enable: false },
+                move: {
+                    enable: true, speed: 0.5, direction: "bottom",
+                    random: true, straight: false,
+                    outModes: { default: "out" }
+                }
+            },
+            interactivity: {
+                detectsOn: "window",
+                events: {
+                    onHover: { enable: true, mode: "grab" },
+                    onClick: { enable: true, mode: "push" },
+                    resize: true
+                },
+                modes: {
+                    grab: { distance: 160, links: { opacity: 0.5 } },
+                    push: { quantity: 3 }
+                }
+            },
+            background: { color: "transparent" }
+        });
+    });
+    </script>
+</body>
+</html>
