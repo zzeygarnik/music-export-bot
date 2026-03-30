@@ -37,6 +37,7 @@ class SCBatchFlow(StatesGroup):
     sc_resume_choice = State()     # "с начала" or "продолжить с..."
     sc_resume_input = State()      # user types track name to resume from
     sc_resume_confirm = State()    # bot shows found track, user confirms
+    filter_input = State()         # waiting for artist name to filter download playlist
     sc_downloading = State()       # batch download in progress
     track_selection = State()      # user searches and picks specific tracks
     sc_queued = State()            # waiting in batch download queue
