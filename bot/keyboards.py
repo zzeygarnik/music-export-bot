@@ -37,8 +37,10 @@ def export_source_keyboard() -> InlineKeyboardMarkup:
 
 def share_source_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎵 Яндекс Музыка", callback_data="service:share")],
+        [InlineKeyboardButton(text="🎵 ЯМ — по ссылке или embed", callback_data="service:share")],
+        [InlineKeyboardButton(text="🎵 ЯМ — мои плейлисты", callback_data="service:ym_playlists")],
         [InlineKeyboardButton(text="🟢 Spotify", callback_data="service:spotify")],
+        [InlineKeyboardButton(text="☁️ SoundCloud / YouTube — по ссылке", callback_data="service:sc_url_playlist")],
         [InlineKeyboardButton(text="← Назад", callback_data="service:back_to_main")],
     ])
 
@@ -153,11 +155,6 @@ def sc_menu_keyboard() -> InlineKeyboardMarkup:
             text="По ссылке  (SC / YouTube)",
             callback_data="sc:url",
             icon_custom_emoji_id="6042011682497106307",
-        )],
-        [InlineKeyboardButton(
-            text="Скачать плейлист из Яндекс Музыки",
-            callback_data="sc:batch",
-            icon_custom_emoji_id="6039802767931871481",
         )],
         [InlineKeyboardButton(text="Назад", callback_data="sc:back")],
     ])

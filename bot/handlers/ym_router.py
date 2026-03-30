@@ -31,12 +31,14 @@ from bot.keyboards import (
     export_filter_result_keyboard,
     ym_share_cancel_keyboard,
     ym_share_token_keyboard,
+    sc_batch_token_keyboard,
+    sc_cancel_keyboard,
 )
 from core.ym_source import YandexMusicSource
 from utils.export import build_txt_file, build_csv_file, cleanup
 from utils.event_log import log_event
 from utils import db
-from utils.db import get_user_stats
+from utils.db import get_user_stats, is_batch_allowed
 from config import settings
 from .common import (
     _get_user_info,
@@ -48,6 +50,8 @@ from .common import (
     _SC_MENU_TEXT,
     _YMS_INPUT_TEXT,
     _FAQ_TEXT,
+    _SC_URL_PLAYLIST_TEXT,
+    _show_batch_access_page,
 )
 
 router = Router()
@@ -231,6 +235,41 @@ async def on_service_share_pick(call: CallbackQuery, state: FSMContext) -> None:
         "Выбери источник плейлиста:",
         reply_markup=share_source_keyboard(),
     )
+
+
+@router.callback_query(ExportFlow.choosing_service, F.data == "service:ym_playlists")
+async def on_service_ym_playlists(call: CallbackQuery, state: FSMContext) -> None:
+    if not is_batch_allowed(call.from_user.id, call.from_user.username):
+        await _show_batch_access_page(call, back_cb="batch_req_back:share_source")
+        return
+    await state.update_data(sc_cancel_target="share_source", sc_resume_back_cb="sc_ym_playlists")
+    await call.message.edit_text(
+        "📥 <b>Скачать плейлист из Яндекс Музыки</b>\n\n" + _TOKEN_GUIDE,
+        parse_mode="HTML",
+        disable_web_page_preview=True,
+        reply_markup=sc_batch_token_keyboard(),
+    )
+    await state.set_state(SCBatchFlow.sc_ym_token)
+
+
+@router.callback_query(ExportFlow.choosing_service, F.data == "service:sc_url_playlist")
+async def on_service_sc_url_playlist(call: CallbackQuery, state: FSMContext) -> None:
+    await state.update_data(
+        sc_input_mode="url",
+        sc_url_allow_playlist=True,
+        sc_cancel_target="share_source",
+        sc_resume_back_cb="share_source",
+    )
+    await call.message.edit_text(
+        _SC_URL_PLAYLIST_TEXT, parse_mode="HTML", reply_markup=sc_cancel_keyboard(),
+    )
+    await state.set_state(SCSearchFlow.sc_url_input)
+
+
+@router.callback_query(F.data == "batch_req_back:share_source")
+async def on_batch_req_back_share_source(call: CallbackQuery, state: FSMContext) -> None:
+    await call.message.edit_text("Выбери источник плейлиста:", reply_markup=share_source_keyboard())
+    await state.set_state(ExportFlow.choosing_service)
 
 
 @router.callback_query(ExportFlow.choosing_service, F.data == "service:back_to_main")

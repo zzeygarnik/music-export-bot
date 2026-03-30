@@ -30,6 +30,7 @@ from bot.keyboards import (
     ym_share_actions_keyboard,
     spotify_actions_keyboard,
     export_type_keyboard,
+    share_source_keyboard,
 )
 from core.ym_source import YandexMusicSource
 from core import sc_downloader
@@ -50,7 +51,9 @@ from .common import (
     _SC_MENU_TEXT,
     _SC_URL_TEXT,
     _show_batch_access_page,
+    _SC_URL_PLAYLIST_TEXT,
 )
+from bot.states import ExportFlow
 
 router = Router()
 log = logging.getLogger(__name__)
@@ -164,7 +167,7 @@ async def on_yt_search(call: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(SCSearchFlow.sc_menu, F.data == "sc:url")
 async def on_sc_url(call: CallbackQuery, state: FSMContext) -> None:
-    await state.update_data(sc_input_mode="url")
+    await state.update_data(sc_input_mode="url", sc_url_allow_playlist=False)
     await call.message.edit_text(_SC_URL_TEXT, parse_mode="HTML", reply_markup=sc_cancel_keyboard())
     await state.set_state(SCSearchFlow.sc_url_input)
 
@@ -576,6 +579,9 @@ async def on_sc_url_input(message: Message, state: FSMContext) -> None:
         )
         return
 
+    data = await state.get_data()
+    allow_playlist = data.get("sc_url_allow_playlist", True)
+
     if info["type"] == "track":
         result = info["result"]
         await status_msg.edit_text(
@@ -585,6 +591,15 @@ async def on_sc_url_input(message: Message, state: FSMContext) -> None:
         await _sc_download_and_send(status_msg, state, result, user_id,
                                     return_to_menu=True, username=username)
     else:
+        if not allow_playlist:
+            await status_msg.edit_text(
+                "📋 Это плейлист или альбом.\n\n"
+                "Для скачивания плейлистов и альбомов используй раздел "
+                "<b>«Плейлист / Альбом по ссылке»</b> в главном меню.",
+                parse_mode="HTML",
+                reply_markup=sc_cancel_keyboard(),
+            )
+            return
         entries = info["entries"]
         title = info["title"]
         if not entries:
@@ -593,8 +608,9 @@ async def on_sc_url_input(message: Message, state: FSMContext) -> None:
                 reply_markup=sc_cancel_keyboard(),
             )
             return
+        back_cb = data.get("sc_resume_back_cb", "sc_menu")
         tracks = [{"url": e.url, "artist": e.artist, "title": e.title} for e in entries]
-        await state.update_data(sc_tracks=tracks, sc_resume_back_cb="sc_menu")
+        await state.update_data(sc_tracks=tracks, sc_resume_back_cb=back_cb)
         await status_msg.edit_text(
             f'<tg-emoji emoji-id="6039802767931871481">📥</tg-emoji> '
             f'Найдено <b>{len(tracks)}</b> треков в плейлисте «{title}».\n\nС какого трека начать?',
@@ -608,6 +624,12 @@ async def on_sc_url_input(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "sc:cancel")
 async def on_sc_cancel(call: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    if data.get("sc_cancel_target") == "share_source":
+        await state.update_data(sc_cancel_target=None)
+        await call.message.edit_text("Выбери источник плейлиста:", reply_markup=share_source_keyboard())
+        await state.set_state(ExportFlow.choosing_service)
+        return
     await call.message.edit_text(_SC_MENU_TEXT, parse_mode="HTML", reply_markup=sc_menu_keyboard())
     await state.set_state(SCSearchFlow.sc_menu)
 
@@ -744,6 +766,11 @@ async def on_sc_resume_back(call: CallbackQuery, state: FSMContext) -> None:
             reply_markup=export_type_keyboard(),
         )
         await state.set_state(ExportFlow.choosing_export_type)
+        return
+
+    if back_cb == "share_source":
+        await call.message.edit_text("Выбери источник плейлиста:", reply_markup=share_source_keyboard())
+        await state.set_state(ExportFlow.choosing_service)
         return
 
     # default: sc_menu
