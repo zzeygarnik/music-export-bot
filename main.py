@@ -104,6 +104,12 @@ async def _dashboard_login_post(request: aiohttp_web.Request) -> aiohttp_web.Res
     )
 
 
+async def _dashboard_logout(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    response = aiohttp_web.HTTPFound("/dashboard/login")
+    response.del_cookie("dashboard_auth")
+    return response
+
+
 async def _api_stats(request: aiohttp_web.Request) -> aiohttp_web.Response:
     if not _check_auth(request):
         return aiohttp_web.Response(status=401)
@@ -257,9 +263,10 @@ async def main() -> None:
             log.info("Spotify OAuth callback registered at /spotify/callback")
 
         if settings.DASHBOARD_TOKEN:
-            web_app.router.add_get("/dashboard",        _dashboard_handler)
-            web_app.router.add_get("/dashboard/login",  _dashboard_login_get)
-            web_app.router.add_post("/dashboard/login", _dashboard_login_post)
+            web_app.router.add_get("/dashboard",         _dashboard_handler)
+            web_app.router.add_get("/dashboard/login",   _dashboard_login_get)
+            web_app.router.add_post("/dashboard/login",  _dashboard_login_post)
+            web_app.router.add_get("/dashboard/logout",  _dashboard_logout)
             web_app.router.add_get("/api/stats",        _api_stats)
             web_app.router.add_get("/api/events",       _api_events)
             web_app.router.add_get("/api/chart",        _api_chart)
