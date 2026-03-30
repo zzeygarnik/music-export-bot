@@ -89,6 +89,8 @@ async def cmd_mystats(message: Message) -> None:
 
     all_dl = a["single"] + a["batch"]
     week_dl = w["single"] + w["batch"]
+    week_exported = w["ym_exported"] + w["spotify_exported"]
+    all_exported = a["ym_exported"] + a["spotify_exported"]
 
     first_dt = a["first_ts"].astimezone(_MSK)
     first_str = first_dt.strftime("%d.%m.%Y")
@@ -102,8 +104,15 @@ async def cmd_mystats(message: Message) -> None:
     lines.append(f"⬇️ Скачано треков: {_n(week_dl)}")
     if week_dl > 0:
         lines.append(f"   └ поиском: {w['single']}  ·  плейлистами: {w['batch']}")
-    if w["exported"]:
-        lines.append(f"📤 Экспортировано: {_n(w['exported'])}")
+    if week_exported:
+        lines.append(f"📤 Экспортировано: {_n(week_exported)}")
+        parts = []
+        if w["ym_exported"]:
+            parts.append(f"ЯМ: {w['ym_exported']}")
+        if w["spotify_exported"]:
+            parts.append(f"Spotify: {w['spotify_exported']}")
+        if len(parts) > 1:
+            lines.append(f"   └ {' · '.join(parts)}")
     elif week_dl == 0:
         lines.append("   (нет активности)")
 
@@ -114,8 +123,15 @@ async def cmd_mystats(message: Message) -> None:
         lines.append(f"   └ поиском: {a['single']}  ·  плейлистами: {a['batch']}")
     if a["batches"]:
         lines.append(f"📂 Плейлистов скачано: {_n(a['batches'])}")
-    if a["exported"]:
-        lines.append(f"📤 Экспортировано: {_n(a['exported'])}")
+    if all_exported:
+        lines.append(f"📤 Экспортировано: {_n(all_exported)}")
+        parts = []
+        if a["ym_exported"]:
+            parts.append(f"ЯМ: {a['ym_exported']}")
+        if a["spotify_exported"]:
+            parts.append(f"Spotify: {a['spotify_exported']}")
+        if len(parts) > 1:
+            lines.append(f"   └ {' · '.join(parts)}")
 
     lines.append("")
     lines.append(f"🗓 С нами с: <b>{first_str}</b>")
@@ -570,6 +586,7 @@ async def on_export_filter_input(message: Message, state: FSMContext) -> None:
             parse_mode="HTML",
             reply_markup=export_filter_result_keyboard(),
         )
+        log_event(message.from_user.id, message.from_user.username, "export_filtered", "success", track_count=len(matched))
     finally:
         await cleanup(tmp_path)
 

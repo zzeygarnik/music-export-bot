@@ -7,6 +7,7 @@ from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler
 
 from config import settings
 from bot.handlers import router
@@ -115,19 +116,45 @@ async def main() -> None:
     await bot.set_my_commands([
         BotCommand(command="start", description="Главное меню"),
         BotCommand(command="faq", description="FAQ и обратная связь"),
-        BotCommand(command="admin", description="Админ-панель"),
+        BotCommand(command="mystats", description="Моя статистика"),
     ])
-    if settings.SPOTIFY_CLIENT_ID and settings.SPOTIFY_CALLBACK_PORT:
+    need_server = bool(
+        (settings.SPOTIFY_CLIENT_ID and settings.SPOTIFY_CALLBACK_PORT)
+        or settings.WEBHOOK_URL
+    )
+    if need_server:
         web_app = aiohttp_web.Application()
-        web_app.router.add_get("/spotify/callback", _make_spotify_callback(bot))
+
+        if settings.SPOTIFY_CLIENT_ID and settings.SPOTIFY_CALLBACK_PORT:
+            web_app.router.add_get("/spotify/callback", _make_spotify_callback(bot))
+            log.info("Spotify OAuth callback registered at /spotify/callback")
+
+        if settings.WEBHOOK_URL:
+            webhook_path = "/bot/webhook"
+            await bot.set_webhook(
+                url=f"{settings.WEBHOOK_URL.rstrip('/')}{webhook_path}",
+                secret_token=settings.WEBHOOK_SECRET or None,
+                allowed_updates=["message", "callback_query"],
+                drop_pending_updates=True,
+            )
+            SimpleRequestHandler(
+                dispatcher=dp,
+                bot=bot,
+                secret_token=settings.WEBHOOK_SECRET or None,
+            ).register(web_app, path=webhook_path)
+            log.info("Webhook mode: %s%s", settings.WEBHOOK_URL, webhook_path)
+
         runner = aiohttp_web.AppRunner(web_app)
         await runner.setup()
         site = aiohttp_web.TCPSite(runner, "0.0.0.0", settings.SPOTIFY_CALLBACK_PORT)
         await site.start()
-        log.info("Spotify OAuth callback server started on port %d", settings.SPOTIFY_CALLBACK_PORT)
+        log.info("HTTP server started on port %d", settings.SPOTIFY_CALLBACK_PORT)
 
     log.info("Bot started")
-    await dp.start_polling(bot, allowed_updates=["message", "callback_query"])
+    if settings.WEBHOOK_URL:
+        await asyncio.Event().wait()
+    else:
+        await dp.start_polling(bot, allowed_updates=["message", "callback_query"])
 
 
 if __name__ == "__main__":
