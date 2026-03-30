@@ -668,7 +668,7 @@ async def on_export_download_filtered(call: CallbackQuery, state: FSMContext) ->
         await call.message.edit_reply_markup(reply_markup=None)
     except Exception:
         pass
-    await state.update_data(sc_tracks=filtered, sc_resume_back_cb="export_actions")
+    await state.update_data(sc_tracks=filtered, sc_resume_back_cb="export_actions", sc_filter_artists=[], sc_original_tracks=None)
     await call.message.answer(
         f"📥 Готов скачать <b>{len(filtered)}</b> треков с SoundCloud.\n\nС какого трека начать?",
         parse_mode="HTML",

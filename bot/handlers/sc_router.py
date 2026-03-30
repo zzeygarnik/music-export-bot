@@ -611,7 +611,7 @@ async def on_sc_url_input(message: Message, state: FSMContext) -> None:
             return
         back_cb = data.get("sc_resume_back_cb", "sc_menu")
         tracks = [{"url": e.url, "artist": e.artist, "title": e.title} for e in entries]
-        await state.update_data(sc_tracks=tracks, sc_resume_back_cb=back_cb)
+        await state.update_data(sc_tracks=tracks, sc_resume_back_cb=back_cb, sc_filter_artists=[], sc_original_tracks=None)
         await status_msg.edit_text(
             f'<tg-emoji emoji-id="6039802767931871481">📥</tg-emoji> '
             f'Найдено <b>{len(tracks)}</b> треков в плейлисте «{title}».\n\nС какого трека начать?',
@@ -713,7 +713,7 @@ async def on_sc_ym_playlist_selected(call: CallbackQuery, state: FSMContext) -> 
         await state.set_state(SCSearchFlow.sc_menu)
         return
 
-    await state.update_data(sc_tracks=tracks, sc_resume_back_cb="sc_ym_playlists")
+    await state.update_data(sc_tracks=tracks, sc_resume_back_cb="sc_ym_playlists", sc_filter_artists=[], sc_original_tracks=None)
     await call.message.edit_text(
         f"📥 Готов скачать <b>{len(tracks)}</b> треков с SoundCloud из «{title}».\n\nС какого трека начать?",
         parse_mode="HTML",
@@ -1013,10 +1013,11 @@ async def on_sc_resume_filter_artist(call: CallbackQuery, state: FSMContext) -> 
 async def on_sc_filter_back(call: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
     tracks = data.get("sc_tracks", [])
+    filter_artists = data.get("sc_filter_artists") or None
     await call.message.edit_text(
         f"📥 Готов скачать <b>{len(tracks)}</b> треков.\n\nС какого трека начать?",
         parse_mode="HTML",
-        reply_markup=sc_resume_keyboard(),
+        reply_markup=sc_resume_keyboard(filter_artists=filter_artists),
     )
     await state.set_state(SCBatchFlow.sc_resume_choice)
 
@@ -1028,8 +1029,11 @@ async def on_sc_filter_input(message: Message, state: FSMContext) -> None:
         return
     query = message.text.strip()
     data = await state.get_data()
-    tracks = data.get("sc_tracks", [])
-    matched = _filter_by_artist(tracks, query)
+
+    # Save original tracks on first filter application
+    original_tracks = data.get("sc_original_tracks") or data.get("sc_tracks", [])
+
+    matched = _filter_by_artist(original_tracks, query)
     if not matched:
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="← Назад", callback_data="sc_resume:filter_back")]
@@ -1039,13 +1043,58 @@ async def on_sc_filter_input(message: Message, state: FSMContext) -> None:
             parse_mode="HTML", reply_markup=kb,
         )
         return
-    await state.update_data(sc_tracks=matched)
+
+    artists = list(data.get("sc_filter_artists") or [])
+    if query not in artists:
+        artists.append(query)
+
+    # Recompute sc_tracks as union of all filtered artists
+    matched_keys: set[tuple] = set()
+    for a in artists:
+        for t in _filter_by_artist(original_tracks, a):
+            matched_keys.add((t.get("artist", ""), t.get("title", "")))
+    union_tracks = [t for t in original_tracks if (t.get("artist", ""), t.get("title", "")) in matched_keys]
+
+    await state.update_data(sc_tracks=union_tracks, sc_filter_artists=artists, sc_original_tracks=original_tracks)
     await message.answer(
-        f"✅ Найдено <b>{len(matched)}</b> треков исполнителя <b>{query}</b>.\n\nС какого трека начать?",
+        f"✅ Найдено <b>{len(matched)}</b> треков исполнителя <b>{query}</b>. "
+        f"Всего в фильтре: <b>{len(union_tracks)}</b>.\n\nС какого трека начать?",
         parse_mode="HTML",
-        reply_markup=sc_resume_keyboard(),
+        reply_markup=sc_resume_keyboard(filter_artists=artists),
     )
     await state.set_state(SCBatchFlow.sc_resume_choice)
+
+
+@router.callback_query(SCBatchFlow.sc_resume_choice, F.data.startswith("sc_resume:rm_artist:"))
+async def on_sc_rm_artist(call: CallbackQuery, state: FSMContext) -> None:
+    try:
+        idx = int(call.data.split(":")[-1])
+    except (ValueError, IndexError):
+        await call.answer()
+        return
+
+    data = await state.get_data()
+    artists = list(data.get("sc_filter_artists") or [])
+    original_tracks = data.get("sc_original_tracks") or data.get("sc_tracks", [])
+
+    if 0 <= idx < len(artists):
+        artists.pop(idx)
+
+    if artists:
+        matched_keys: set[tuple] = set()
+        for a in artists:
+            for t in _filter_by_artist(original_tracks, a):
+                matched_keys.add((t.get("artist", ""), t.get("title", "")))
+        union_tracks = [t for t in original_tracks if (t.get("artist", ""), t.get("title", "")) in matched_keys]
+    else:
+        union_tracks = list(original_tracks)
+
+    await state.update_data(sc_tracks=union_tracks, sc_filter_artists=artists)
+    await call.message.edit_text(
+        f"📥 Готов скачать <b>{len(union_tracks)}</b> треков.\n\nС какого трека начать?",
+        parse_mode="HTML",
+        reply_markup=sc_resume_keyboard(filter_artists=artists or None),
+    )
 
 
 @router.message(SCBatchFlow.track_selection)
@@ -1295,10 +1344,11 @@ async def on_tsel_confirm(call: CallbackQuery, state: FSMContext) -> None:
 async def on_tsel_cancel(call: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
     tracks = data.get("sc_tracks", [])
+    filter_artists = data.get("sc_filter_artists") or None
     await call.message.edit_text(
         f"📥 Готов скачать <b>{len(tracks)}</b> треков.\n\nС какого трека начать?",
         parse_mode="HTML",
-        reply_markup=sc_resume_keyboard(),
+        reply_markup=sc_resume_keyboard(filter_artists=filter_artists),
     )
     await state.set_state(SCBatchFlow.sc_resume_choice)
 

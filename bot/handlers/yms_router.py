@@ -149,7 +149,7 @@ async def on_yms_download_all(call: CallbackQuery, state: FSMContext) -> None:
         return
     data = await state.get_data()
     tracks = data.get("yms_tracks", [])
-    await state.update_data(sc_tracks=tracks, sc_resume_back_cb="yms_actions")
+    await state.update_data(sc_tracks=tracks, sc_resume_back_cb="yms_actions", sc_filter_artists=[], sc_original_tracks=None)
     await call.message.edit_text(
         f"📥 Готов скачать <b>{len(tracks)}</b> треков с SoundCloud.\n\nС какого трека начать?",
         parse_mode="HTML",
@@ -314,7 +314,7 @@ async def on_yms_download_filtered(call: CallbackQuery, state: FSMContext) -> No
         await call.message.edit_reply_markup(reply_markup=None)
     except Exception:
         pass
-    await state.update_data(sc_tracks=filtered, sc_resume_back_cb="yms_actions")
+    await state.update_data(sc_tracks=filtered, sc_resume_back_cb="yms_actions", sc_filter_artists=[], sc_original_tracks=None)
     await call.message.answer(
         f"📥 Готов скачать <b>{len(filtered)}</b> треков с SoundCloud.\n\nС какого трека начать?",
         parse_mode="HTML",
