@@ -52,6 +52,7 @@ from .common import (
     _SC_URL_TEXT,
     _show_batch_access_page,
     _SC_URL_PLAYLIST_TEXT,
+    _filter_by_artist,
 )
 from bot.states import ExportFlow
 
@@ -944,10 +945,10 @@ def _search_in_playlist(query: str, tracks: list[dict]) -> list[dict]:
             fuzz.partial_ratio(q, title),
             fuzz.token_set_ratio(q, f"{artist} {title}"),
         )
-        if score >= 55:
+        if score >= 70:
             scored.append((score, t))
     scored.sort(key=lambda x: x[0], reverse=True)
-    return [t for _, t in scored[:10]]
+    return [t for _, t in scored[:6]]
 
 
 def _tsel_panel_text(sel_count: int, total: int) -> str:
@@ -996,6 +997,55 @@ async def on_track_select_start(call: CallbackQuery, state: FSMContext) -> None:
         reply_markup=tsel_panel_keyboard(0),
     )
     await state.set_state(SCBatchFlow.track_selection)
+
+
+@router.callback_query(SCBatchFlow.sc_resume_choice, F.data == "sc_resume:filter_artist")
+async def on_sc_resume_filter_artist(call: CallbackQuery, state: FSMContext) -> None:
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="← Назад", callback_data="sc_resume:filter_back")]
+    ])
+    await call.message.edit_text("🔍 Введи имя исполнителя для фильтрации:", reply_markup=kb)
+    await state.set_state(SCBatchFlow.filter_input)
+
+
+@router.callback_query(SCBatchFlow.filter_input, F.data == "sc_resume:filter_back")
+async def on_sc_filter_back(call: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    tracks = data.get("sc_tracks", [])
+    await call.message.edit_text(
+        f"📥 Готов скачать <b>{len(tracks)}</b> треков.\n\nС какого трека начать?",
+        parse_mode="HTML",
+        reply_markup=sc_resume_keyboard(),
+    )
+    await state.set_state(SCBatchFlow.sc_resume_choice)
+
+
+@router.message(SCBatchFlow.filter_input)
+async def on_sc_filter_input(message: Message, state: FSMContext) -> None:
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+    if not message.text:
+        return
+    query = message.text.strip()
+    data = await state.get_data()
+    tracks = data.get("sc_tracks", [])
+    matched = _filter_by_artist(tracks, query)
+    if not matched:
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="← Назад", callback_data="sc_resume:filter_back")]
+        ])
+        await message.answer(
+            f"😔 Исполнитель <b>{query}</b> не найден в плейлисте.\n\nПопробуй другое имя.",
+            parse_mode="HTML", reply_markup=kb,
+        )
+        return
+    await state.update_data(sc_tracks=matched)
+    await message.answer(
+        f"✅ Найдено <b>{len(matched)}</b> треков исполнителя <b>{query}</b>.\n\nС какого трека начать?",
+        parse_mode="HTML",
+        reply_markup=sc_resume_keyboard(),
+    )
+    await state.set_state(SCBatchFlow.sc_resume_choice)
 
 
 @router.message(SCBatchFlow.track_selection)

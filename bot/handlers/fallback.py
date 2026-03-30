@@ -30,6 +30,7 @@ _STATE_HINTS = {
     SCBatchFlow.sc_resume_choice: "Выбери, с какого трека начать скачивание.",
     SCBatchFlow.sc_resume_input: "Введи название трека для поиска в плейлисте.",
     SCBatchFlow.sc_resume_confirm: "Подтверди начальный трек кнопкой ниже.",
+    SCBatchFlow.filter_input: "Введи имя исполнителя для фильтрации или нажми «Назад».",
     SCBatchFlow.sc_downloading: "Скачивание идёт. Нажми «⛔ Остановить» чтобы прервать.",
     YMShareFlow.token: "Отправь токен Яндекс Музыки для авторизации.",
     YMShareFlow.waiting: "Отправь ссылку или HTML-код плейлиста Яндекс Музыки.",
