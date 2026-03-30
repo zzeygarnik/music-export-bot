@@ -705,14 +705,16 @@
 
     // ─── Tab data loading ─────────────────────────────────────────────────
     let stats = null;
+    let _prevStats = null;
 
-    async function loadStats() {
-        stats = await apiFetch('/api/stats');
-        if (!stats) return;
+    function getActivePeriod(tabId) {
+        const btn = document.querySelector(`.period-btn.active[data-tab-src="${tabId}"]`);
+        return btn ? parseInt(btn.dataset.days) : 7;
+    }
 
+    function applyStats(s) {
         // YM
-        const ym = stats.ym || {};
-        const ymSet = el => clearSkeleton(el);
+        const ym = s.ym || {};
         ['ym-total', 'ym-events', 'ym-week'].forEach(id => clearSkeleton(document.getElementById(id)));
         document.getElementById('ym-total').textContent  = fmt(ym.total);
         document.getElementById('ym-events').textContent = fmt(ym.events);
@@ -724,7 +726,7 @@
         document.getElementById('ym-stat-avg').textContent = fmt(ymAvg);
 
         // Spotify
-        const sp = stats.spotify || {};
+        const sp = s.spotify || {};
         ['sp-total', 'sp-events', 'sp-week'].forEach(id => clearSkeleton(document.getElementById(id)));
         document.getElementById('sp-total').textContent  = fmt(sp.total);
         document.getElementById('sp-events').textContent = fmt(sp.events);
@@ -735,7 +737,7 @@
         document.getElementById('sp-stat-avg').textContent = fmt(spAvg);
 
         // SC
-        const sc = stats.sc || {};
+        const sc = s.sc || {};
         ['sc-total', 'sc-active', 'sc-week'].forEach(id => clearSkeleton(document.getElementById(id)));
         document.getElementById('sc-total').textContent  = fmt(sc.total);
         document.getElementById('sc-active').textContent = fmt(sc.active_batches);
@@ -757,8 +759,27 @@
             document.getElementById('sc-bar-yt').style.width = ytPct + '%';
         }
 
+        // Refresh chart for active tab if its total changed
+        if (_prevStats) {
+            const activeTab = document.querySelector('.tab-content.active')?.id?.replace('tab-', '');
+            if (activeTab && activeTab !== 'log') {
+                const srcKey = activeTab === 'sc' ? 'sc' : activeTab === 'spotify' ? 'spotify' : 'ym';
+                if ((_prevStats[srcKey] || {}).total !== (s[srcKey] || {}).total) {
+                    loadChart(activeTab, getActivePeriod(activeTab));
+                }
+            }
+        }
+        _prevStats = s;
+
         document.getElementById('last-updated').textContent =
             'Updated ' + new Date().toLocaleTimeString('ru-RU', { timeZone: 'Europe/Moscow', hour: '2-digit', minute: '2-digit' }) + ' MSK';
+    }
+
+    async function loadStats() {
+        const s = await apiFetch('/api/stats');
+        if (!s) return;
+        stats = s;
+        applyStats(s);
     }
 
     async function loadTabData(id) {
@@ -830,15 +851,12 @@
         });
     });
 
-    // ─── Batch live polling ───────────────────────────────────────────────
-    async function pollBatchLive() {
-        const data = await apiFetch('/api/batch_live');
-        if (!data) return;
-
+    // ─── Batch live ───────────────────────────────────────────────────────
+    function applyBatch(data) {
         const idle  = document.getElementById('header-idle');
         const batch = document.getElementById('header-batch');
 
-        if (data.length === 0) {
+        if (!data || data.length === 0) {
             idle.classList.remove('hidden');
             batch.classList.add('hidden');
         } else {
@@ -852,7 +870,6 @@
             document.getElementById('batch-meta').textContent  =
                 `${b.user_label} · ${b.downloaded}/${b.total} downloaded`;
 
-            // Refresh SC stat card
             document.getElementById('sc-active').textContent = data.length;
             if (data.length > 0) {
                 document.getElementById('sc-active-indicator').classList.remove('hidden');
@@ -860,14 +877,35 @@
         }
     }
 
+    // ─── WebSocket real-time updates ──────────────────────────────────────
+    let _wsRetryMs = 1000;
+
+    function connectWS() {
+        const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const ws = new WebSocket(`${proto}//${location.host}/api/ws`);
+
+        ws.onmessage = ({ data }) => {
+            try {
+                const msg = JSON.parse(data);
+                if (msg.stats) { stats = msg.stats; applyStats(msg.stats); }
+                if (msg.batch) applyBatch(msg.batch);
+            } catch (_) {}
+        };
+
+        ws.onopen = () => { _wsRetryMs = 1000; };
+
+        ws.onclose = () => {
+            setTimeout(connectWS, _wsRetryMs);
+            _wsRetryMs = Math.min(_wsRetryMs * 2, 30000);
+        };
+    }
+
     // ─── Init ─────────────────────────────────────────────────────────────
     (async () => {
         await loadStats();
         const initialTab = window.location.hash.replace('#', '') || 'ym';
         switchTab(initialTab);
-        await pollBatchLive();
-        setInterval(pollBatchLive, 5000);
-        setInterval(loadStats, 60000);
+        connectWS();
     })();
 
     // ─── Particles ────────────────────────────────────────────────────────
