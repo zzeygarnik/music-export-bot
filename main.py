@@ -110,6 +110,26 @@ async def _dashboard_logout(request: aiohttp_web.Request) -> aiohttp_web.Respons
     return response
 
 
+async def _ws_handler(request: aiohttp_web.Request) -> aiohttp_web.WebSocketResponse:
+    if not _check_auth(request):
+        return aiohttp_web.Response(status=401)
+    ws = aiohttp_web.WebSocketResponse(heartbeat=30)
+    await ws.prepare(request)
+    try:
+        while not ws.closed:
+            s = await asyncio.to_thread(db.get_dashboard_stats)
+            b = await asyncio.to_thread(db.get_batch_live_data)
+            try:
+                await ws.send_json({"stats": s, "batch": b})
+            except Exception:
+                break
+            await asyncio.sleep(5)
+    finally:
+        if not ws.closed:
+            await ws.close()
+    return ws
+
+
 async def _api_stats(request: aiohttp_web.Request) -> aiohttp_web.Response:
     if not _check_auth(request):
         return aiohttp_web.Response(status=401)
@@ -271,6 +291,7 @@ async def main() -> None:
             web_app.router.add_get("/api/events",       _api_events)
             web_app.router.add_get("/api/chart",        _api_chart)
             web_app.router.add_get("/api/batch_live",   _api_batch_live)
+            web_app.router.add_get("/api/ws",           _ws_handler)
             log.info("Dashboard registered at /dashboard")
 
         if settings.WEBHOOK_URL:
