@@ -387,10 +387,17 @@ async def download_with_proxy_rotation(url: str, user_id: int, bot) -> tuple[str
 
     # max attempts = initial + one per proxy (rotation eventually returns False)
     max_attempts = len(_sc_proxies) + 2
+    rotated = False
     for attempt in range(max_attempts):
         try:
-            return await sc_downloader.download(url, user_id)
+            result = await sc_downloader.download(url, user_id)
+            if rotated:
+                proxy_label = sc_downloader.get_active_proxy() or get_server_ip_label()
+                await _notify_proxy_result(bot, proxy_label, success=True,
+                                           detail="Скачивание прошло успешно.")
+            return result
         except SCBanError:
+            rotated = True
             had_more = await rotate_sc_proxy(bot)
             if not had_more:
                 raise  # all proxies tried, nothing left
@@ -400,20 +407,54 @@ async def download_with_proxy_rotation(url: str, user_id: int, bot) -> tuple[str
     return await sc_downloader.download(url, user_id)
 
 
+async def _notify_proxy_result(bot, proxy_label: str, success: bool, detail: str = "") -> None:
+    """Send admin notification about proxy connection result after rotation."""
+    if not settings.ADMIN_ID:
+        return
+    if success:
+        text = (
+            f"✅ <b>SC: прокси работает</b>\n\n"
+            f"Прокси <code>{proxy_label}</code> подключён успешно.\n"
+            + (f"{detail}" if detail else "")
+        )
+    else:
+        text = (
+            f"❌ <b>SC: прокси тоже не помог</b>\n\n"
+            f"Прокси <code>{proxy_label}</code> подключён, но SC всё равно не отвечает.\n"
+            + (f"{detail}" if detail else "")
+        )
+    try:
+        await bot.send_message(settings.ADMIN_ID, text, parse_mode="HTML")
+    except Exception as exc:
+        log.warning("Failed to send proxy result notification: %s", exc)
+
+
 async def search_with_proxy_rotation(query: str, max_results: int, bot) -> list:
     """Search SC with automatic proxy rotation on IP ban errors.
 
     Tries the current proxy/IP first. On SCBanError rotates to the next proxy
     and retries. If all proxies are exhausted, raises the last SCBanError.
+    Sends admin notification after each rotation attempt with success/failure result.
     """
     from core import sc_downloader
     from core.sc_downloader import SCBanError
 
     max_attempts = len(_sc_proxies) + 2
+    rotated = False
     for attempt in range(max_attempts):
         try:
-            return await sc_downloader.search(query, max_results)
+            results = await sc_downloader.search(query, max_results)
+            if rotated:
+                proxy_label = sc_downloader.get_active_proxy() or get_server_ip_label()
+                if results:
+                    await _notify_proxy_result(bot, proxy_label, success=True,
+                                               detail=f"Поиск вернул {len(results)} результатов.")
+                else:
+                    await _notify_proxy_result(bot, proxy_label, success=False,
+                                               detail="Поиск вернул 0 результатов — прокси тоже заблокирован или трека нет.")
+            return results
         except SCBanError:
+            rotated = True
             had_more = await rotate_sc_proxy(bot)
             if not had_more:
                 raise
