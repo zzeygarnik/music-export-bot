@@ -23,6 +23,7 @@ from bot.keyboards import (
     sc_offer_keyboard,
     sc_after_download_keyboard,
     sc_batch_token_keyboard,
+    yt_fallback_keyboard,
     cache_results_keyboard,
     tsel_panel_keyboard,
     tsel_results_keyboard,
@@ -308,10 +309,13 @@ async def on_sc_search_query(message: Message, state: FSMContext) -> None:
         results = await search_with_proxy_rotation(query, max_results=5, bot=message.bot)
     except Exception as e:
         log.exception("SC search error user=%s: %s", user_id, e)
+        await state.update_data(sc_yt_fallback_query=query)
         await status_msg.edit_text(
-            "❌ Ошибка поиска. Попробуй ещё раз.",
-            reply_markup=sc_cancel_keyboard(),
+            f"😔 SoundCloud недоступен.\n\nПопробовать найти <b>{query}</b> на YouTube?",
+            parse_mode="HTML",
+            reply_markup=yt_fallback_keyboard(),
         )
+        await state.set_state(SCSearchFlow.sc_menu)
         return
 
     if not results:
@@ -519,7 +523,13 @@ async def on_cache_miss(call: CallbackQuery, state: FSMContext) -> None:
             results = await search_with_proxy_rotation(query, max_results=5, bot=call.bot)
         except Exception as e:
             log.exception("SC search error user=%s: %s", user_id, e)
-            await status_msg.edit_text("❌ Ошибка поиска. Попробуй ещё раз.", reply_markup=sc_cancel_keyboard())
+            await state.update_data(sc_yt_fallback_query=query)
+            await status_msg.edit_text(
+                f"😔 SoundCloud недоступен.\n\nПопробовать найти <b>{query}</b> на YouTube?",
+                parse_mode="HTML",
+                reply_markup=yt_fallback_keyboard(),
+            )
+            await state.set_state(SCSearchFlow.sc_menu)
             return
         if not results:
             await status_msg.edit_text("😔 Ничего не найдено.", reply_markup=sc_cancel_keyboard())
@@ -641,6 +651,54 @@ async def on_sc_url_input(message: Message, state: FSMContext) -> None:
             reply_markup=sc_resume_keyboard(),
         )
         await state.set_state(SCBatchFlow.sc_resume_choice)
+
+
+# ── SC: YouTube fallback ──────────────────────────────────────────────────────
+
+@router.callback_query(F.data == "sc:yt_fallback")
+async def on_sc_yt_fallback(call: CallbackQuery, state: FSMContext) -> None:
+    user_id, username = _get_user_info(call)
+    data = await state.get_data()
+    query = (data.get("sc_yt_fallback_query") or "").strip()
+
+    if not query:
+        await call.answer("Запрос не найден.", show_alert=True)
+        return
+
+    await call.answer()
+    status_msg = await call.message.edit_text("🔍 Ищу на YouTube…")
+
+    try:
+        results = await sc_downloader.search_youtube(query, max_results=5)
+    except Exception as e:
+        log.exception("YT fallback search failed user=%s query=%r: %s", user_id, query, e)
+        await status_msg.edit_text("❌ Ошибка поиска на YouTube.", reply_markup=sc_cancel_keyboard())
+        return
+
+    if not results:
+        await status_msg.edit_text("😔 Ничего не найдено на YouTube.", reply_markup=sc_cancel_keyboard())
+        return
+
+    best = results[0]
+    best_score = fuzz.token_sort_ratio(query.lower(), f"{best.artist} {best.title}".lower())
+
+    if best_score >= 80:
+        pre_cached = get_cached_file_id(_make_cache_key(best.artist, best.title))
+        await status_msg.edit_text(
+            f"{'⚡ Нашёл в базе' if pre_cached else '⏳ Скачиваю'}: <b>{best.artist} — {best.title}</b>…",
+            parse_mode="HTML",
+        )
+        await _sc_download_and_send(status_msg, state, best, user_id, return_to_menu=True, username=username, source="yt")
+    else:
+        await state.update_data(yt_search_results=[
+            {"url": r.url, "title": r.title, "artist": r.artist, "duration": r.duration}
+            for r in results
+        ])
+        await status_msg.edit_text(
+            "🔍 Точного совпадения не найдено. Выбери трек из результатов:",
+            reply_markup=sc_results_keyboard(results),
+        )
+        await state.set_state(SCSearchFlow.yt_search_results)
 
 
 # ── SC: Cancel (back to menu) ─────────────────────────────────────────────────
@@ -1418,6 +1476,17 @@ async def _sc_download_and_send(
             path, meta = await download_with_proxy_rotation(result.url, user_id, msg.bot)
         else:
             path, meta = await sc_downloader.download(result.url, user_id)
+    except sc_downloader.SCBanError:
+        log.warning("SC download ban, all proxies exhausted user=%s url=%s", user_id, result.url)
+        log_event(user_id, username, "sc_search", "error", detail="ban_all_proxies")
+        fallback_query = f"{result.artist} — {result.title}" if (result.artist and result.title) else (result.title or result.artist or "")
+        await state.update_data(sc_yt_fallback_query=fallback_query)
+        await msg.edit_text(
+            f"😔 SoundCloud недоступен.\n\nПопробовать найти <b>{fallback_query}</b> на YouTube?",
+            parse_mode="HTML",
+            reply_markup=yt_fallback_keyboard(),
+        )
+        return
     except Exception as e:
         log.warning("SC download failed user=%s url=%s: %s", user_id, result.url, e)
         log_event(user_id, username, f"{source}_search", "error", detail="download_failed")
