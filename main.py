@@ -15,7 +15,7 @@ from aiogram.webhook.aiohttp_server import SimpleRequestHandler
 
 from config import settings
 from bot.handlers import router
-from bot.handlers.common import _pending_spotify_codes
+from bot.handlers.common import _pending_spotify_codes, detect_and_store_server_ip
 from bot.middleware import BanMiddleware, ThrottlingMiddleware, StaleButtonMiddleware, CallbackAnswerMiddleware
 from utils import db
 
@@ -474,6 +474,7 @@ async def main() -> None:
         await site.start()
         log.info("HTTP server started on port %d", settings.SPOTIFY_CALLBACK_PORT)
 
+    await detect_and_store_server_ip()
     log.info("Bot started")
     if settings.WEBHOOK_URL:
         await asyncio.Event().wait()
