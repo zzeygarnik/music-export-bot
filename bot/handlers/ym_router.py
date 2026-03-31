@@ -33,6 +33,7 @@ from bot.keyboards import (
     ym_share_token_keyboard,
     sc_batch_token_keyboard,
     sc_cancel_keyboard,
+    export_options_keyboard,
 )
 from core.ym_source import YandexMusicSource
 from utils.export import build_txt_file, build_csv_file, cleanup
@@ -407,7 +408,13 @@ async def on_export_liked(call: CallbackQuery, state: FSMContext) -> None:
         return
 
     log_event(user_id, username, "export_liked", "success", track_count=len(tracks))
-    await _deliver_tracks(call, state, tracks, "liked_tracks.txt")
+    await state.update_data(sc_tracks=tracks, export_filename="liked_tracks.txt", is_exporting=False)
+    await call.message.edit_text(
+        f"✅ Загружено: <b>{len(tracks)}</b> треков.\n\nЧто делаем?",
+        parse_mode="HTML",
+        reply_markup=export_options_keyboard(len(tracks)),
+    )
+    await state.set_state(ExportFlow.export_options)
 
 
 @router.callback_query(ExportFlow.choosing_export_type, F.data == "export:playlists")
@@ -502,7 +509,13 @@ async def on_link_received(message: Message, state: FSMContext) -> None:
 
     log_event(user_id, username, "export_by_link", "success", track_count=len(tracks))
     safe_title = "".join(c for c in title if c.isalnum() or c in " _-").strip() or "playlist"
-    await _deliver_tracks_msg(status_msg, state, tracks, f"{safe_title}.txt", offer_sc=True)
+    await state.update_data(sc_tracks=tracks, export_filename=f"{safe_title}.txt")
+    await status_msg.edit_text(
+        f"✅ Загружено <b>«{safe_title}»</b> — {len(tracks)} треков.\n\nЧто делаем?",
+        parse_mode="HTML",
+        reply_markup=export_options_keyboard(len(tracks)),
+    )
+    await state.set_state(ExportFlow.export_options)
 
 
 @router.callback_query(ExportFlow.waiting_for_link, F.data == "action:cancel")
@@ -542,11 +555,37 @@ async def on_playlist_selected(call: CallbackQuery, state: FSMContext) -> None:
         return
 
     log_event(user_id, username, "export_playlist", "success", track_count=len(tracks))
-    await _deliver_tracks(call, state, tracks, f"{safe_title}.txt", offer_sc=True)
+    await state.update_data(sc_tracks=tracks, export_filename=f"{safe_title}.txt", is_exporting=False)
+    await call.message.edit_text(
+        f"✅ Загружено <b>«{safe_title}»</b> — {len(tracks)} треков.\n\nЧто делаем?",
+        parse_mode="HTML",
+        reply_markup=export_options_keyboard(len(tracks)),
+    )
+    await state.set_state(ExportFlow.export_options)
 
 
 @router.callback_query(ExportFlow.choosing_playlist, F.data == "export:back")
 async def on_playlist_back(call: CallbackQuery, state: FSMContext) -> None:
+    await call.message.edit_text(_EXPORT_MENU_TEXT, reply_markup=export_type_keyboard())
+    await state.set_state(ExportFlow.choosing_export_type)
+
+
+# ── ExportFlow: pre-export options ───────────────────────────────────────────
+
+@router.callback_query(ExportFlow.export_options, F.data == "export:deliver_all")
+async def on_export_deliver_all(call: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    if data.get("is_exporting"):
+        await call.answer("⏳ Уже выполняется экспорт, подожди…", show_alert=True)
+        return
+    tracks = data.get("sc_tracks", [])
+    filename = data.get("export_filename", "tracks.txt")
+    await state.update_data(is_exporting=True)
+    await _deliver_tracks(call, state, tracks, filename, offer_sc=False)
+
+
+@router.callback_query(ExportFlow.export_options, F.data == "export:back_to_type")
+async def on_export_options_back(call: CallbackQuery, state: FSMContext) -> None:
     await call.message.edit_text(_EXPORT_MENU_TEXT, reply_markup=export_type_keyboard())
     await state.set_state(ExportFlow.choosing_export_type)
 
@@ -586,6 +625,9 @@ async def on_export_filter_artist(call: CallbackQuery, state: FSMContext) -> Non
     if not data.get("sc_tracks"):
         await call.answer("Данные плейлиста недоступны. Введи /start чтобы начать заново.", show_alert=True)
         return
+    current_state = await state.get_state()
+    back = "export_options" if current_state == ExportFlow.export_options.state else "export_menu"
+    await state.update_data(export_filter_back=back)
     await call.answer()
     await call.message.answer(
         "🔍 Введи имя исполнителя для фильтрации:",
@@ -629,14 +671,28 @@ async def on_export_filter_input(message: Message, state: FSMContext) -> None:
     finally:
         await cleanup(tmp_path)
 
-    await state.set_state(ExportFlow.choosing_export_type)
+    data_after = await state.get_data()
+    if data_after.get("export_filter_back") == "export_options":
+        await state.set_state(ExportFlow.export_options)
+    else:
+        await state.set_state(ExportFlow.choosing_export_type)
 
 
 @router.callback_query(F.data == "export:back_to_menu")
 async def on_export_back_to_menu(call: CallbackQuery, state: FSMContext) -> None:
-    await state.update_data(export_format="txt")
-    await call.message.edit_text(_EXPORT_MENU_TEXT, reply_markup=export_type_keyboard())
-    await state.set_state(ExportFlow.choosing_export_type)
+    data = await state.get_data()
+    if data.get("export_filter_back") == "export_options":
+        tracks = data.get("sc_tracks", [])
+        await call.message.edit_text(
+            f"✅ Треков: <b>{len(tracks)}</b>.\n\nЧто делаем?",
+            parse_mode="HTML",
+            reply_markup=export_options_keyboard(len(tracks)),
+        )
+        await state.set_state(ExportFlow.export_options)
+    else:
+        await state.update_data(export_format="txt")
+        await call.message.edit_text(_EXPORT_MENU_TEXT, reply_markup=export_type_keyboard())
+        await state.set_state(ExportFlow.choosing_export_type)
 
 
 @router.callback_query(F.data == "export:set_fmt_csv")
