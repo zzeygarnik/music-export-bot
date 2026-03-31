@@ -516,7 +516,7 @@ async def on_cache_miss(call: CallbackQuery, state: FSMContext) -> None:
     if source == "sc":
         status_msg = await call.message.edit_text("🔍 Ищу на SoundCloud…")
         try:
-            results = await sc_downloader.search(query, max_results=5)
+            results = await search_with_proxy_rotation(query, max_results=5, bot=call.bot)
         except Exception as e:
             log.exception("SC search error user=%s: %s", user_id, e)
             await status_msg.edit_text("❌ Ошибка поиска. Попробуй ещё раз.", reply_markup=sc_cancel_keyboard())
@@ -1559,7 +1559,7 @@ async def _run_batch_download(
                 path, meta = None, {}
                 sc_ok = False
                 try:
-                    sc_results = await sc_downloader.search(query, max_results=1)
+                    sc_results = await search_with_proxy_rotation(query, max_results=1, bot=progress_msg.bot)
                     if sc_results:
                         try:
                             path, meta = await download_with_proxy_rotation(sc_results[0].url, user_id, progress_msg.bot)
