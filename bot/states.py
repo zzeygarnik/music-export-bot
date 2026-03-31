@@ -6,6 +6,7 @@ class ExportFlow(StatesGroup):
     choosing_retention = State()   # keep token for session or discard after export
     waiting_for_token = State()
     choosing_export_type = State()
+    export_options = State()       # pre-export: choose all / filter / csv
     choosing_playlist = State()
     waiting_for_link = State()
     filter_input = State()         # waiting for artist name after export .txt

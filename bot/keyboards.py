@@ -324,6 +324,27 @@ def sc_offer_extended_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
+def export_options_keyboard(track_count: int) -> InlineKeyboardMarkup:
+    """Pre-export screen: choose what to do with loaded tracks."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text=f"Все треки ({track_count})",
+            callback_data="export:deliver_all",
+            icon_custom_emoji_id="6039802767931871481",
+        )],
+        [InlineKeyboardButton(
+            text="Фильтр по исполнителю",
+            callback_data="export:filter_artist",
+            icon_custom_emoji_id="6037397706505195857",
+        )],
+        [InlineKeyboardButton(
+            text="Экспорт в CSV",
+            callback_data="export:csv",
+        )],
+        [InlineKeyboardButton(text="← Назад", callback_data="export:back_to_type")],
+    ])
+
+
 def export_filter_cancel_keyboard() -> InlineKeyboardMarkup:
     """Back button for ExportFlow.filter_input state."""
     return InlineKeyboardMarkup(inline_keyboard=[
