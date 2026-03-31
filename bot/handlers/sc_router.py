@@ -55,6 +55,7 @@ from .common import (
     _SC_URL_PLAYLIST_TEXT,
     _filter_by_artist,
     notify_admin_sc_error,
+    download_with_proxy_rotation,
 )
 from bot.states import ExportFlow
 
@@ -1404,7 +1405,10 @@ async def _sc_download_and_send(
                 delete_cached_file_id(cache_key)
 
     try:
-        path, meta = await sc_downloader.download(result.url, user_id)
+        if source == "sc":
+            path, meta = await download_with_proxy_rotation(result.url, user_id, msg.bot)
+        else:
+            path, meta = await sc_downloader.download(result.url, user_id)
     except Exception as e:
         log.warning("SC download failed user=%s url=%s: %s", user_id, result.url, e)
         log_event(user_id, username, f"{source}_search", "error", detail="download_failed")
@@ -1535,7 +1539,7 @@ async def _run_batch_download(
 
             if direct_url:
                 try:
-                    path, meta = await sc_downloader.download(direct_url, user_id)
+                    path, meta = await download_with_proxy_rotation(direct_url, user_id, progress_msg.bot)
                 except Exception as e:
                     log.warning("SC batch URL download failed '%s': %s", direct_url, e)
                     not_found.append(f"{artist} — {title}")
@@ -1548,7 +1552,7 @@ async def _run_batch_download(
                     sc_results = await sc_downloader.search(query, max_results=1)
                     if sc_results:
                         try:
-                            path, meta = await sc_downloader.download(sc_results[0].url, user_id)
+                            path, meta = await download_with_proxy_rotation(sc_results[0].url, user_id, progress_msg.bot)
                             sc_ok = True
                         except Exception as e:
                             log.warning("SC batch download failed '%s': %s", query, e)
