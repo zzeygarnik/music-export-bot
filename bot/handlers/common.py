@@ -9,6 +9,7 @@ from rapidfuzz import fuzz
 
 from config import settings
 from utils import db
+from bot.tracker import set_active_msg
 
 log = logging.getLogger(__name__)
 
@@ -412,6 +413,7 @@ async def _show_batch_access_page(call: CallbackQuery, back_cb: str, use_answer:
     kb = batch_access_pending_keyboard(back_cb) if has_pending else batch_access_request_keyboard(back_cb)
 
     if use_answer:
-        await call.message.answer(text, parse_mode="HTML", reply_markup=kb)
+        msg = await call.message.answer(text, parse_mode="HTML", reply_markup=kb)
+        set_active_msg(call.from_user.id, msg.message_id)
     else:
         await call.message.edit_text(text, parse_mode="HTML", reply_markup=kb)

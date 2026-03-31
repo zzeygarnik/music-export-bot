@@ -33,6 +33,7 @@ from .common import (
     _SPOTIFY_AUTH_TEXT,
     _show_batch_access_page,
 )
+from bot.tracker import set_active_msg
 from .sc_router import _run_batch_download, _try_start_or_queue
 
 router = Router()
@@ -178,6 +179,7 @@ async def on_spotify_playlist_input(message: Message, state: FSMContext) -> None
 
     url = message.text.strip()
     status_msg = await message.answer("⏳ Загружаю плейлист…")
+    set_active_msg(user_id, status_msg.message_id)
 
     source = _spotify_source()
     try:
@@ -220,21 +222,24 @@ async def on_spotify_auth_input(message: Message, state: FSMContext) -> None:
         return
 
     if not message.text:
-        await message.answer(_SPOTIFY_AUTH_TEXT, parse_mode="HTML",
-                             reply_markup=_auth_keyboard(await source.get_auth_url()))
+        msg = await message.answer(_SPOTIFY_AUTH_TEXT, parse_mode="HTML",
+                                   reply_markup=_auth_keyboard(await source.get_auth_url()))
+        set_active_msg(user_id, msg.message_id)
         return
 
     code = parse_code_from_redirect(message.text.strip())
     if not code:
-        await message.answer(
+        msg = await message.answer(
             "❌ Не удалось найти код авторизации в ссылке.\n\n"
             "Скопируй <b>полный URL</b> из адресной строки после редиректа.",
             parse_mode="HTML",
             reply_markup=_auth_keyboard(await source.get_auth_url()),
         )
+        set_active_msg(user_id, msg.message_id)
         return
 
     status_msg = await message.answer("⏳ Получаю токен…")
+    set_active_msg(user_id, status_msg.message_id)
     try:
         access_token = await source.exchange_code(code)
     except Exception as e:
@@ -417,9 +422,10 @@ async def on_spotify_download_filtered(call: CallbackQuery, state: FSMContext) -
     except Exception:
         pass
     await state.update_data(sc_tracks=filtered, sc_resume_back_cb="spotify_actions", sc_filter_artists=[], sc_original_tracks=None)
-    await call.message.answer(
+    msg = await call.message.answer(
         f"📥 Готов скачать <b>{len(filtered)}</b> треков с SoundCloud.\n\nС какого трека начать?",
         parse_mode="HTML",
         reply_markup=sc_resume_keyboard(),
     )
+    set_active_msg(call.from_user.id, msg.message_id)
     await state.set_state(SCBatchFlow.sc_resume_choice)

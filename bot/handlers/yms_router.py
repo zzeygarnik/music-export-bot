@@ -33,6 +33,7 @@ from .common import (
     _YMS_INPUT_TEXT,
     _show_batch_access_page,
 )
+from bot.tracker import set_active_msg
 from .sc_router import _run_batch_download, _try_start_or_queue
 
 router = Router()
@@ -53,6 +54,7 @@ async def on_yms_token(message: Message, state: FSMContext) -> None:
         return
 
     status_msg = await message.answer("⏳ Проверяю токен…")
+    set_active_msg(user_id, status_msg.message_id)
     try:
         source = YandexMusicSource(token)
         await source._get_client()
@@ -102,6 +104,7 @@ async def on_yms_waiting(message: Message, state: FSMContext) -> None:
     token = settings.YM_BOT_TOKEN or data.get("yms_token", "")
 
     status_msg = await message.answer("⏳ Загружаю…")
+    set_active_msg(user_id, status_msg.message_id)
     try:
         title, tracks = await YandexMusicSource(token).get_playlist_by_url(url)
     except ValueError as e:
