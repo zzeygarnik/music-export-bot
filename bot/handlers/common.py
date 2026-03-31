@@ -21,6 +21,14 @@ sc_downloads_enabled: bool = True
 _sc_error_last_notified: float = 0.0
 _SC_ERROR_NOTIFY_COOLDOWN: int = 600  # seconds (10 min)
 
+# ── SC proxy rotation state ───────────────────────────────────────────────────
+# List of fallback proxies for SC downloads (from SC_PROXIES env var)
+_sc_proxies: list[str] = [p.strip() for p in settings.SC_PROXIES.split(",") if p.strip()] if settings.SC_PROXIES else []
+# -1 = main server IP, 0..N-1 = index into _sc_proxies
+_sc_proxy_index: int = -1
+# Lock to avoid concurrent rotation from parallel requests
+_sc_proxy_rotate_lock = asyncio.Lock()
+
 # Cancel events for SC batch downloads keyed by user_id
 _cancel_events: dict[int, asyncio.Event] = {}
 
@@ -249,6 +257,119 @@ async def notify_admin_sc_error(bot, user_id: int, username: str | None, context
         await bot.send_message(settings.ADMIN_ID, text, parse_mode="HTML", reply_markup=kb)
     except Exception as exc:
         log.warning("Failed to notify admin about SC error: %s", exc)
+
+
+async def rotate_sc_proxy(bot) -> bool:
+    """Switch to the next SC download proxy and notify admin.
+
+    Returns True if switched to a new proxy, False if all proxies were exhausted
+    and we reverted to the main IP.
+    """
+    global _sc_proxy_index
+    from core import sc_downloader
+
+    async with _sc_proxy_rotate_lock:
+        server_ip = settings.SC_SERVER_IP or "основной IP сервера"
+        old_index = _sc_proxy_index
+
+        if not _sc_proxies:
+            # No proxies configured — just notify admin and stay on main IP
+            if settings.ADMIN_ID:
+                try:
+                    await bot.send_message(
+                        settings.ADMIN_ID,
+                        f"⚠️ <b>SC: ошибка с {server_ip}</b>\n\n"
+                        f"Прокси не настроены (<code>SC_PROXIES</code> пуст).\n"
+                        f"Скачивание с SC может быть недоступно.",
+                        parse_mode="HTML",
+                    )
+                except Exception as exc:
+                    log.warning("Failed to notify admin (no proxies): %s", exc)
+            return False
+
+        if old_index == -1:
+            # Currently on main IP → switch to first proxy
+            _sc_proxy_index = 0
+            new_proxy = _sc_proxies[0]
+            sc_downloader.set_active_proxy(new_proxy)
+            log.warning("SC proxy rotation: main IP → proxy[0] = %s", new_proxy)
+            if settings.ADMIN_ID:
+                try:
+                    await bot.send_message(
+                        settings.ADMIN_ID,
+                        f"⚠️ <b>SC: скачивание с {server_ip} не удалось</b>\n\n"
+                        f"Похоже на бан по IP. Подключаю прокси:\n"
+                        f"<code>{new_proxy}</code>",
+                        parse_mode="HTML",
+                    )
+                except Exception as exc:
+                    log.warning("Failed to notify admin (proxy switch): %s", exc)
+            return True
+
+        next_index = old_index + 1
+        if next_index < len(_sc_proxies):
+            # Switch to next proxy
+            _sc_proxy_index = next_index
+            old_proxy = _sc_proxies[old_index]
+            new_proxy = _sc_proxies[next_index]
+            sc_downloader.set_active_proxy(new_proxy)
+            log.warning("SC proxy rotation: proxy[%d] → proxy[%d] = %s", old_index, next_index, new_proxy)
+            if settings.ADMIN_ID:
+                try:
+                    await bot.send_message(
+                        settings.ADMIN_ID,
+                        f"⚠️ <b>SC: прокси перестал работать</b>\n\n"
+                        f"<code>{old_proxy}</code> — ошибка (бан?)\n\n"
+                        f"Переключаю на следующее прокси:\n"
+                        f"<code>{new_proxy}</code>",
+                        parse_mode="HTML",
+                    )
+                except Exception as exc:
+                    log.warning("Failed to notify admin (next proxy): %s", exc)
+            return True
+        else:
+            # All proxies exhausted — revert to main IP
+            _sc_proxy_index = -1
+            old_proxy = _sc_proxies[old_index]
+            sc_downloader.set_active_proxy("")
+            log.warning("SC proxy rotation: all proxies exhausted, reverting to main IP")
+            if settings.ADMIN_ID:
+                try:
+                    await bot.send_message(
+                        settings.ADMIN_ID,
+                        f"🔴 <b>SC: все прокси исчерпаны</b>\n\n"
+                        f"<code>{old_proxy}</code> — тоже не работает.\n\n"
+                        f"Возвращаюсь к {server_ip}.\n"
+                        f"Скачивание с SC может быть недоступно.",
+                        parse_mode="HTML",
+                    )
+                except Exception as exc:
+                    log.warning("Failed to notify admin (proxies exhausted): %s", exc)
+            return False
+
+
+async def download_with_proxy_rotation(url: str, user_id: int, bot) -> tuple[str, dict]:
+    """Download from SC with automatic proxy rotation on IP ban errors.
+
+    Tries the current proxy/IP first. On SCBanError rotates to the next proxy
+    and retries. If all proxies are exhausted, raises the last SCBanError.
+    """
+    from core import sc_downloader
+    from core.sc_downloader import SCBanError
+
+    # max attempts = initial + one per proxy (rotation eventually returns False)
+    max_attempts = len(_sc_proxies) + 2
+    for attempt in range(max_attempts):
+        try:
+            return await sc_downloader.download(url, user_id)
+        except SCBanError:
+            had_more = await rotate_sc_proxy(bot)
+            if not had_more:
+                raise  # all proxies tried, nothing left
+        except Exception:
+            raise  # non-ban errors propagate immediately
+    # Should not be reached, but satisfy type-checker
+    return await sc_downloader.download(url, user_id)
 
 
 async def _show_batch_access_page(call: CallbackQuery, back_cb: str, use_answer: bool = False) -> None:

@@ -10,9 +10,40 @@ from config import settings
 log = logging.getLogger(__name__)
 
 
+class SCBanError(Exception):
+    """Raised when the error indicates an IP ban or rate-limit (not a per-track access error)."""
+
+
+# Active proxy for SC downloads; empty string = use server's main IP.
+# Managed externally by bot/handlers/common.py proxy rotation logic.
+_active_proxy: str = ""
+
+
+def set_active_proxy(proxy: str) -> None:
+    global _active_proxy
+    _active_proxy = proxy
+
+
+def get_active_proxy() -> str:
+    return _active_proxy
+
+
 def _proxy_opts() -> dict:
-    """Return yt-dlp proxy option if SC_PROXY is configured."""
-    return {"proxy": settings.SC_PROXY} if settings.SC_PROXY else {}
+    """Return yt-dlp proxy option based on the currently active SC proxy."""
+    proxy = _active_proxy
+    return {"proxy": proxy} if proxy else {}
+
+
+def _is_ban_error(msg: str) -> bool:
+    """Return True if the yt-dlp error looks like an IP ban or rate-limit."""
+    msg_low = msg.lower()
+    # 429 = rate limiting, almost certainly IP-based
+    if "http error 429" in msg_low or "too many requests" in msg_low:
+        return True
+    # 403 on the *webpage* (not on the track audio itself) = likely IP ban
+    if "unable to download webpage" in msg_low and "403" in msg_low:
+        return True
+    return False
 
 
 def _cookie_opts() -> dict:
@@ -41,8 +72,13 @@ def _search_sync(query: str, max_results: int = 5, platform: str = "sc") -> list
         **_proxy_opts(),
         **_cookie_opts(),
     }
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(f"{platform}search{max_results}:{query}", download=False)
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(f"{platform}search{max_results}:{query}", download=False)
+    except yt_dlp.utils.DownloadError as e:
+        if _is_ban_error(str(e)):
+            raise SCBanError(str(e)) from e
+        raise
 
     if not info:
         log.warning("%s search: extract_info returned None for query=%r", platform.upper(), query)
@@ -84,8 +120,13 @@ def _download_sync(url: str, output_template: str) -> tuple[str, dict]:
         **_proxy_opts(),
         **_cookie_opts(),
     }
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(url, download=True)
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+    except yt_dlp.utils.DownloadError as e:
+        if _is_ban_error(str(e)):
+            raise SCBanError(str(e)) from e
+        raise
 
     ext = (info.get("ext") or "mp3") if info else "mp3"
     meta: dict = {}
@@ -133,6 +174,8 @@ async def download(url: str, user_id: int) -> tuple[str, dict]:
             path = f"{output_template}.{ext}"
             meta = await asyncio.to_thread(_fix_metadata_sync, path, meta)
             return path, meta
+        except SCBanError:
+            raise  # don't retry ban errors — proxy rotation logic handles retries
         except Exception as e:
             last_exc = e
             if attempt == 0:
