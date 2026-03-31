@@ -28,6 +28,33 @@ _sc_proxies: list[str] = [p.strip() for p in settings.SC_PROXIES.split(",") if p
 _sc_proxy_index: int = -1
 # Lock to avoid concurrent rotation from parallel requests
 _sc_proxy_rotate_lock = asyncio.Lock()
+# Detected public IP of the server (populated at startup, falls back to SC_SERVER_IP or generic label)
+_detected_server_ip: str = ""
+
+
+async def detect_and_store_server_ip() -> None:
+    """Fetch the server's public IP once at startup and cache it in _detected_server_ip."""
+    global _detected_server_ip
+    # Static override takes priority
+    if settings.SC_SERVER_IP:
+        _detected_server_ip = settings.SC_SERVER_IP
+        log.info("Server IP (from config): %s", _detected_server_ip)
+        return
+    try:
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.get("https://api.ipify.org", timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                ip = (await resp.text()).strip()
+                if ip:
+                    _detected_server_ip = ip
+                    log.info("Server public IP (auto-detected): %s", ip)
+    except Exception as e:
+        log.warning("Could not auto-detect server public IP: %s", e)
+
+
+def get_server_ip_label() -> str:
+    """Return the server IP string for use in admin notifications."""
+    return _detected_server_ip or "основной IP сервера"
 
 # Cancel events for SC batch downloads keyed by user_id
 _cancel_events: dict[int, asyncio.Event] = {}
@@ -269,7 +296,7 @@ async def rotate_sc_proxy(bot) -> bool:
     from core import sc_downloader
 
     async with _sc_proxy_rotate_lock:
-        server_ip = settings.SC_SERVER_IP or "основной IP сервера"
+        server_ip = get_server_ip_label()
         old_index = _sc_proxy_index
 
         if not _sc_proxies:
