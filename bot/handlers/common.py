@@ -2,8 +2,9 @@
 import asyncio
 import logging
 import re
+import time
 
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from rapidfuzz import fuzz
 
 from config import settings
@@ -12,6 +13,13 @@ from utils import db
 log = logging.getLogger(__name__)
 
 # ── Globals ───────────────────────────────────────────────────────────────────
+
+# SC download toggle: when False, non-admin users cannot start SC downloads
+sc_downloads_enabled: bool = True
+
+# Admin SC-error notification cooldown (prevents spam on consecutive failures)
+_sc_error_last_notified: float = 0.0
+_SC_ERROR_NOTIFY_COOLDOWN: int = 600  # seconds (10 min)
 
 # Cancel events for SC batch downloads keyed by user_id
 _cancel_events: dict[int, asyncio.Event] = {}
@@ -207,6 +215,40 @@ def _filter_by_artist(tracks: list[dict], query: str, threshold: int = 70) -> li
 def _get_user_info(event: Message | CallbackQuery) -> tuple[int, str | None]:
     user = event.from_user
     return user.id, (user.username or None) if user else (0, None)
+
+
+async def notify_admin_sc_error(bot, user_id: int, username: str | None, context: str) -> None:
+    """Send admin a one-line SC error alert with a disable-toggle button.
+
+    Fires at most once per _SC_ERROR_NOTIFY_COOLDOWN seconds to avoid flooding.
+    """
+    global _sc_error_last_notified
+    if settings.ADMIN_ID == 0:
+        return
+    now = time.monotonic()
+    if now - _sc_error_last_notified < _SC_ERROR_NOTIFY_COOLDOWN:
+        return
+    _sc_error_last_notified = now
+
+    name = f"@{username}" if username else f"#{user_id}"
+    status = "включено" if sc_downloads_enabled else "уже выключено"
+    text = (
+        f"⚠️ <b>SC: ошибки при скачивании</b>\n\n"
+        f"👤 {name} (<code>{user_id}</code>)\n"
+        f"📋 {context}\n\n"
+        f"Текущее состояние SC: <b>{status}</b>\n"
+        f"Если IP заблокирован — выключи SC для пользователей."
+    )
+    if sc_downloads_enabled:
+        kb = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="🔇 Выключить SC для пользователей", callback_data="admin:sc_disable"),
+        ]])
+    else:
+        kb = None
+    try:
+        await bot.send_message(settings.ADMIN_ID, text, parse_mode="HTML", reply_markup=kb)
+    except Exception as exc:
+        log.warning("Failed to notify admin about SC error: %s", exc)
 
 
 async def _show_batch_access_page(call: CallbackQuery, back_cb: str, use_answer: bool = False) -> None:

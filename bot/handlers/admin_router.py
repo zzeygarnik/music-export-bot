@@ -15,6 +15,7 @@ from bot.states import AdminFlow
 from config import settings
 from utils import db
 from bot.keyboards import admin_batch_request_keyboard, batch_access_pending_keyboard
+from . import common as _hcommon
 
 router = Router()
 log = logging.getLogger(__name__)
@@ -27,6 +28,7 @@ def _is_admin(user_id: int) -> bool:
 # ── Keyboards ─────────────────────────────────────────────────────────────
 
 def _menu_kb() -> InlineKeyboardMarkup:
+    sc_label = "🔊 SC: вкл" if _hcommon.sc_downloads_enabled else "🔇 SC: выкл"
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="📊 Статистика", callback_data="admin:stats"),
@@ -35,6 +37,9 @@ def _menu_kb() -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton(text="📥 Batch-доступ", callback_data="admin:batch"),
             InlineKeyboardButton(text="🚫 Баны", callback_data="admin:bans"),
+        ],
+        [
+            InlineKeyboardButton(text=sc_label, callback_data="admin:sc"),
         ],
     ])
 
@@ -367,6 +372,63 @@ async def on_batch_req_reject(call: CallbackQuery) -> None:
             "❌ Твой запрос на batch-скачивание был <b>отклонён</b>.",
             parse_mode="HTML",
         )
+    except Exception:
+        pass
+
+
+# ── SC download toggle ────────────────────────────────────────────────────
+
+def _sc_text() -> str:
+    state = "🔊 включено" if _hcommon.sc_downloads_enabled else "🔇 выключено"
+    hint = ("Нажми кнопку ниже чтобы запретить обычным пользователям запускать скачивание с SoundCloud."
+            if _hcommon.sc_downloads_enabled else
+            "Обычные пользователи не могут скачивать треки с SoundCloud. Нажми кнопку чтобы включить обратно.")
+    return f"☁️ <b>SoundCloud для пользователей: {state}</b>\n\n{hint}"
+
+def _sc_kb() -> InlineKeyboardMarkup:
+    if _hcommon.sc_downloads_enabled:
+        toggle = InlineKeyboardButton(text="🔇 Выключить SC для пользователей", callback_data="admin:sc_toggle")
+    else:
+        toggle = InlineKeyboardButton(text="🔊 Включить SC для пользователей", callback_data="admin:sc_toggle")
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [toggle],
+        [InlineKeyboardButton(text="← Назад", callback_data="admin:menu")],
+    ])
+
+
+@router.callback_query(AdminFlow.menu, F.data == "admin:sc")
+async def on_sc_control(call: CallbackQuery) -> None:
+    await call.message.edit_text(_sc_text(), parse_mode="HTML", reply_markup=_sc_kb())
+
+
+@router.callback_query(F.data == "admin:sc_toggle")
+async def on_sc_toggle(call: CallbackQuery) -> None:
+    if not _is_admin(call.from_user.id):
+        await call.answer("Нет доступа.", show_alert=True)
+        return
+    _hcommon.sc_downloads_enabled = not _hcommon.sc_downloads_enabled
+    action = "включено" if _hcommon.sc_downloads_enabled else "выключено"
+    await call.answer(f"SC {action}.", show_alert=False)
+    # Update the SC control page if we're still looking at it, otherwise update the menu
+    try:
+        await call.message.edit_text(_sc_text(), parse_mode="HTML", reply_markup=_sc_kb())
+    except Exception:
+        pass
+
+
+@router.callback_query(F.data == "admin:sc_disable")
+async def on_sc_disable(call: CallbackQuery) -> None:
+    """Fast-disable SC from an error notification message."""
+    if not _is_admin(call.from_user.id):
+        await call.answer("Нет доступа.", show_alert=True)
+        return
+    if not _hcommon.sc_downloads_enabled:
+        await call.answer("SC уже выключен.", show_alert=True)
+        return
+    _hcommon.sc_downloads_enabled = False
+    await call.answer("SC выключен для пользователей.", show_alert=True)
+    try:
+        await call.message.edit_reply_markup(reply_markup=None)
     except Exception:
         pass
 

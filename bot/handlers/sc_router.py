@@ -39,6 +39,7 @@ from utils.event_log import log_event, update_batch_live
 from utils.db import get_cached_file_id, save_cached_file_id, delete_cached_file_id, search_cache_fuzzy, is_batch_allowed
 from config import settings
 from rapidfuzz import fuzz
+from . import common as _hcommon
 from .common import (
     _get_user_info,
     _make_cache_key,
@@ -53,6 +54,7 @@ from .common import (
     _show_batch_access_page,
     _SC_URL_PLAYLIST_TEXT,
     _filter_by_artist,
+    notify_admin_sc_error,
 )
 from bot.states import ExportFlow
 
@@ -144,8 +146,17 @@ async def _try_start_or_queue(
 
 # ── SC: Service selection ─────────────────────────────────────────────────────
 
+def _sc_is_disabled_for(user_id: int) -> bool:
+    """Return True if SC downloads are currently disabled for this non-admin user."""
+    is_admin = settings.ADMIN_ID != 0 and user_id == settings.ADMIN_ID
+    return not is_admin and not _hcommon.sc_downloads_enabled
+
+
 @router.callback_query(SCSearchFlow.sc_menu, F.data == "sc:search")
 async def on_sc_search(call: CallbackQuery, state: FSMContext) -> None:
+    if _sc_is_disabled_for(call.from_user.id):
+        await call.answer("⛔ Скачивание с SoundCloud временно недоступно. Попробуй позже.", show_alert=True)
+        return
     await state.update_data(sc_input_mode="search")
     await call.message.edit_text(
         "🔍 Введи запрос для поиска трека:\n\n<i>Например: Linkin Park Numb</i>",
@@ -198,6 +209,9 @@ async def on_sc_search_again(call: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(SCSearchFlow.sc_menu, F.data == "sc:batch")
 async def on_sc_batch_menu(call: CallbackQuery, state: FSMContext) -> None:
+    if _sc_is_disabled_for(call.from_user.id):
+        await call.answer("⛔ Скачивание с SoundCloud временно недоступно. Попробуй позже.", show_alert=True)
+        return
     if not is_batch_allowed(call.from_user.id, call.from_user.username):
         await _show_batch_access_page(call, back_cb="batch_req_back:sc_menu")
         return
@@ -1394,6 +1408,12 @@ async def _sc_download_and_send(
     except Exception as e:
         log.warning("SC download failed user=%s url=%s: %s", user_id, result.url, e)
         log_event(user_id, username, f"{source}_search", "error", detail="download_failed")
+        if source == "sc":
+            track_label = f"{result.artist} — {result.title}" if (result.artist or result.title) else result.url
+            asyncio.create_task(notify_admin_sc_error(
+                msg.bot, user_id, username,
+                f"Одиночное скачивание не удалось: {track_label}",
+            ))
         await msg.edit_text(
             "❌ Не удалось скачать трек. Возможно, трек доступен только по подписке Go+.",
             reply_markup=sc_cancel_keyboard(),
@@ -1455,6 +1475,7 @@ async def _run_batch_download(
     not_found: list[str] = []
     failed_tracks: list[dict] = []
     downloaded_count = 0
+    sc_error_count = 0  # tracks SC-specific download failures (not YT fallback)
     started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     update_batch_live(user_id, username, {
@@ -1531,8 +1552,10 @@ async def _run_batch_download(
                             sc_ok = True
                         except Exception as e:
                             log.warning("SC batch download failed '%s': %s", query, e)
+                            sc_error_count += 1
                 except Exception as e:
                     log.warning("SC batch search failed '%s': %s", query, e)
+                    sc_error_count += 1
 
                 if not sc_ok:
                     try:
@@ -1585,6 +1608,13 @@ async def _run_batch_download(
 
     # Kick off next queued download (if any) now that a slot is free
     asyncio.create_task(_process_queue())
+
+    # Notify admin if SC repeatedly failed during this batch
+    if sc_error_count >= 3:
+        asyncio.create_task(notify_admin_sc_error(
+            progress_msg.bot, user_id, username,
+            f"Батч: {sc_error_count} из {total} треков не скачались с SC",
+        ))
 
     batch_result = "stopped" if cancel_event.is_set() else "success"
     log_event(user_id, username, "sc_batch", batch_result,
