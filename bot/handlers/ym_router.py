@@ -54,6 +54,7 @@ from .common import (
     _SC_URL_PLAYLIST_TEXT,
     _show_batch_access_page,
 )
+from bot.tracker import set_active_msg
 
 router = Router()
 log = logging.getLogger(__name__)
@@ -67,11 +68,12 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
     user_id = message.from_user.id
     _batch_queue[:] = [item for item in _batch_queue if item.user_id != user_id]
     await state.clear()
-    await message.answer(
+    msg = await message.answer(
         '👋 Привет! Что хочешь сделать?',
         parse_mode="HTML",
         reply_markup=service_keyboard(),
     )
+    set_active_msg(user_id, msg.message_id)
     await state.set_state(ExportFlow.choosing_service)
 
 
@@ -148,7 +150,8 @@ async def cmd_mystats(message: Message) -> None:
 async def cmd_faq(message: Message, state: FSMContext) -> None:
     await state.clear()
     await state.set_state(ExportFlow.choosing_service)
-    await message.answer(_FAQ_TEXT, parse_mode="HTML", reply_markup=faq_keyboard())
+    msg = await message.answer(_FAQ_TEXT, parse_mode="HTML", reply_markup=faq_keyboard())
+    set_active_msg(message.from_user.id, msg.message_id)
 
 
 @router.callback_query(F.data == "faq:back")
@@ -211,10 +214,11 @@ async def on_faq_contact_message(message: Message, state: FSMContext) -> None:
             log.warning("Failed to forward contact message to admin")
 
     db.create_contact_message(user_id, username)
-    await message.answer(
+    msg = await message.answer(
         "✅ Сообщение отправлено администрации. Ответим в ближайшее время!",
         reply_markup=faq_keyboard(),
     )
+    set_active_msg(user_id, msg.message_id)
     await state.set_state(ExportFlow.choosing_service)
 
 
@@ -364,6 +368,7 @@ async def on_token_received(message: Message, state: FSMContext) -> None:
         return
 
     status_msg = await message.answer("⏳ Проверяю токен…")
+    set_active_msg(user_id, status_msg.message_id)
     try:
         source = YandexMusicSource(token)
         await source._get_client()
@@ -485,6 +490,7 @@ async def on_link_received(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
 
     status_msg = await message.answer("⏳ Загружаю плейлист…")
+    set_active_msg(user_id, status_msg.message_id)
     try:
         title, tracks = await YandexMusicSource(data["token"]).get_playlist_by_url(url)
     except ValueError as e:
@@ -613,7 +619,8 @@ async def on_export_csv(call: CallbackQuery, state: FSMContext) -> None:
         await cleanup(tmp_path)
 
     if await state.get_state() is not None:
-        await call.message.answer(_EXPORT_MENU_TEXT, reply_markup=export_type_keyboard())
+        msg = await call.message.answer(_EXPORT_MENU_TEXT, reply_markup=export_type_keyboard())
+        set_active_msg(call.from_user.id, msg.message_id)
         await state.set_state(ExportFlow.choosing_export_type)
 
 
@@ -629,10 +636,11 @@ async def on_export_filter_artist(call: CallbackQuery, state: FSMContext) -> Non
     back = "export_options" if current_state == ExportFlow.export_options.state else "export_menu"
     await state.update_data(export_filter_back=back)
     await call.answer()
-    await call.message.answer(
+    msg = await call.message.answer(
         "🔍 Введи имя исполнителя для фильтрации:",
         reply_markup=export_filter_cancel_keyboard(),
     )
+    set_active_msg(call.from_user.id, msg.message_id)
     await state.set_state(ExportFlow.filter_input)
 
 
@@ -725,11 +733,12 @@ async def on_export_download_filtered(call: CallbackQuery, state: FSMContext) ->
     except Exception:
         pass
     await state.update_data(sc_tracks=filtered, sc_resume_back_cb="export_actions", sc_filter_artists=[], sc_original_tracks=None)
-    await call.message.answer(
+    msg = await call.message.answer(
         f"📥 Готов скачать <b>{len(filtered)}</b> треков с SoundCloud.\n\nС какого трека начать?",
         parse_mode="HTML",
         reply_markup=sc_resume_keyboard(),
     )
+    set_active_msg(call.from_user.id, msg.message_id)
     await state.set_state(SCBatchFlow.sc_resume_choice)
 
 
@@ -792,7 +801,8 @@ async def _deliver_tracks(
         await state.clear()
         await call.message.answer("Токен удалён. Введи /start для нового экспорта.")
     elif not offer_sc:
-        await call.message.answer(_EXPORT_MENU_TEXT, reply_markup=export_type_keyboard())
+        msg = await call.message.answer(_EXPORT_MENU_TEXT, reply_markup=export_type_keyboard())
+        set_active_msg(call.from_user.id, msg.message_id)
         await state.set_state(ExportFlow.choosing_export_type)
 
 
@@ -852,5 +862,6 @@ async def _deliver_tracks_msg(
         await state.clear()
         await status_msg.answer("Токен удалён. Введи /start для нового экспорта.")
     elif not offer_sc:
-        await status_msg.answer(_EXPORT_MENU_TEXT, reply_markup=export_type_keyboard())
+        msg = await status_msg.answer(_EXPORT_MENU_TEXT, reply_markup=export_type_keyboard())
+        set_active_msg(status_msg.chat.id, msg.message_id)
         await state.set_state(ExportFlow.choosing_export_type)

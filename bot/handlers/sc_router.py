@@ -57,6 +57,7 @@ from .common import (
     notify_admin_sc_error,
     download_with_proxy_rotation,
 )
+from bot.tracker import set_active_msg
 from bot.states import ExportFlow
 
 router = Router()
@@ -97,6 +98,7 @@ async def _process_queue() -> None:
             parse_mode="HTML",
             reply_markup=sc_stop_keyboard(),
         )
+        set_active_msg(item.user_id, msg.message_id)
         await item.state.set_state(SCBatchFlow.sc_downloading)
         asyncio.create_task(
             _run_batch_download(msg, item.state, item.user_id, item.username, item.tracks, item.start_idx)
@@ -259,11 +261,12 @@ async def on_sc_batch_from_ym(call: CallbackQuery, state: FSMContext) -> None:
         pass
 
     await state.update_data(sc_resume_back_cb="sc_menu")
-    await call.message.answer(
+    msg = await call.message.answer(
         f"📥 Готов скачать <b>{len(sc_tracks)}</b> треков с SoundCloud.\n\nС какого трека начать?",
         parse_mode="HTML",
         reply_markup=sc_resume_keyboard(),
     )
+    set_active_msg(call.from_user.id, msg.message_id)
     await state.set_state(SCBatchFlow.sc_resume_choice)
 
 
@@ -280,6 +283,7 @@ async def on_sc_search_query(message: Message, state: FSMContext) -> None:
     query = message.text.strip()
 
     status_msg = await message.answer("🔍 Ищу в базе…")
+    set_active_msg(user_id, status_msg.message_id)
     cache_hits = search_cache_fuzzy(query)
     if cache_hits:
         await state.update_data(cache_pending_query=query, cache_fallback_source="sc",
@@ -379,6 +383,7 @@ async def on_yt_search_query(message: Message, state: FSMContext) -> None:
     query = message.text.strip()
 
     status_msg = await message.answer("🔍 Ищу в базе…")
+    set_active_msg(user_id, status_msg.message_id)
     cache_hits = search_cache_fuzzy(query)
     if cache_hits:
         await state.update_data(cache_pending_query=query, cache_fallback_source="yt",
@@ -584,6 +589,7 @@ async def on_sc_url_input(message: Message, state: FSMContext) -> None:
 
     url = message.text.strip()
     status_msg = await message.answer("⏳ Получаю информацию по ссылке…")
+    set_active_msg(user_id, status_msg.message_id)
 
     try:
         info = await sc_downloader.extract_url_info(url)
@@ -1162,6 +1168,7 @@ async def on_tsel_search(message: Message, state: FSMContext) -> None:
         except Exception:
             pass
     new_msg = await message.answer(text, parse_mode="HTML", reply_markup=kb)
+    set_active_msg(message.from_user.id, new_msg.message_id)
     await state.update_data(tsel_msg_id=new_msg.message_id)
 
 
@@ -1396,7 +1403,8 @@ async def _sc_download_and_send(
             except Exception:
                 pass
             if return_to_menu and await state.get_state() is not None:
-                await msg.answer("✅ Готово! Скачать ещё?", reply_markup=sc_after_download_keyboard())
+                done_msg = await msg.answer("✅ Готово! Скачать ещё?", reply_markup=sc_after_download_keyboard())
+                set_active_msg(msg.chat.id, done_msg.message_id)
                 await state.set_state(SCSearchFlow.sc_menu)
             return
         except Exception as e:
@@ -1459,7 +1467,8 @@ async def _sc_download_and_send(
             pass
 
     if return_to_menu and await state.get_state() is not None:
-        await msg.answer("✅ Готово! Скачать ещё?", reply_markup=sc_after_download_keyboard())
+        done_msg = await msg.answer("✅ Готово! Скачать ещё?", reply_markup=sc_after_download_keyboard())
+        set_active_msg(msg.chat.id, done_msg.message_id)
         await state.set_state(SCSearchFlow.sc_menu)
 
 
@@ -1661,7 +1670,9 @@ async def _run_batch_download(
                 )],
                 [InlineKeyboardButton(text="← В меню", callback_data="sc:cancel")],
             ])
-            await progress_msg.answer("Что делаем дальше?", reply_markup=retry_kb)
+            next_msg = await progress_msg.answer("Что делаем дальше?", reply_markup=retry_kb)
+            set_active_msg(progress_msg.chat.id, next_msg.message_id)
             await state.set_state(SCBatchFlow.sc_resume_choice)
         else:
-            await progress_msg.answer(_SC_MENU_TEXT, parse_mode="HTML", reply_markup=sc_menu_keyboard())
+            next_msg = await progress_msg.answer(_SC_MENU_TEXT, parse_mode="HTML", reply_markup=sc_menu_keyboard())
+            set_active_msg(progress_msg.chat.id, next_msg.message_id)

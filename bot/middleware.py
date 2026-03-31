@@ -7,9 +7,7 @@ from aiogram.types import TelegramObject, Message, CallbackQuery
 
 from config import settings
 from utils import db
-
-# Callbacks older than this are considered stale and silently rejected.
-_CALLBACK_MAX_AGE_SECONDS = 300  # 5 minutes
+from bot.tracker import _active_msg
 
 # Callback prefixes that are exempt from stale check (must work until explicitly acted on).
 _ETERNAL_CALLBACK_PREFIXES = ("batch_req:approve:", "batch_req:reject:", "batch_req:send")
@@ -71,7 +69,7 @@ class ThrottlingMiddleware(BaseMiddleware):
 
 class StaleButtonMiddleware(BaseMiddleware):
     """
-    Reject callback queries that come from messages older than _CALLBACK_MAX_AGE_SECONDS.
+    Reject callback queries that don't come from the user's current active message.
     Prevents users from pressing buttons on old bot messages mid-flow.
     """
 
@@ -82,16 +80,13 @@ class StaleButtonMiddleware(BaseMiddleware):
         data: dict[str, Any],
     ) -> Any:
         if isinstance(event, CallbackQuery) and event.message:
-            msg_date = event.message.date
-            if msg_date and not any(
+            if not any(
                 (event.data or "").startswith(p) for p in _ETERNAL_CALLBACK_PREFIXES
             ):
-                age = time.time() - msg_date.timestamp()
-                if age > _CALLBACK_MAX_AGE_SECONDS:
-                    await event.answer(
-                        "⏳ Эта кнопка устарела. Используй последнее сообщение бота.",
-                        show_alert=True,
-                    )
+                user_id = event.from_user.id
+                tracked = _active_msg.get(user_id)
+                if tracked is not None and event.message.message_id != tracked:
+                    await event.answer("Используй последнее сообщение бота.")
                     return
         return await handler(event, data)
 
