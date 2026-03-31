@@ -432,9 +432,9 @@ async def _notify_proxy_result(bot, proxy_label: str, success: bool, detail: str
 async def search_with_proxy_rotation(query: str, max_results: int, bot) -> list:
     """Search SC with automatic proxy rotation on IP ban errors.
 
-    Tries the current proxy/IP first. On SCBanError rotates to the next proxy
-    and retries. If all proxies are exhausted, raises the last SCBanError.
-    Sends admin notification after each rotation attempt with success/failure result.
+    Tries the current proxy/IP first. On SCBanError or empty result after rotation,
+    switches to the next proxy and retries. If all proxies are exhausted, returns [].
+    Sends admin notification on success or when all proxies are exhausted.
     """
     from core import sc_downloader
     from core.sc_downloader import SCBanError
@@ -444,23 +444,36 @@ async def search_with_proxy_rotation(query: str, max_results: int, bot) -> list:
     for attempt in range(max_attempts):
         try:
             results = await sc_downloader.search(query, max_results)
-            if rotated:
-                proxy_label = sc_downloader.get_active_proxy() or get_server_ip_label()
-                if results:
-                    await _notify_proxy_result(bot, proxy_label, success=True,
-                                               detail=f"Поиск вернул {len(results)} результатов.")
-                else:
-                    await _notify_proxy_result(bot, proxy_label, success=False,
-                                               detail="Поиск вернул 0 результатов — прокси тоже заблокирован или трека нет.")
-            return results
         except SCBanError:
             rotated = True
             had_more = await rotate_sc_proxy(bot)
             if not had_more:
                 raise
+            continue
         except Exception:
             raise
-    return await sc_downloader.search(query, max_results)
+
+        if results:
+            if rotated:
+                proxy_label = sc_downloader.get_active_proxy() or get_server_ip_label()
+                await _notify_proxy_result(bot, proxy_label, success=True,
+                                           detail=f"Поиск вернул {len(results)} результатов.")
+            return results
+
+        # Empty results
+        if not rotated:
+            return []  # genuinely no results, no IP issue
+
+        # Rotated but proxy also returned empty — likely blocked too, try next proxy
+        had_more = await rotate_sc_proxy(bot)
+        if not had_more:
+            proxy_label = sc_downloader.get_active_proxy() or get_server_ip_label()
+            await _notify_proxy_result(bot, proxy_label, success=False,
+                                       detail="Все прокси проверены — результатов нет.")
+            return []
+        # else: continue loop with next proxy
+
+    return []
 
 
 async def _show_batch_access_page(call: CallbackQuery, back_cb: str, use_answer: bool = False) -> None:
