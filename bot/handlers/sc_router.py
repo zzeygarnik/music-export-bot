@@ -56,6 +56,7 @@ from .common import (
     _filter_by_artist,
     notify_admin_sc_error,
     download_with_proxy_rotation,
+    search_with_proxy_rotation,
 )
 from bot.tracker import set_active_msg
 from bot.states import ExportFlow
@@ -304,7 +305,7 @@ async def on_sc_search_query(message: Message, state: FSMContext) -> None:
     await status_msg.edit_text("🔍 Ищу на SoundCloud…")
 
     try:
-        results = await sc_downloader.search(query, max_results=5)
+        results = await search_with_proxy_rotation(query, max_results=5, bot=message.bot)
     except Exception as e:
         log.exception("SC search error user=%s: %s", user_id, e)
         await status_msg.edit_text(

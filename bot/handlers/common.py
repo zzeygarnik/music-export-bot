@@ -400,6 +400,28 @@ async def download_with_proxy_rotation(url: str, user_id: int, bot) -> tuple[str
     return await sc_downloader.download(url, user_id)
 
 
+async def search_with_proxy_rotation(query: str, max_results: int, bot) -> list:
+    """Search SC with automatic proxy rotation on IP ban errors.
+
+    Tries the current proxy/IP first. On SCBanError rotates to the next proxy
+    and retries. If all proxies are exhausted, raises the last SCBanError.
+    """
+    from core import sc_downloader
+    from core.sc_downloader import SCBanError
+
+    max_attempts = len(_sc_proxies) + 2
+    for attempt in range(max_attempts):
+        try:
+            return await sc_downloader.search(query, max_results)
+        except SCBanError:
+            had_more = await rotate_sc_proxy(bot)
+            if not had_more:
+                raise
+        except Exception:
+            raise
+    return await sc_downloader.search(query, max_results)
+
+
 async def _show_batch_access_page(call: CallbackQuery, back_cb: str, use_answer: bool = False) -> None:
     """Show access request page or 'already pending' page depending on user's request status.
 
