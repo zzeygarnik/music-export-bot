@@ -19,9 +19,11 @@ services:
         condition: service_healthy
     volumes:
       - /mnt/Storage/zgrnk_data/music-bot/music-export-bot/logs:/app/logs
+      - /mnt/Storage/zgrnk_data/music-bot/music-export-bot/sc_cookies.txt:/app/sc_cookies.txt:ro
     environment:
       BOT_TOKEN: ${BOT_TOKEN}
       REDIS_URL: redis://redis:6379/0
+      SC_COOKIE_FILE: /app/sc_cookies.txt
 
   dashboard:
     image: music-export-bot:latest

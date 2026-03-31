@@ -15,6 +15,11 @@ def _proxy_opts() -> dict:
     return {"proxy": settings.SC_PROXY} if settings.SC_PROXY else {}
 
 
+def _cookie_opts() -> dict:
+    """Return yt-dlp cookiefile option if SC_COOKIE_FILE is configured."""
+    return {"cookiefile": settings.SC_COOKIE_FILE} if settings.SC_COOKIE_FILE else {}
+
+
 @dataclass
 class SCResult:
     url: str
@@ -34,6 +39,7 @@ def _search_sync(query: str, max_results: int = 5, platform: str = "sc") -> list
         "noplaylist": False,
         "ignoreerrors": True,
         **_proxy_opts(),
+        **_cookie_opts(),
     }
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(f"{platform}search{max_results}:{query}", download=False)
@@ -76,6 +82,7 @@ def _download_sync(url: str, output_template: str) -> tuple[str, dict]:
         "format": "bestaudio/best",
         "outtmpl": output_template + ".%(ext)s",
         **_proxy_opts(),
+        **_cookie_opts(),
     }
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=True)
@@ -98,6 +105,7 @@ def _extract_url_info_sync(url: str) -> dict:
         "no_warnings": True,
         "extract_flat": "in_playlist",
         **_proxy_opts(),
+        **_cookie_opts(),
     }
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False)
