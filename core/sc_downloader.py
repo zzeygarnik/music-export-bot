@@ -59,16 +59,43 @@ class SCResult:
     duration: int  # seconds
 
 
+class _BanCapturingLogger:
+    """Custom yt-dlp logger that captures error/warning messages for ban detection.
+
+    With ignoreerrors=True, yt-dlp swallows DownloadError internally and never raises —
+    so we must intercept the printed messages to detect IP bans.
+    """
+    def __init__(self) -> None:
+        self.captured: list[str] = []
+
+    def debug(self, msg: str) -> None:
+        pass
+
+    def info(self, msg: str) -> None:
+        pass
+
+    def warning(self, msg: str) -> None:
+        self.captured.append(msg)
+
+    def error(self, msg: str) -> None:
+        self.captured.append(msg)
+
+    def has_ban(self) -> bool:
+        return any(_is_ban_error(m) for m in self.captured)
+
+
 def _search_sync(query: str, max_results: int = 5, platform: str = "sc") -> list[SCResult]:
     import yt_dlp  # lazy import — optional dep
 
     # extract_flat breaks scsearch (entries come back without webpage_url).
     # Without it yt-dlp fully resolves each result — slower but reliable.
+    ban_logger = _BanCapturingLogger()
     opts = {
         "quiet": False,
         "no_warnings": False,
         "noplaylist": False,
         "ignoreerrors": True,
+        "logger": ban_logger,
         **_proxy_opts(),
         **_cookie_opts(),
     }
@@ -79,6 +106,11 @@ def _search_sync(query: str, max_results: int = 5, platform: str = "sc") -> list
         if _is_ban_error(str(e)):
             raise SCBanError(str(e)) from e
         raise
+
+    # With ignoreerrors=True yt-dlp swallows 403/429 and returns None — detect via logger
+    if ban_logger.has_ban():
+        ban_msg = next(m for m in ban_logger.captured if _is_ban_error(m))
+        raise SCBanError(f"Ban detected during {platform.upper()} search: {ban_msg}")
 
     if not info:
         log.warning("%s search: extract_info returned None for query=%r", platform.upper(), query)
