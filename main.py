@@ -2,6 +2,8 @@ import asyncio
 import json
 import logging
 import os
+import time
+from collections import defaultdict
 
 from aiohttp import web as aiohttp_web
 from aiogram import Bot, Dispatcher
@@ -28,13 +30,15 @@ _LOGIN_HTML = """\
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Dashboard — Login</title>
+<script src="https://cdn.jsdelivr.net/npm/tsparticles@2.12.0/tsparticles.bundle.min.js"></script>
 <style>
   *{{margin:0;padding:0;box-sizing:border-box}}
   body{{background:#0d0d14;color:#e4e1ec;font-family:Inter,sans-serif;
         display:flex;align-items:center;justify-content:center;min-height:100vh}}
+  #tsparticles{{position:fixed;width:100%;height:100%;top:0;left:0;z-index:0;pointer-events:none}}
   .card{{background:rgba(19,19,26,.9);border:1px solid rgba(124,58,237,.2);
          border-radius:1.5rem;padding:2.5rem;width:100%;max-width:360px;
-         box-shadow:0 8px 32px rgba(0,0,0,.4)}}
+         box-shadow:0 8px 32px rgba(0,0,0,.4);position:relative;z-index:1}}
   h1{{font-size:1.1rem;font-weight:800;letter-spacing:.2em;text-transform:uppercase;
       color:#d2bbff;margin-bottom:.4rem}}
   p{{font-size:.65rem;color:#8a8198;margin-bottom:2rem;letter-spacing:.1em;text-transform:uppercase}}
@@ -50,6 +54,7 @@ _LOGIN_HTML = """\
 </style>
 </head>
 <body>
+<div id="tsparticles"></div>
 <div class="card">
   <h1>ZGRNK Music</h1>
   <p>Admin access only</p>
@@ -59,8 +64,146 @@ _LOGIN_HTML = """\
     <button type="submit">Enter</button>
   </form>
 </div>
+<script>
+document.addEventListener("DOMContentLoaded", () => {{
+  tsParticles.load("tsparticles", {{
+    fpsLimit: 60,
+    particles: {{
+      number: {{ value: 90, density: {{ enable: true, area: 900 }} }},
+      color:  {{ value: "#ffffff" }},
+      shape:  {{ type: "circle" }},
+      opacity: {{
+        value: 0.45, random: true,
+        anim: {{ enable: true, speed: 0.8, opacity_min: 0.05, sync: false }}
+      }},
+      size: {{ value: 3, random: {{ enable: true, minimumValue: 1 }} }},
+      links: {{ enable: false }},
+      move: {{
+        enable: true, speed: 0.5, direction: "bottom",
+        random: true, straight: false,
+        outModes: {{ default: "out" }}
+      }}
+    }},
+    interactivity: {{
+      detectsOn: "window",
+      events: {{
+        onHover: {{ enable: true, mode: "grab" }},
+        onClick: {{ enable: true, mode: "push" }},
+        resize: true
+      }},
+      modes: {{
+        grab: {{ distance: 160, links: {{ opacity: 0.5 }} }},
+        push: {{ quantity: 3 }}
+      }}
+    }},
+    background: {{ color: "transparent" }}
+  }});
+}});
+</script>
 </body>
 </html>"""
+
+
+_RATE_LIMIT_HTML = """\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard — Too Many Attempts</title>
+<script src="https://cdn.jsdelivr.net/npm/tsparticles@2.12.0/tsparticles.bundle.min.js"></script>
+<style>
+  *{{margin:0;padding:0;box-sizing:border-box}}
+  body{{background:#0d0d14;color:#e4e1ec;font-family:Inter,sans-serif;
+        display:flex;align-items:center;justify-content:center;min-height:100vh}}
+  #tsparticles{{position:fixed;width:100%;height:100%;top:0;left:0;z-index:0;pointer-events:none}}
+  .card{{background:rgba(19,19,26,.9);border:1px solid rgba(239,68,68,.2);
+         border-radius:1.5rem;padding:2.5rem;width:100%;max-width:360px;
+         box-shadow:0 8px 32px rgba(0,0,0,.4);text-align:center;position:relative;z-index:1}}
+  h1{{font-size:1.1rem;font-weight:800;letter-spacing:.2em;text-transform:uppercase;
+      color:#f87171;margin-bottom:1rem}}
+  p{{font-size:.75rem;color:#8a8198;margin-bottom:1.5rem}}
+  .timer{{font-size:2.5rem;font-weight:700;color:#d2bbff;margin-bottom:.5rem}}
+  .label{{font-size:.65rem;color:#8a8198;letter-spacing:.1em;text-transform:uppercase}}
+</style>
+</head>
+<body>
+<div id="tsparticles"></div>
+<div class="card">
+  <h1>Too Many Attempts</h1>
+  <p>5 неверных попыток. Попробуй снова через:</p>
+  <div class="timer" id="t">{seconds}</div>
+  <div class="label">секунд</div>
+</div>
+<script>
+  var s = {seconds};
+  var el = document.getElementById('t');
+  var iv = setInterval(function() {{
+    s--;
+    if (s <= 0) {{ clearInterval(iv); window.location = '/dashboard/login'; return; }}
+    el.textContent = s;
+  }}, 1000);
+  document.addEventListener("DOMContentLoaded", () => {{
+    tsParticles.load("tsparticles", {{
+      fpsLimit: 60,
+      particles: {{
+        number: {{ value: 90, density: {{ enable: true, area: 900 }} }},
+        color:  {{ value: "#ffffff" }},
+        shape:  {{ type: "circle" }},
+        opacity: {{
+          value: 0.45, random: true,
+          anim: {{ enable: true, speed: 0.8, opacity_min: 0.05, sync: false }}
+        }},
+        size: {{ value: 3, random: {{ enable: true, minimumValue: 1 }} }},
+        links: {{ enable: false }},
+        move: {{
+          enable: true, speed: 0.5, direction: "bottom",
+          random: true, straight: false,
+          outModes: {{ default: "out" }}
+        }}
+      }},
+      interactivity: {{
+        detectsOn: "window",
+        events: {{
+          onHover: {{ enable: true, mode: "grab" }},
+          onClick: {{ enable: true, mode: "push" }},
+          resize: true
+        }},
+        modes: {{
+          grab: {{ distance: 160, links: {{ opacity: 0.5 }} }},
+          push: {{ quantity: 3 }}
+        }}
+      }},
+      background: {{ color: "transparent" }}
+    }});
+  }});
+</script>
+</body>
+</html>"""
+
+_login_attempts: dict[str, list[float]] = defaultdict(list)
+_RATE_LIMIT_MAX = 5
+_RATE_LIMIT_WINDOW = 600  # seconds
+
+
+def _get_client_ip(request: aiohttp_web.Request) -> str:
+    fwd = request.headers.get("X-Forwarded-For", "")
+    return fwd.split(",")[0].strip() if fwd else (request.remote or "unknown")
+
+
+def _check_rate_limit(ip: str) -> tuple[bool, int]:
+    """Returns (is_blocked, seconds_until_unblocked)."""
+    now = time.time()
+    attempts = [t for t in _login_attempts[ip] if now - t < _RATE_LIMIT_WINDOW]
+    _login_attempts[ip] = attempts
+    if len(attempts) >= _RATE_LIMIT_MAX:
+        wait = int(_RATE_LIMIT_WINDOW - (now - min(attempts))) + 1
+        return True, wait
+    return False, 0
+
+
+def _record_login_attempt(ip: str) -> None:
+    _login_attempts[ip].append(time.time())
 
 
 def _check_auth(request: aiohttp_web.Request) -> bool:
@@ -89,6 +232,14 @@ async def _dashboard_login_get(request: aiohttp_web.Request) -> aiohttp_web.Resp
 
 
 async def _dashboard_login_post(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    ip = _get_client_ip(request)
+    blocked, wait = _check_rate_limit(ip)
+    if blocked:
+        return aiohttp_web.Response(
+            text=_RATE_LIMIT_HTML.format(seconds=wait),
+            content_type="text/html",
+            status=429,
+        )
     data = await request.post()
     token = data.get("token", "")
     if token and token == settings.DASHBOARD_TOKEN:
@@ -98,6 +249,14 @@ async def _dashboard_login_post(request: aiohttp_web.Request) -> aiohttp_web.Res
             max_age=86400 * 30, httponly=True, samesite="Strict",
         )
         return response
+    _record_login_attempt(ip)
+    blocked, wait = _check_rate_limit(ip)
+    if blocked:
+        return aiohttp_web.Response(
+            text=_RATE_LIMIT_HTML.format(seconds=wait),
+            content_type="text/html",
+            status=429,
+        )
     return aiohttp_web.Response(
         text=_LOGIN_HTML.format(error='<p class="err">Wrong token</p>'),
         content_type="text/html",
