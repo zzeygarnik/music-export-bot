@@ -183,6 +183,13 @@ def sc_cancel_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
+def yt_fallback_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔍 Найти на YouTube", callback_data="sc:yt_fallback")],
+        [InlineKeyboardButton(text="Назад", callback_data="sc:cancel")],
+    ])
+
+
 def sc_results_keyboard(results: list) -> InlineKeyboardMarkup:
     buttons = []
     for i, r in enumerate(results):
