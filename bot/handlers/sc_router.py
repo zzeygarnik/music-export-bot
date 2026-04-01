@@ -499,28 +499,32 @@ async def on_cache_pick(call: CallbackQuery, state: FSMContext) -> None:
         except Exception:
             pass
     except Exception as e:
-        log.warning("Cache send_audio failed user=%s: %s", user_id, e)
-        await call.message.edit_text(
-            "❌ Не удалось отправить из кэша. Попробуй поискать заново.",
-            reply_markup=sc_cancel_keyboard(),
-        )
+        log.warning("Cache send_audio stale file_id user=%s key=%s: %s", user_id, hit["cache_key"], e)
+        delete_cached_file_id(hit["cache_key"])
+        query = data.get("cache_pending_query", display)
+        source = data.get("cache_fallback_source", "sc")
+        await call.message.edit_text("⏳ Кэш устарел, ищу заново…")
+        await _run_search_after_cache(call.message, state, query, source, user_id, username)
         return
 
-    await call.message.answer("✅ Готово! Скачать ещё?", reply_markup=sc_after_download_keyboard())
+    done_msg = await call.message.answer("✅ Готово! Скачать ещё?", reply_markup=sc_after_download_keyboard())
+    set_active_msg(call.from_user.id, done_msg.message_id)
     await state.set_state(SCSearchFlow.sc_menu)
 
 
-@router.callback_query(SCSearchFlow.sc_cache_results, F.data == "cache_miss")
-async def on_cache_miss(call: CallbackQuery, state: FSMContext) -> None:
-    user_id, username = _get_user_info(call)
-    data = await state.get_data()
-    query = data.get("cache_pending_query", "")
-    source = data.get("cache_fallback_source", "sc")
-
+async def _run_search_after_cache(
+    status_msg,
+    state: FSMContext,
+    query: str,
+    source: str,
+    user_id: int,
+    username: str,
+) -> None:
+    """Run SC or YT search after a cache miss or stale file_id. Edits status_msg in place."""
     if source == "sc":
-        status_msg = await call.message.edit_text("🔍 Ищу на SoundCloud…")
+        await status_msg.edit_text("🔍 Ищу на SoundCloud…")
         try:
-            results = await search_with_proxy_rotation(query, max_results=5, bot=call.bot)
+            results = await search_with_proxy_rotation(query, max_results=5, bot=status_msg.bot)
         except Exception as e:
             log.exception("SC search error user=%s: %s", user_id, e)
             await state.update_data(sc_yt_fallback_query=query)
@@ -544,7 +548,8 @@ async def on_cache_miss(call: CallbackQuery, state: FSMContext) -> None:
             pre_cached = get_cached_file_id(_make_cache_key(best.artist, best.title))
             await status_msg.edit_text(
                 f"{'⚡ Нашёл в базе' if pre_cached else '⏳ Скачиваю'}: <b>{best.artist} — {best.title}</b>…",
-                parse_mode="HTML")
+                parse_mode="HTML",
+            )
             await _sc_download_and_send(status_msg, state, best, user_id, return_to_menu=True, username=username)
         else:
             await state.update_data(sc_search_results=[
@@ -557,7 +562,7 @@ async def on_cache_miss(call: CallbackQuery, state: FSMContext) -> None:
             )
             await state.set_state(SCSearchFlow.sc_search_results)
     else:
-        status_msg = await call.message.edit_text("🔍 Ищу на YouTube…")
+        await status_msg.edit_text("🔍 Ищу на YouTube…")
         try:
             results = await sc_downloader.search_youtube(query, max_results=5)
         except Exception as e:
@@ -573,7 +578,8 @@ async def on_cache_miss(call: CallbackQuery, state: FSMContext) -> None:
             pre_cached = get_cached_file_id(_make_cache_key(best.artist, best.title))
             await status_msg.edit_text(
                 f"{'⚡ Нашёл в базе' if pre_cached else '⏳ Скачиваю'}: <b>{best.artist} — {best.title}</b>…",
-                parse_mode="HTML")
+                parse_mode="HTML",
+            )
             await _sc_download_and_send(status_msg, state, best, user_id, return_to_menu=True, username=username, source="yt")
         else:
             await state.update_data(yt_search_results=[
@@ -585,6 +591,55 @@ async def on_cache_miss(call: CallbackQuery, state: FSMContext) -> None:
                 reply_markup=sc_results_keyboard(results),
             )
             await state.set_state(SCSearchFlow.yt_search_results)
+
+
+@router.callback_query(SCSearchFlow.sc_cache_results, F.data == "cache_miss")
+async def on_cache_miss(call: CallbackQuery, state: FSMContext) -> None:
+    user_id, username = _get_user_info(call)
+    data = await state.get_data()
+    query = data.get("cache_pending_query", "")
+    source = data.get("cache_fallback_source", "sc")
+    await _run_search_after_cache(call.message, state, query, source, user_id, username)
+
+
+# ── Inline search: deep link from inline mode ─────────────────────────────────
+
+@router.callback_query(SCSearchFlow.sc_menu, F.data.startswith("inline_search:"))
+async def on_inline_search(call: CallbackQuery, state: FSMContext) -> None:
+    user_id, username = _get_user_info(call)
+    action = call.data.split(":", 1)[1]
+
+    if action == "cancel":
+        await call.message.edit_text("👋 Привет! Что хочешь сделать?", reply_markup=service_keyboard())
+        await state.clear()
+        return
+
+    data = await state.get_data()
+    query = data.get("inline_search_query", "")
+    if not query:
+        await call.answer("Запрос не найден.", show_alert=True)
+        return
+
+    source = action  # "sc" or "yt"
+    await state.update_data(cache_pending_query=query, cache_fallback_source=source)
+
+    cache_hits = search_cache_fuzzy(query)
+    if cache_hits:
+        await state.update_data(cache_hits=cache_hits)
+        lines = "\n".join(
+            f"• <b>{h['artist']} — {h['title']}</b>" if (h.get("artist") or h.get("title"))
+            else f"• <b>{h.get('cache_key', '?')}</b>"
+            for h in cache_hits
+        )
+        await call.message.edit_text(
+            f"⚡ Нашёл в кэше — это нужный трек?\n\n{lines}",
+            parse_mode="HTML",
+            reply_markup=cache_results_keyboard(cache_hits, source),
+        )
+        await state.set_state(SCSearchFlow.sc_cache_results)
+        return
+
+    await _run_search_after_cache(call.message, state, query, source, user_id, username)
 
 
 # ── SC: Download by URL ───────────────────────────────────────────────────────
