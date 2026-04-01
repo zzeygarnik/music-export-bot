@@ -3,12 +3,7 @@ import base64
 import logging
 
 from aiogram import Router
-from aiogram.types import (
-    InlineQuery,
-    InlineQueryResultCachedAudio,
-    InlineQueryResultArticle,
-    InputTextMessageContent,
-)
+from aiogram.types import InlineQuery, InlineQueryResultCachedAudio
 
 from utils.db import search_cache_fuzzy
 
@@ -41,12 +36,7 @@ async def on_inline_query(query: InlineQuery) -> None:
     q = (query.query or "").strip()
 
     if not q:
-        await query.answer(
-            [],
-            switch_pm_text="🔍 Введи название трека",
-            switch_pm_parameter="il",
-            cache_time=0,
-        )
+        await query.answer([], cache_time=0)
         return
 
     hits = search_cache_fuzzy(q, threshold=70)
@@ -58,24 +48,14 @@ async def on_inline_query(query: InlineQuery) -> None:
     param = encode_inline_param(q)
 
     if not results:
-        # Show a tappable article so the user knows what to do
-        short_q = q if len(q) <= 40 else q[:37] + "…"
-        results = [
-            InlineQueryResultArticle(
-                id="find_in_bot",
-                title=f"🔍 Найти «{short_q}»",
-                description="Нет в кэше — открыть бота и скачать",
-                input_message_content=InputTextMessageContent(
-                    message_text=f"🔍 {q}",
-                ),
-                reply_markup=None,
-            )
-        ]
+        # No cache hit — show only the switch_pm button with the query in its label.
+        # InlineQueryResultArticle is intentionally NOT used: it sends text to chat on tap.
+        short_q = q if len(q) <= 30 else q[:27] + "…"
         await query.answer(
-            results,
-            switch_pm_text="Открыть бота →",
+            [],
+            switch_pm_text=f"🔍 Найти «{short_q}» в боте",
             switch_pm_parameter=param,
-            cache_time=5,
+            cache_time=0,
             is_personal=True,
         )
         return
