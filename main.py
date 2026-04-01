@@ -458,7 +458,7 @@ async def main() -> None:
             await bot.set_webhook(
                 url=f"{settings.WEBHOOK_URL.rstrip('/')}{webhook_path}",
                 secret_token=settings.WEBHOOK_SECRET or None,
-                allowed_updates=["message", "callback_query"],
+                allowed_updates=["message", "callback_query", "inline_query"],
                 drop_pending_updates=True,
             )
             SimpleRequestHandler(
@@ -479,7 +479,7 @@ async def main() -> None:
     if settings.WEBHOOK_URL:
         await asyncio.Event().wait()
     else:
-        await dp.start_polling(bot, allowed_updates=["message", "callback_query"])
+        await dp.start_polling(bot, allowed_updates=["message", "callback_query", "inline_query"])
 
 
 if __name__ == "__main__":

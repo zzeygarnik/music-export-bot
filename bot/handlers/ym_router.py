@@ -1,4 +1,5 @@
 """ExportFlow handlers: /start, service selection, YM auth, export, filter, CSV."""
+import base64
 import logging
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
@@ -7,8 +8,8 @@ _MSK = ZoneInfo("Europe/Moscow")
 
 import aiofiles
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, BufferedInputFile
-from aiogram.filters import Command, CommandStart
+from aiogram.types import Message, CallbackQuery, BufferedInputFile, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.filters import Command, CommandStart, CommandObject
 from aiogram.fsm.context import FSMContext
 
 from bot.states import ExportFlow, SCSearchFlow, SCBatchFlow, YMShareFlow, FAQFlow
@@ -63,11 +64,36 @@ log = logging.getLogger(__name__)
 # ── /start ────────────────────────────────────────────────────────────────────
 
 @router.message(CommandStart())
-async def cmd_start(message: Message, state: FSMContext) -> None:
-    # Remove user from batch queue if they were waiting
+async def cmd_start(message: Message, state: FSMContext, command: CommandObject) -> None:
     user_id = message.from_user.id
     _batch_queue[:] = [item for item in _batch_queue if item.user_id != user_id]
     await state.clear()
+
+    # Deep link from inline mode: /start il<base64query>
+    payload = command.args or ""
+    if payload.startswith("il") and len(payload) > 2:
+        try:
+            q = base64.urlsafe_b64decode(payload[2:] + "==").decode().strip()
+        except Exception:
+            q = ""
+        if q:
+            await state.update_data(inline_search_query=q)
+            await state.set_state(SCSearchFlow.sc_menu)
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="☁️ SoundCloud", callback_data="inline_search:sc"),
+                    InlineKeyboardButton(text="▶️ YouTube", callback_data="inline_search:yt"),
+                ],
+                [InlineKeyboardButton(text="← Главное меню", callback_data="inline_search:cancel")],
+            ])
+            msg = await message.answer(
+                f"🔍 Ищешь «<b>{q}</b>»?",
+                parse_mode="HTML",
+                reply_markup=kb,
+            )
+            set_active_msg(user_id, msg.message_id)
+            return
+
     msg = await message.answer(
         '👋 Привет! Что хочешь сделать?',
         parse_mode="HTML",
