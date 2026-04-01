@@ -3,9 +3,10 @@ import base64
 import logging
 
 from aiogram import Router
-from aiogram.types import InlineQuery, InlineQueryResultCachedAudio
+from aiogram.types import InlineQuery, InlineQueryResultCachedAudio, ChosenInlineResult
 
 from utils.db import search_cache_fuzzy
+from utils.event_log import log_event
 
 router = Router()
 log = logging.getLogger(__name__)
@@ -67,3 +68,26 @@ async def on_inline_query(query: InlineQuery) -> None:
         cache_time=30,
         is_personal=True,
     )
+
+
+@router.chosen_inline_result()
+async def on_chosen_inline_result(result: ChosenInlineResult) -> None:
+    user_id = result.from_user.id
+    username = result.from_user.username or str(user_id)
+    query = result.query or ""
+
+    try:
+        idx = int(result.result_id)
+    except ValueError:
+        return
+
+    hits = search_cache_fuzzy(query, threshold=70)
+    if idx < len(hits):
+        hit = hits[idx]
+        artist = hit.get("artist", "")
+        title = hit.get("title", "")
+        detail = f"{artist} — {title}" if (artist or title) else hit.get("cache_key", "?")
+    else:
+        detail = query
+
+    log_event(user_id, username, "inline_pick", "success", track_count=1, detail=detail)
