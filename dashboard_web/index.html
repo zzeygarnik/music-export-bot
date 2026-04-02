@@ -759,14 +759,31 @@
             document.getElementById('sc-bar-yt').style.width = ytPct + '%';
         }
 
-        // Refresh chart for active tab if its total changed
+        // Refresh chart/table for active tab if its total changed; invalidate inactive tabs
         if (_prevStats) {
             const activeTab = document.querySelector('.tab-content.active')?.id?.replace('tab-', '');
+            const anyChanged = ['ym', 'spotify', 'sc'].some(k =>
+                (_prevStats[k] || {}).total !== (s[k] || {}).total
+            );
             if (activeTab && activeTab !== 'log') {
                 const srcKey = activeTab === 'sc' ? 'sc' : activeTab === 'spotify' ? 'spotify' : 'ym';
                 if ((_prevStats[srcKey] || {}).total !== (s[srcKey] || {}).total) {
                     loadChart(activeTab, getActivePeriod(activeTab));
+                    tabOffsets[activeTab] = 0;
+                    const moreBtn = document.getElementById('more-' + activeTab);
+                    if (moreBtn) { moreBtn.textContent = 'Load More'; moreBtn.disabled = false; }
+                    loadTable(srcKey, 'tbl-' + activeTab, 0, false);
                 }
+            } else if (activeTab === 'log' && anyChanged) {
+                tabOffsets.log = 0;
+                const moreBtn = document.getElementById('more-log');
+                if (moreBtn) { moreBtn.textContent = 'Load More'; moreBtn.disabled = false; }
+                loadTable(logFilter, 'tbl-log', 0, false);
+            }
+            if (anyChanged) {
+                ['ym', 'sc', 'spotify', 'log'].forEach(tab => {
+                    if (tab !== activeTab) tabLoaded[tab] = false;
+                });
             }
         }
         _prevStats = s;
