@@ -1,965 +1,1234 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ZGRNK Music | Dashboard</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Manrope:wght@200;400;600;800&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet" />
-    <script src="https://cdn.jsdelivr.net/npm/tsparticles@2.12.0/tsparticles.bundle.min.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ZGRNK Music — Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@300;400;700;900&family=Syne:wght@400;500;600;700;800&family=Fira+Code:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/tsparticles@2.12.0/tsparticles.bundle.min.js"></script>
+<style>
+/* ── RESET & VARS ─────────────────────────────────────────── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0d14;--surface:#13131a;--s2:#1f1f26;--s3:#2a2931;
+  --primary:#d2bbff;--accent:#7c3aed;--adim:rgba(124,58,237,.12);
+  --aglow:rgba(124,58,237,.35);
+  --text:#e4e1ec;--muted:#9b93a8;--dim:#4d4760;
+  --border:rgba(74,68,85,.45);
+  --green:#4ade80;--red:#f87171;--orange:#fb923c;
+  --fd:'Big Shoulders Display',sans-serif;
+  --fu:'Syne',sans-serif;--fm:'Fira Code',monospace;
+  --sw:220px;--hh:52px;--r:10px;
+}
+html,body{height:100%;background:var(--bg);color:var(--text);
+  font-family:var(--fu);font-size:14px;line-height:1.5;
+  -webkit-font-smoothing:antialiased}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--s3);border-radius:2px}
+::-webkit-scrollbar-thumb:hover{background:var(--accent)}
 
-    <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    colors: {
-                        background: '#0d0d14',
-                        surface: '#13131a',
-                        'surface-container': '#1f1f26',
-                        'surface-container-high': '#2a2931',
-                        primary: '#d2bbff',
-                        'primary-container': '#7c3aed',
-                        secondary: '#ddb7ff',
-                        'on-surface': '#e4e1ec',
-                        'on-surface-variant': '#ccc3d8',
-                        outline: '#4a4455',
-                    },
-                    fontFamily: {
-                        headline: ['Manrope', 'sans-serif'],
-                        body: ['Inter', 'sans-serif'],
-                    }
-                }
-            }
-        }
-    </script>
+/* particles */
+#tsparticles{position:fixed;inset:0;z-index:0;pointer-events:none}
 
-    <style>
-        body {
-            background-color: #0d0d14;
-            color: #e4e1ec;
-            font-family: 'Inter', sans-serif;
-            overflow-x: hidden;
-        }
-        .glass-card {
-            background: rgba(19,19,26,.6);
-            backdrop-filter: blur(20px);
-            border: 1px solid rgba(124,58,237,.1);
-            border-radius: 1.5rem;
-            box-shadow: 0 8px 32px rgba(0,0,0,.37);
-        }
-        .sidebar-link { border-left: 4px solid transparent; }
-        .sidebar-link.sidebar-active {
-            background: rgba(124,58,237,.15);
-            border-left-color: #7c3aed;
-            color: #d2bbff;
-        }
-        #tsparticles {
-            position: fixed; width: 100%; height: 100%;
-            top: 0; left: 0; z-index: 0; pointer-events: none;
-        }
-        .layout-wrapper { position: relative; z-index: 1; }
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: #0d0d14; }
-        ::-webkit-scrollbar-thumb { background: #2a2931; border-radius: 10px; }
-        ::-webkit-scrollbar-thumb:hover { background: #7c3aed; }
+/* noise overlay */
+body::after{content:'';position:fixed;inset:0;z-index:9999;pointer-events:none;
+  opacity:.025;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size:120px}
 
-        .chart-bar {
-            background: linear-gradient(to top, rgba(124,58,237,.2), rgba(124,58,237,.5));
-            transition: all .4s cubic-bezier(.4,0,.2,1);
-            position: relative;
-        }
-        .chart-bar:hover { background: linear-gradient(to top, #7c3aed, #d2bbff) !important; }
-        .chart-bar.peak {
-            background: #7c3aed !important;
-            box-shadow: 0 0 20px rgba(124,58,237,.4);
-            border-top: 2px solid #d2bbff;
-        }
-        .chart-tooltip {
-            position: absolute; top: -2rem; left: 50%;
-            transform: translateX(-50%);
-            background: #2a2931; padding: .15rem .5rem;
-            border-radius: 4px; font-size: 10px; font-weight: 700;
-            white-space: nowrap; pointer-events: none;
-        }
-        .glow-text { text-shadow: 0 0 10px rgba(210,187,255,.3); }
-        .progress-glow { box-shadow: 0 0 15px rgba(124,58,237,.6); }
+/* ── LOGIN ───────────────────────────────────────────────── */
+#login-page{position:fixed;inset:0;z-index:500;display:flex;
+  align-items:center;justify-content:center;background:transparent;
+  transition:opacity .5s ease,transform .5s ease}
+#login-page.out{opacity:0;pointer-events:none;transform:translateY(-16px)}
+#login-page::before{content:'';position:absolute;inset:0;
+  background-image:linear-gradient(rgba(124,58,237,.035) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(124,58,237,.035) 1px,transparent 1px);
+  background-size:52px 52px}
+#login-page::after{content:'';position:absolute;top:0;right:0;
+  width:400px;height:400px;
+  background:radial-gradient(circle at 100% 0,rgba(124,58,237,.1),transparent 65%);
+  pointer-events:none}
+.lbox{position:relative;z-index:1;width:340px;
+  transition:transform .14s ease-out;will-change:transform;transform-style:preserve-3d}
+.login-glow{position:absolute;width:520px;height:520px;border-radius:50%;
+  background:radial-gradient(circle,rgba(124,58,237,.13),transparent 65%);
+  pointer-events:none;transform:translate(-50%,-50%);z-index:0;
+  transition:left .07s linear,top .07s linear}
+.l-title{font-family:var(--fd);font-weight:900;font-size:3.4rem;
+  line-height:.95;letter-spacing:.06em;color:var(--primary);
+  text-shadow:0 0 60px rgba(210,187,255,.18)}
+.l-sub{font-family:var(--fm);font-size:9px;letter-spacing:.35em;
+  color:var(--dim);text-transform:uppercase;margin-top:8px}
+.l-rule{width:100%;height:1px;margin:32px 0;
+  background:linear-gradient(90deg,var(--accent) 0%,transparent 100%)}
+.l-label{display:block;font-family:var(--fm);font-size:9px;
+  letter-spacing:.28em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+.l-field{position:relative;margin-bottom:20px}
+.l-field::after{content:'';position:absolute;bottom:0;left:0;width:0;height:2px;
+  background:var(--accent);transition:width .3s ease}
+.l-field:focus-within::after{width:100%}
+.l-input{width:100%;background:transparent;border:none;
+  border-bottom:1px solid var(--border);padding:8px 0;
+  color:var(--text);font-family:var(--fm);font-size:15px;
+  letter-spacing:.12em;outline:none;transition:border-color .25s}
+.l-input:focus{border-bottom-color:rgba(124,58,237,.5)}
+.l-btn{width:100%;padding:13px 24px;background:transparent;
+  border:1px solid var(--accent);color:var(--primary);
+  font-family:var(--fu);font-size:11px;font-weight:700;
+  letter-spacing:.22em;text-transform:uppercase;cursor:pointer;
+  position:relative;overflow:hidden;transition:color .25s;margin-top:6px}
+.l-btn::before{content:'';position:absolute;inset:0;background:var(--accent);
+  transform:translateX(-100%);transition:transform .28s ease}
+.l-btn:hover{color:#fff}
+.l-btn:hover::before{transform:translateX(0)}
+.l-btn span{position:relative;z-index:1}
+.l-err{font-family:var(--fm);font-size:9px;color:var(--red);
+  letter-spacing:.15em;margin-top:12px;display:none}
+.l-err.on{display:block}
+.l-foot{margin-top:28px;font-family:var(--fm);font-size:9px;
+  color:var(--dim);letter-spacing:.18em;text-transform:uppercase}
 
-        .tab-content { display: none; }
-        .tab-content.active { display: block; animation: fadeIn .25s ease; }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(6px); }
-            to   { opacity: 1; transform: translateY(0); }
-        }
+/* ── DASHBOARD SHELL ─────────────────────────────────────── */
+#dash{display:flex;height:100vh;opacity:0;transition:opacity .4s ease .15s;position:relative;z-index:1}
+#dash.on{opacity:1}
 
-        .skeleton {
-            background: linear-gradient(90deg, #1f1f26 25%, #2a2931 50%, #1f1f26 75%);
-            background-size: 200% 100%;
-            animation: shimmer 1.5s infinite;
-            border-radius: .5rem;
-        }
-        @keyframes shimmer {
-            0%   { background-position: 200% 0; }
-            100% { background-position: -200% 0; }
-        }
+/* sidebar */
+.sidebar{width:var(--sw);height:100vh;position:fixed;left:0;top:0;
+  background:var(--surface);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;z-index:100}
+.sb-logo{padding:22px 20px 18px;border-bottom:1px solid var(--border)}
+.sb-logo-title{font-family:var(--fd);font-weight:800;font-size:1.05rem;
+  letter-spacing:.14em;color:var(--primary);text-transform:uppercase}
+.sb-logo-sub{font-family:var(--fm);font-size:8px;letter-spacing:.32em;
+  color:var(--dim);text-transform:uppercase;margin-top:4px}
+.sb-nav{flex:1;padding:14px 10px}
+.sb-section{margin-bottom:6px}
+.sb-section-lbl{font-family:var(--fm);font-size:8px;letter-spacing:.28em;
+  color:var(--dim);text-transform:uppercase;padding:6px 10px 4px}
+.nav-link{display:flex;align-items:center;gap:10px;padding:8px 10px;
+  border-radius:6px;color:var(--muted);text-decoration:none;
+  font-family:var(--fu);font-size:11px;font-weight:600;
+  letter-spacing:.06em;text-transform:uppercase;cursor:pointer;
+  transition:all .15s;border-left:2px solid transparent;margin-left:-2px;
+  user-select:none}
+.nav-link:hover{color:var(--text);background:var(--adim)}
+.nav-link.active{color:var(--primary);border-left-color:var(--accent);background:var(--adim)}
+.nav-icon{width:16px;height:16px;flex-shrink:0;opacity:.65}
+.nav-link.active .nav-icon{opacity:1}
+.sb-foot{padding:14px 18px;border-top:1px solid var(--border);display:flex;
+  flex-direction:column;gap:10px}
+.sb-status{display:flex;align-items:center;gap:8px;font-family:var(--fm);
+  font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
+.status-dot{width:6px;height:6px;border-radius:50%;background:var(--green);
+  box-shadow:0 0 8px var(--green);animation:blink 2s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
+.sb-updated{font-family:var(--fm);font-size:8px;color:var(--dim);letter-spacing:.1em}
+.sb-logout{display:flex;align-items:center;gap:8px;padding:6px 8px;
+  border-radius:6px;color:var(--dim);font-family:var(--fu);font-size:10px;
+  font-weight:600;letter-spacing:.1em;text-transform:uppercase;
+  cursor:pointer;background:none;border:none;transition:all .15s}
+.sb-logout:hover{color:var(--red);background:rgba(248,113,113,.07)}
 
-        .filter-btn { transition: all .15s; }
-        .filter-btn.active {
-            background: #7c3aed;
-            color: white;
-        }
+/* header */
+.hdr{position:fixed;top:0;left:var(--sw);right:0;height:var(--hh);
+  background:rgba(13,13,20,.88);backdrop-filter:blur(16px);
+  border-bottom:1px solid var(--border);display:flex;
+  align-items:center;padding:0 28px;z-index:50;gap:16px}
+.hdr-idle{display:flex;align-items:center;gap:8px;color:var(--dim);
+  font-family:var(--fm);font-size:9px;letter-spacing:.2em;text-transform:uppercase}
+.hdr-batch{display:none;flex:1;max-width:380px;flex-direction:column;gap:3px}
+.hdr-batch.on{display:flex}
+.hdr-batch-top{display:flex;justify-content:space-between}
+.hdr-track{font-family:var(--fm);font-size:9px;font-weight:500;
+  color:var(--primary);letter-spacing:.05em;text-transform:uppercase;
+  max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hdr-pct{font-family:var(--fm);font-size:9px;color:var(--muted)}
+.hdr-bar-bg{height:2px;background:var(--s3);border-radius:1px;overflow:hidden}
+.hdr-bar-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--primary));
+  transition:width .3s;box-shadow:0 0 8px var(--aglow)}
+.hdr-meta{font-family:var(--fm);font-size:8px;color:var(--dim);letter-spacing:.08em}
 
-        .period-btn { transition: all .15s; }
-        .period-btn.active {
-            background: #7c3aed;
-            color: white;
-        }
+/* main */
+.main{flex:1;margin-left:var(--sw);margin-top:var(--hh);overflow-y:auto}
+.inner{padding:30px 34px;max-width:1360px;margin:0 auto}
 
-        tr.loading td { opacity: .4; }
-    </style>
+/* tabs */
+.tab{display:none}
+.tab.on{display:block;animation:fadeUp .22s ease}
+@keyframes fadeUp{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}
+
+/* page heading */
+.pg-head{margin-bottom:28px}
+.pg-title{font-family:var(--fd);font-weight:900;font-size:2.9rem;
+  letter-spacing:.04em;line-height:1;color:var(--text);text-transform:uppercase}
+.pg-sub{font-family:var(--fm);font-size:9px;color:var(--dim);
+  letter-spacing:.2em;text-transform:uppercase;margin-top:8px}
+
+/* metrics strip */
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));
+  gap:1px;background:var(--border);border:1px solid var(--border);
+  border-radius:var(--r);overflow:hidden;margin-bottom:24px}
+.mc{background:var(--surface);padding:22px 22px 18px;
+  position:relative;overflow:hidden;transition:background .18s}
+.mc:hover{background:var(--s2)}
+.mc::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;
+  background:transparent;transition:background .2s}
+.mc:hover::before{background:linear-gradient(90deg,var(--accent),transparent)}
+.mc-lbl{font-family:var(--fm);font-size:8px;letter-spacing:.28em;
+  text-transform:uppercase;color:var(--muted);margin-bottom:8px;
+  display:flex;align-items:center;gap:8px}
+.mc-lbl::after{content:'';flex:1;height:1px;background:var(--border)}
+.mc-val{font-family:var(--fd);font-weight:700;font-size:3.1rem;
+  line-height:1;color:var(--text);letter-spacing:-.01em}
+.mc-hint{font-family:var(--fm);font-size:8px;color:var(--dim);
+  letter-spacing:.14em;text-transform:uppercase;margin-top:5px}
+
+/* layout grid */
+.lg{display:grid;grid-template-columns:1fr 280px;gap:18px;align-items:start}
+.lg-main{display:flex;flex-direction:column;gap:18px}
+.lg-aside{display:flex;flex-direction:column;gap:18px}
+
+/* card */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.card-hdr{padding:18px 22px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
+.card-title{font-family:var(--fu);font-size:11px;font-weight:700;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--text)}
+.card-sub{font-family:var(--fm);font-size:9px;color:var(--dim);
+  letter-spacing:.1em;margin-top:2px}
+.card-body{padding:22px}
+
+/* period toggle */
+.ptog{display:flex;gap:3px;background:var(--s2);padding:3px;border-radius:6px}
+.ptog-btn{padding:4px 10px;border-radius:4px;font-family:var(--fm);font-size:8px;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--dim);
+  cursor:pointer;background:none;border:none;transition:all .15s}
+.ptog-btn.on{background:var(--accent);color:#fff}
+.ptog-btn:not(.on):hover{color:var(--muted)}
+
+/* chart */
+.chart-wrap{position:relative;height:170px;margin-bottom:12px}
+.chart-svg{width:100%;height:100%}
+.x-labels{display:flex;justify-content:space-between;padding:0 2px}
+.x-lbl{font-family:var(--fm);font-size:8px;color:var(--dim);
+  letter-spacing:.1em;text-transform:uppercase}
+
+/* table */
+.dt{width:100%;border-collapse:collapse;font-family:var(--fm);font-size:11px}
+.dt thead tr{border-bottom:1px solid var(--border)}
+.dt th{padding:9px 14px;text-align:left;font-size:8px;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--dim);font-weight:500;background:var(--s2)}
+.dt th:last-child{text-align:right}
+.dt td{padding:10px 14px;color:var(--muted);border-bottom:1px solid rgba(74,68,85,.18);vertical-align:middle}
+.dt tbody tr:last-child td{border-bottom:none}
+.dt tbody tr:hover td{background:var(--s2);color:var(--text)}
+.dt .act{color:var(--primary)}
+.dt .usr{color:var(--text);font-weight:500}
+.dt td:last-child{text-align:right}
+.lm-wrap{padding:11px 14px;text-align:center;border-top:1px solid var(--border);background:var(--s2)}
+.lm-btn{font-family:var(--fm);font-size:9px;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--dim);background:none;border:none;cursor:pointer;transition:color .15s}
+.lm-btn:hover{color:var(--primary)}
+.lm-btn:disabled{opacity:.35;cursor:default}
+
+/* badge */
+.bdg{display:inline-flex;align-items:center;gap:5px;padding:2px 7px;
+  border-radius:3px;font-family:var(--fm);font-size:8px;
+  letter-spacing:.14em;text-transform:uppercase;font-weight:500}
+.bdg-ok {background:rgba(74,222,128,.07);color:var(--green)}
+.bdg-err{background:rgba(248,113,113,.07);color:var(--red)}
+.bdg-stp{background:rgba(251,146,60,.07);color:var(--orange)}
+.bdg-dot{width:4px;height:4px;border-radius:50%;background:currentColor}
+
+/* stats aside */
+.slist{display:flex;flex-direction:column}
+.srow{display:flex;justify-content:space-between;align-items:center;
+  padding:11px 0;border-bottom:1px solid rgba(74,68,85,.18)}
+.srow:last-child{border-bottom:none}
+.skey{font-family:var(--fm);font-size:8.5px;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--dim)}
+.sval{font-family:var(--fd);font-weight:700;font-size:1.15rem;color:var(--primary)}
+
+/* platform bars */
+.plat-row{margin-bottom:14px}
+.plat-hdr{display:flex;justify-content:space-between;margin-bottom:6px}
+.plat-name{font-family:var(--fm);font-size:9px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--muted)}
+.plat-pct{font-family:var(--fd);font-weight:700;font-size:1rem;color:var(--primary)}
+.plat-bg{height:3px;background:var(--s3);border-radius:2px;overflow:hidden}
+.plat-fill{height:100%;border-radius:2px;transition:width .8s cubic-bezier(.4,0,.2,1)}
+.plat-sc{background:var(--orange);box-shadow:0 0 8px rgba(251,146,60,.35)}
+.plat-yt{background:var(--red);box-shadow:0 0 8px rgba(248,113,113,.35)}
+
+/* account status */
+.acc-status{display:flex;align-items:center;gap:8px;padding:9px 12px;
+  background:rgba(74,222,128,.04);border:1px solid rgba(74,222,128,.1);
+  border-radius:6px;margin-bottom:14px}
+.acc-dot{width:7px;height:7px;border-radius:50%;background:var(--green);
+  box-shadow:0 0 10px var(--green)}
+.acc-txt{font-family:var(--fm);font-size:9px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--green)}
+.acc-note{font-family:var(--fm);font-size:8.5px;color:var(--dim);
+  letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px}
+.acc-link{display:inline-flex;align-items:center;gap:4px;font-family:var(--fm);
+  font-size:9px;color:var(--orange);letter-spacing:.1em;
+  text-decoration:none;margin-top:10px;transition:opacity .15s}
+.acc-link:hover{opacity:.7}
+
+/* log filters */
+.filt-wrap{display:flex;gap:5px;flex-wrap:wrap}
+.filt-btn{padding:4px 11px;border-radius:4px;font-family:var(--fm);font-size:8.5px;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--dim);
+  background:var(--s2);border:1px solid var(--border);cursor:pointer;transition:all .15s}
+.filt-btn.on{background:var(--adim);border-color:var(--accent);color:var(--primary)}
+.filt-btn:not(.on):hover{color:var(--muted);border-color:var(--dim)}
+
+/* empty */
+.no-data{padding:32px;text-align:center;font-family:var(--fm);font-size:9px;
+  color:var(--dim);letter-spacing:.2em;text-transform:uppercase}
+
+/* stagger animation for metrics */
+.mc:nth-child(1){animation-delay:.05s}
+.mc:nth-child(2){animation-delay:.1s}
+.mc:nth-child(3){animation-delay:.15s}
+.mc:nth-child(4){animation-delay:.2s}
+.mc:nth-child(5){animation-delay:.25s}
+
+/* radial bg glow */
+body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:
+    radial-gradient(ellipse 700px 500px at 0% 100%,rgba(124,58,237,.08),transparent 70%),
+    radial-gradient(ellipse 500px 350px at 100% 0%,rgba(124,58,237,.05),transparent 65%)}
+
+/* sparklines */
+.sparkline{display:block;width:100%;height:26px;margin-top:10px}
+
+/* platform dot in table actions */
+.act-dot{display:inline-block;width:5px;height:5px;border-radius:1px;
+  margin-right:7px;vertical-align:middle;position:relative;top:-1px}
+.dot-ym{background:#7c3aed;box-shadow:0 0 4px rgba(124,58,237,.6)}
+.dot-sp{background:#4ade80;box-shadow:0 0 4px rgba(74,222,128,.5)}
+.dot-sc{background:#fb923c;box-shadow:0 0 4px rgba(251,146,60,.5)}
+
+/* table row hover — left accent by platform */
+.dt tbody tr{border-left:2px solid transparent;transition:border-color .15s}
+.dt tbody tr:hover td{background:var(--s2);color:var(--text)}
+.dt tbody tr[data-plt="ym"]:hover     {border-left-color:#7c3aed}
+.dt tbody tr[data-plt="spotify"]:hover{border-left-color:#4ade80}
+.dt tbody tr[data-plt="sc"]:hover     {border-left-color:#fb923c}
+
+/* chart tooltip */
+#chart-tip{position:fixed;z-index:300;pointer-events:none;
+  background:var(--s3);border:1px solid var(--border);border-radius:8px;
+  padding:10px 14px;display:none;min-width:130px;
+  box-shadow:0 8px 28px rgba(0,0,0,.5),0 0 0 1px rgba(124,58,237,.1)}
+#chart-tip.on{display:block}
+.tip-date{font-family:var(--fm);font-size:8.5px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--muted);margin-bottom:5px}
+.tip-val{font-family:var(--fd);font-weight:700;font-size:1.6rem;
+  line-height:1;color:var(--primary)}
+.tip-unit{font-family:var(--fm);font-size:8px;color:var(--dim);
+  letter-spacing:.1em;margin-top:3px}
+
+/* sidebar live badge */
+.nav-live{display:none;width:6px;height:6px;border-radius:50%;
+  background:var(--primary);box-shadow:0 0 6px var(--primary);
+  animation:blink 1.5s infinite;margin-left:auto;flex-shrink:0}
+.nav-live.on{display:block}
+</style>
 </head>
-<body class="font-body">
-    <div id="tsparticles"></div>
+<body>
 
-    <div class="layout-wrapper flex min-h-screen">
-        <!-- Sidebar -->
-        <aside class="w-64 bg-[#0e0e15]/90 border-r border-outline/10 flex flex-col fixed h-full z-50 backdrop-blur-md">
-            <div class="p-8">
-                <h1 class="text-xl font-black text-primary font-headline tracking-widest uppercase glow-text">ZGRNK Music</h1>
-                <p class="text-[10px] text-on-surface-variant font-bold tracking-[0.3em] uppercase mt-1 opacity-50">Admin Dashboard</p>
-            </div>
-
-            <nav class="flex-1 px-4 space-y-2">
-                <a href="#" data-tab="ym" class="sidebar-link flex items-center gap-4 px-4 py-3 text-on-surface-variant hover:bg-surface-container/50 rounded-xl transition-all group">
-                    <span class="material-symbols-outlined opacity-60 group-hover:opacity-100">library_music</span>
-                    <span class="text-xs font-bold font-headline tracking-widest uppercase">Yandex Music</span>
-                </a>
-                <a href="#" data-tab="spotify" class="sidebar-link flex items-center gap-4 px-4 py-3 text-on-surface-variant hover:bg-surface-container/50 rounded-xl transition-all group">
-                    <span class="material-symbols-outlined opacity-60 group-hover:opacity-100">podcasts</span>
-                    <span class="text-xs font-bold font-headline tracking-widest uppercase">Spotify</span>
-                </a>
-                <a href="#" data-tab="sc" class="sidebar-link flex items-center gap-4 px-4 py-3 text-on-surface-variant hover:bg-surface-container/50 rounded-xl transition-all group">
-                    <span class="material-symbols-outlined opacity-60 group-hover:opacity-100">subscriptions</span>
-                    <span class="text-xs font-bold font-headline tracking-widest uppercase">SoundCloud / YT</span>
-                </a>
-                <a href="#" data-tab="log" class="sidebar-link flex items-center gap-4 px-4 py-3 text-on-surface-variant hover:bg-surface-container/50 rounded-xl transition-all group">
-                    <span class="material-symbols-outlined opacity-60 group-hover:opacity-100">list_alt</span>
-                    <span class="text-xs font-bold font-headline tracking-widest uppercase">Event Log</span>
-                </a>
-            </nav>
-
-            <div class="p-6 space-y-4">
-                <div class="flex items-center gap-3">
-                    <span class="w-2 h-2 rounded-full bg-green-400 shadow-[0_0_6px_#4ade80] animate-pulse"></span>
-                    <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Bot Online</span>
-                </div>
-                <p id="last-updated" class="text-[9px] text-outline tracking-wide"></p>
-                <a href="/dashboard/logout" class="flex items-center gap-3 px-4 py-2.5 rounded-xl text-on-surface-variant hover:bg-red-500/10 hover:text-red-400 transition-all group">
-                    <span class="material-symbols-outlined text-base opacity-60 group-hover:opacity-100">logout</span>
-                    <span class="text-[10px] font-bold uppercase tracking-widest">Log Out</span>
-                </a>
-            </div>
-        </aside>
-
-        <!-- Main -->
-        <main class="flex-1 ml-64">
-            <!-- Header: batch progress -->
-            <header class="h-16 border-b border-outline/10 bg-background/80 backdrop-blur-md flex items-center px-8 sticky top-0 z-40 gap-6">
-                <div id="header-idle" class="flex items-center gap-2 text-on-surface-variant">
-                    <span class="material-symbols-outlined text-base opacity-40">download</span>
-                    <span class="text-[10px] font-bold uppercase tracking-widest opacity-40">No active downloads</span>
-                </div>
-                <div id="header-batch" class="hidden flex-1 flex flex-col justify-center max-w-sm">
-                    <div class="flex justify-between items-end mb-1">
-                        <span id="batch-track" class="text-[9px] font-bold text-primary uppercase tracking-tighter truncate max-w-[200px]"></span>
-                        <span id="batch-pct" class="text-[9px] font-bold text-on-surface-variant ml-2 shrink-0"></span>
-                    </div>
-                    <div class="h-1 w-full bg-surface-container rounded-full overflow-hidden">
-                        <div id="batch-bar" class="h-full bg-primary-container transition-all progress-glow" style="width:0%"></div>
-                    </div>
-                    <span id="batch-meta" class="text-[9px] text-on-surface-variant mt-1"></span>
-                </div>
-            </header>
-
-            <div class="p-10 max-w-7xl mx-auto">
-
-                <!-- ════════════════════════════════ -->
-                <!-- TAB: YANDEX MUSIC               -->
-                <!-- ════════════════════════════════ -->
-                <div id="tab-ym" class="tab-content">
-                    <div class="mb-10">
-                        <h2 class="text-4xl font-extrabold font-headline tracking-tight text-on-surface glow-text">Yandex Music</h2>
-                        <p class="text-on-surface-variant mt-2 text-lg">Track list exports — titles &amp; artists to .txt/.csv, not audio files.</p>
-                    </div>
-
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-                        <div class="glass-card p-8 relative overflow-hidden group">
-                            <div class="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                                <span class="material-symbols-outlined text-9xl">library_music</span>
-                            </div>
-                            <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-[0.2em] mb-4">Titles Exported</p>
-                            <div class="flex items-baseline gap-3">
-                                <span id="ym-total" class="text-5xl font-light font-headline skeleton w-24 h-10 inline-block">&nbsp;</span>
-                            </div>
-                            <p class="text-[10px] text-on-surface-variant/50 mt-3 tracking-wide">track names in .txt/.csv</p>
-                        </div>
-                        <div class="glass-card p-8 relative overflow-hidden group">
-                            <div class="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                                <span class="material-symbols-outlined text-9xl">queue_music</span>
-                            </div>
-                            <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-[0.2em] mb-4">Export Sessions</p>
-                            <div class="flex items-baseline gap-3">
-                                <span id="ym-events" class="text-5xl font-light font-headline skeleton w-20 h-10 inline-block">&nbsp;</span>
-                            </div>
-                        </div>
-                        <div class="glass-card p-8 relative overflow-hidden group">
-                            <div class="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                                <span class="material-symbols-outlined text-9xl">today</span>
-                            </div>
-                            <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-[0.2em] mb-4">This Week</p>
-                            <div class="flex flex-col gap-2">
-                                <span id="ym-week" class="text-5xl font-light font-headline skeleton w-20 h-10 inline-block">&nbsp;</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                        <div class="lg:col-span-8 space-y-8">
-                            <div class="glass-card p-8">
-                                <div class="flex justify-between items-center mb-10">
-                                    <div>
-                                        <h3 class="text-xl font-bold font-headline">Export Velocity</h3>
-                                        <p class="text-sm text-on-surface-variant">Tracks exported per day</p>
-                                    </div>
-                                    <div class="flex gap-2">
-                                        <button class="period-btn active px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest" data-tab-src="ym" data-days="7">Week</button>
-                                        <button class="period-btn px-3 py-1.5 rounded-lg text-[10px] font-bold text-on-surface-variant uppercase tracking-widest hover:bg-surface-container transition-colors" data-tab-src="ym" data-days="30">Month</button>
-                                    </div>
-                                </div>
-                                <div id="chart-ym" class="h-64 flex items-end gap-2 px-2"></div>
-                                <div id="chart-ym-labels" class="flex justify-between mt-4 px-2 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest"></div>
-                            </div>
-
-                            <div class="glass-card overflow-hidden">
-                                <div class="p-8 border-b border-outline/10">
-                                    <h3 class="text-xl font-bold font-headline">Recent Exports</h3>
-                                </div>
-                                <div class="overflow-x-auto">
-                                    <table class="w-full text-left">
-                                        <thead>
-                                            <tr class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest bg-surface-container/30">
-                                                <th class="px-8 py-4">Time (MSK)</th>
-                                                <th class="px-8 py-4">User</th>
-                                                <th class="px-8 py-4">Action</th>
-                                                <th class="px-8 py-4">Tracks</th>
-                                                <th class="px-8 py-4 text-right">Result</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody id="tbl-ym" class="divide-y divide-outline/5"></tbody>
-                                    </table>
-                                </div>
-                                <div class="p-4 flex justify-center bg-surface-container/10">
-                                    <button id="more-ym" class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest hover:text-primary transition-colors">Load More</button>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="lg:col-span-4 space-y-6">
-                            <div class="glass-card p-8 relative overflow-hidden">
-                                <div class="absolute inset-0 bg-gradient-to-br from-primary-container/10 to-transparent pointer-events-none"></div>
-                                <h4 class="text-xs font-bold font-headline uppercase tracking-[0.2em] mb-6">All-time Stats</h4>
-                                <div class="space-y-5">
-                                    <div class="flex justify-between items-center">
-                                        <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Total tracks</span>
-                                        <span id="ym-stat-total" class="text-sm font-bold text-primary">—</span>
-                                    </div>
-                                    <div class="flex justify-between items-center">
-                                        <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Sessions</span>
-                                        <span id="ym-stat-events" class="text-sm font-bold text-primary">—</span>
-                                    </div>
-                                    <div class="flex justify-between items-center">
-                                        <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Unique users</span>
-                                        <span id="ym-stat-users" class="text-sm font-bold text-primary">—</span>
-                                    </div>
-                                    <div class="flex justify-between items-center">
-                                        <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Avg / session</span>
-                                        <span id="ym-stat-avg" class="text-sm font-bold text-primary">—</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- ════════════════════════════════ -->
-                <!-- TAB: SPOTIFY                    -->
-                <!-- ════════════════════════════════ -->
-                <div id="tab-spotify" class="tab-content">
-                    <div class="mb-10">
-                        <h2 class="text-4xl font-extrabold font-headline tracking-tight text-on-surface glow-text">Spotify</h2>
-                        <p class="text-on-surface-variant mt-2 text-lg">Export statistics.</p>
-                    </div>
-
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-                        <div class="glass-card p-8 relative overflow-hidden group">
-                            <div class="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                                <span class="material-symbols-outlined text-9xl">favorite</span>
-                            </div>
-                            <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-[0.2em] mb-4">Total Exported</p>
-                            <span id="sp-total" class="text-5xl font-light font-headline skeleton w-24 h-10 inline-block">&nbsp;</span>
-                        </div>
-                        <div class="glass-card p-8 relative overflow-hidden group">
-                            <div class="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                                <span class="material-symbols-outlined text-9xl">playlist_play</span>
-                            </div>
-                            <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-[0.2em] mb-4">Export Sessions</p>
-                            <span id="sp-events" class="text-5xl font-light font-headline skeleton w-20 h-10 inline-block">&nbsp;</span>
-                        </div>
-                        <div class="glass-card p-8 relative overflow-hidden group">
-                            <div class="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                                <span class="material-symbols-outlined text-9xl">sync</span>
-                            </div>
-                            <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-[0.2em] mb-4">This Week</p>
-                            <span id="sp-week" class="text-5xl font-light font-headline skeleton w-20 h-10 inline-block">&nbsp;</span>
-                        </div>
-                    </div>
-
-                    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                        <div class="lg:col-span-8 space-y-8">
-                            <div class="glass-card p-8">
-                                <div class="flex justify-between items-center mb-10">
-                                    <div>
-                                        <h3 class="text-xl font-bold font-headline">Sync Activity</h3>
-                                        <p class="text-sm text-on-surface-variant">Tracks exported per day</p>
-                                    </div>
-                                    <div class="flex gap-2">
-                                        <button class="period-btn active px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest" data-tab-src="spotify" data-days="7">Week</button>
-                                        <button class="period-btn px-3 py-1.5 rounded-lg text-[10px] font-bold text-on-surface-variant uppercase tracking-widest hover:bg-surface-container transition-colors" data-tab-src="spotify" data-days="30">Month</button>
-                                    </div>
-                                </div>
-                                <div id="chart-spotify" class="h-64 flex items-end gap-2 px-2"></div>
-                                <div id="chart-spotify-labels" class="flex justify-between mt-4 px-2 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest"></div>
-                            </div>
-
-                            <div class="glass-card overflow-hidden">
-                                <div class="p-8 border-b border-outline/10">
-                                    <h3 class="text-xl font-bold font-headline">Recent Exports</h3>
-                                </div>
-                                <div class="overflow-x-auto">
-                                    <table class="w-full text-left">
-                                        <thead>
-                                            <tr class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest bg-surface-container/30">
-                                                <th class="px-8 py-4">Time (MSK)</th>
-                                                <th class="px-8 py-4">User</th>
-                                                <th class="px-8 py-4">Action</th>
-                                                <th class="px-8 py-4">Tracks</th>
-                                                <th class="px-8 py-4 text-right">Result</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody id="tbl-spotify" class="divide-y divide-outline/5"></tbody>
-                                    </table>
-                                </div>
-                                <div class="p-4 flex justify-center bg-surface-container/10">
-                                    <button id="more-spotify" class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest hover:text-primary transition-colors">Load More</button>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="lg:col-span-4 space-y-6">
-                            <div class="glass-card p-8 relative overflow-hidden">
-                                <div class="absolute inset-0 bg-gradient-to-br from-green-500/5 to-transparent pointer-events-none"></div>
-                                <h4 class="text-xs font-bold font-headline uppercase tracking-[0.2em] mb-5">Account Status</h4>
-                                <div class="flex items-center gap-3 mb-3">
-                                    <span class="w-3 h-3 rounded-full bg-green-400 shadow-[0_0_8px_#4ade80]"></span>
-                                    <span class="text-sm font-bold text-green-400">Authorized</span>
-                                </div>
-                                <p class="text-[10px] text-on-surface-variant uppercase tracking-widest mb-1">Development Mode</p>
-                                <p class="text-[10px] text-on-surface-variant uppercase tracking-widest mb-4">Owner access only</p>
-                                <a href="https://developer.spotify.com/dashboard" target="_blank"
-                                   class="text-[10px] font-bold text-orange-400 uppercase tracking-widest flex items-center gap-1 group">
-                                    Request Extended Quota
-                                    <span class="material-symbols-outlined text-sm group-hover:translate-x-1 transition-transform">arrow_forward</span>
-                                </a>
-                            </div>
-                            <div class="glass-card p-8 relative overflow-hidden">
-                                <div class="absolute inset-0 bg-gradient-to-br from-primary-container/10 to-transparent pointer-events-none"></div>
-                                <h4 class="text-xs font-bold font-headline uppercase tracking-[0.2em] mb-6">All-time Stats</h4>
-                                <div class="space-y-5">
-                                    <div class="flex justify-between items-center">
-                                        <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Total tracks</span>
-                                        <span id="sp-stat-total" class="text-sm font-bold text-primary">—</span>
-                                    </div>
-                                    <div class="flex justify-between items-center">
-                                        <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Sessions</span>
-                                        <span id="sp-stat-events" class="text-sm font-bold text-primary">—</span>
-                                    </div>
-                                    <div class="flex justify-between items-center">
-                                        <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Avg / session</span>
-                                        <span id="sp-stat-avg" class="text-sm font-bold text-primary">—</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- ════════════════════════════════ -->
-                <!-- TAB: SOUNDCLOUD / YOUTUBE       -->
-                <!-- ════════════════════════════════ -->
-                <div id="tab-sc" class="tab-content">
-                    <div class="mb-10">
-                        <h2 class="text-4xl font-extrabold font-headline tracking-tight text-on-surface glow-text">SoundCloud / YouTube</h2>
-                        <p class="text-on-surface-variant mt-2 text-lg">Download statistics.</p>
-                    </div>
-
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-                        <div class="glass-card p-8 relative overflow-hidden group">
-                            <div class="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                                <span class="material-symbols-outlined text-9xl">cloud_download</span>
-                            </div>
-                            <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-[0.2em] mb-4">Total Downloaded</p>
-                            <span id="sc-total" class="text-5xl font-light font-headline skeleton w-24 h-10 inline-block">&nbsp;</span>
-                        </div>
-                        <div class="glass-card p-8 relative overflow-hidden group">
-                            <div class="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                                <span class="material-symbols-outlined text-9xl">sensors</span>
-                            </div>
-                            <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-[0.2em] mb-4">Active Batches</p>
-                            <div class="flex items-baseline gap-3">
-                                <span id="sc-active" class="text-5xl font-light font-headline skeleton w-12 h-10 inline-block">&nbsp;</span>
-                                <div id="sc-active-indicator" class="hidden flex items-center gap-2">
-                                    <span class="w-2 h-2 rounded-full bg-primary animate-pulse shadow-[0_0_8px_#d2bbff]"></span>
-                                    <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Running</span>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="glass-card p-8 relative overflow-hidden group">
-                            <div class="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                                <span class="material-symbols-outlined text-9xl">download_done</span>
-                            </div>
-                            <p class="text-[10px] font-bold text-on-surface-variant uppercase tracking-[0.2em] mb-4">This Week</p>
-                            <span id="sc-week" class="text-5xl font-light font-headline skeleton w-20 h-10 inline-block">&nbsp;</span>
-                        </div>
-                    </div>
-
-                    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                        <div class="lg:col-span-8 space-y-8">
-                            <div class="glass-card p-8">
-                                <div class="flex justify-between items-center mb-10">
-                                    <div>
-                                        <h3 class="text-xl font-bold font-headline">Download Velocity</h3>
-                                        <p class="text-sm text-on-surface-variant">Tracks downloaded per day</p>
-                                    </div>
-                                    <div class="flex gap-2">
-                                        <button class="period-btn active px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest" data-tab-src="sc" data-days="7">Week</button>
-                                        <button class="period-btn px-3 py-1.5 rounded-lg text-[10px] font-bold text-on-surface-variant uppercase tracking-widest hover:bg-surface-container transition-colors" data-tab-src="sc" data-days="30">Month</button>
-                                    </div>
-                                </div>
-                                <div id="chart-sc" class="h-64 flex items-end gap-2 px-2"></div>
-                                <div id="chart-sc-labels" class="flex justify-between mt-4 px-2 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest"></div>
-                            </div>
-
-                            <div class="glass-card overflow-hidden">
-                                <div class="p-8 border-b border-outline/10">
-                                    <h3 class="text-xl font-bold font-headline">Recent Downloads</h3>
-                                </div>
-                                <div class="overflow-x-auto">
-                                    <table class="w-full text-left">
-                                        <thead>
-                                            <tr class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest bg-surface-container/30">
-                                                <th class="px-8 py-4">Time (MSK)</th>
-                                                <th class="px-8 py-4">User</th>
-                                                <th class="px-8 py-4">Action</th>
-                                                <th class="px-8 py-4">Tracks</th>
-                                                <th class="px-8 py-4 text-right">Result</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody id="tbl-sc" class="divide-y divide-outline/5"></tbody>
-                                    </table>
-                                </div>
-                                <div class="p-4 flex justify-center bg-surface-container/10">
-                                    <button id="more-sc" class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest hover:text-primary transition-colors">Load More</button>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="lg:col-span-4 space-y-6">
-                            <div class="glass-card p-8">
-                                <h4 class="text-xs font-bold font-headline uppercase tracking-[0.2em] mb-6">Platform Split</h4>
-                                <div class="space-y-5">
-                                    <div>
-                                        <div class="flex justify-between text-[10px] font-bold mb-2 uppercase tracking-widest">
-                                            <span>SoundCloud</span>
-                                            <span id="sc-pct-sc" class="text-primary">—</span>
-                                        </div>
-                                        <div class="h-2 w-full bg-surface-container rounded-full overflow-hidden">
-                                            <div id="sc-bar-sc" class="h-full bg-orange-500 transition-all duration-700 shadow-[0_0_8px_rgba(249,115,22,.4)]" style="width:0%"></div>
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <div class="flex justify-between text-[10px] font-bold mb-2 uppercase tracking-widest">
-                                            <span>YouTube</span>
-                                            <span id="sc-pct-yt" class="text-primary">—</span>
-                                        </div>
-                                        <div class="h-2 w-full bg-surface-container rounded-full overflow-hidden">
-                                            <div id="sc-bar-yt" class="h-full bg-red-600 transition-all duration-700 shadow-[0_0_8px_rgba(220,38,38,.4)]" style="width:0%"></div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="glass-card p-8 relative overflow-hidden">
-                                <div class="absolute inset-0 bg-gradient-to-br from-primary-container/10 to-transparent pointer-events-none"></div>
-                                <h4 class="text-xs font-bold font-headline uppercase tracking-[0.2em] mb-6">All-time Stats</h4>
-                                <div class="space-y-5">
-                                    <div class="flex justify-between items-center">
-                                        <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Total tracks</span>
-                                        <span id="sc-stat-total" class="text-sm font-bold text-primary">—</span>
-                                    </div>
-                                    <div class="flex justify-between items-center">
-                                        <span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">This week</span>
-                                        <span id="sc-stat-week" class="text-sm font-bold text-primary">—</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- ════════════════════════════════ -->
-                <!-- TAB: EVENT LOG                  -->
-                <!-- ════════════════════════════════ -->
-                <div id="tab-log" class="tab-content">
-                    <div class="mb-10">
-                        <h2 class="text-4xl font-extrabold font-headline tracking-tight text-on-surface glow-text">Event Log</h2>
-                        <p class="text-on-surface-variant mt-2 text-lg">Full activity feed.</p>
-                    </div>
-
-                    <div class="glass-card overflow-hidden">
-                        <div class="p-8 border-b border-outline/10 flex flex-wrap items-center justify-between gap-4">
-                            <h3 class="text-xl font-bold font-headline">All Events</h3>
-                            <div class="flex gap-2 flex-wrap">
-                                <button class="filter-btn active px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest" data-source="">All</button>
-                                <button class="filter-btn px-3 py-1.5 rounded-lg text-[10px] font-bold text-on-surface-variant uppercase tracking-widest hover:bg-surface-container transition-colors" data-source="ym">Yandex Music</button>
-                                <button class="filter-btn px-3 py-1.5 rounded-lg text-[10px] font-bold text-on-surface-variant uppercase tracking-widest hover:bg-surface-container transition-colors" data-source="spotify">Spotify</button>
-                                <button class="filter-btn px-3 py-1.5 rounded-lg text-[10px] font-bold text-on-surface-variant uppercase tracking-widest hover:bg-surface-container transition-colors" data-source="sc">SC / YT</button>
-                            </div>
-                        </div>
-                        <div class="overflow-x-auto">
-                            <table class="w-full text-left">
-                                <thead>
-                                    <tr class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest bg-surface-container/30">
-                                        <th class="px-8 py-4">Time (MSK)</th>
-                                        <th class="px-8 py-4">User</th>
-                                        <th class="px-8 py-4">Action</th>
-                                        <th class="px-8 py-4">Tracks</th>
-                                        <th class="px-8 py-4">Detail</th>
-                                        <th class="px-8 py-4 text-right">Result</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="tbl-log" class="divide-y divide-outline/5 font-mono text-xs"></tbody>
-                            </table>
-                        </div>
-                        <div class="p-4 flex justify-center bg-surface-container/10">
-                            <button id="more-log" class="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest hover:text-primary transition-colors">Load More</button>
-                        </div>
-                    </div>
-                </div>
-
-            </div><!-- /p-10 -->
-        </main>
+<div id="tsparticles"></div>
+<div id="chart-tip"><div class="tip-date"></div><div class="tip-val"></div><div class="tip-unit"></div></div>
+<!-- ═══ LOGIN ═══════════════════════════════════════════════ -->
+<div id="login-page">
+  <div class="lbox">
+    <div class="l-title">ZGRNK<br>MUSIC</div>
+    <div class="l-sub">Music Export Bot</div>
+    <div class="l-rule"></div>
+    <div class="l-field">
+      <label class="l-label" for="tok">Access Token</label>
+      <input class="l-input" id="tok" type="password" placeholder="••••••••••••" autocomplete="off" spellcheck="false">
     </div>
+    <button class="l-btn" id="l-btn"><span>Authenticate →</span></button>
+    <div class="l-err" id="l-err">Invalid access token</div>
+    <div class="l-foot">Admin access only &nbsp;·&nbsp; Rate limited</div>
+  </div>
+</div>
 
-    <script>
-    // ─── Auth: redirect on 401 ────────────────────────────────────────────
-    async function apiFetch(url) {
-        const r = await fetch(url);
-        if (r.status === 401) { window.location.href = '/dashboard/login'; return null; }
-        return r.ok ? r.json() : null;
-    }
+<!-- ═══ DASHBOARD ════════════════════════════════════════════ -->
+<div id="dash">
 
-    // ─── Tab switching ────────────────────────────────────────────────────
-    const tabLinks   = document.querySelectorAll('[data-tab]');
-    const tabPanels  = document.querySelectorAll('.tab-content');
-    const tabLoaded  = {};
-    const tabOffsets = { ym: 0, spotify: 0, sc: 0, log: 0 };
-    let   logFilter  = '';
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sb-logo">
+      <div class="sb-logo-title">ZGRNK Music</div>
+      <div class="sb-logo-sub">Admin Dashboard</div>
+    </div>
+    <nav class="sb-nav">
+      <div class="sb-section">
+        <div class="sb-section-lbl">Sources</div>
+        <a class="nav-link" data-tab="ym">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+            <path d="M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm12 0a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/>
+          </svg>
+          Yandex Music
+        </a>
+        <a class="nav-link" data-tab="spotify">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M8 11.5c3-1.5 7-1 9 1M7.5 14.5c3-1 7-.5 8.5 1M8.5 17.5c2-.5 5-.3 6.5.5"/>
+          </svg>
+          Spotify
+        </a>
+        <a class="nav-link" data-tab="sc">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+            <path d="M4 17v-2a4 4 0 0 1 4-4h12M15 7l5 4-5 4"/>
+          </svg>
+          SC / YouTube
+          <span class="nav-live" id="sc-live"></span>
+        </a>
+      </div>
+      <div class="sb-section" style="margin-top:14px">
+        <div class="sb-section-lbl">Logs</div>
+        <a class="nav-link" data-tab="log">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+            <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2M9 12h6m-6 4h4"/>
+          </svg>
+          Event Log
+        </a>
+      </div>
+    </nav>
+    <div class="sb-foot">
+      <div class="sb-status"><span class="status-dot"></span>Bot Online</div>
+      <div class="sb-updated" id="sb-updated">—</div>
+      <button class="sb-logout" id="logout-btn">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>
+        </svg>
+        Log Out
+      </button>
+    </div>
+  </aside>
 
-    const VALID_TABS = new Set(['ym', 'spotify', 'sc', 'log']);
+  <!-- Header -->
+  <header class="hdr">
+    <div class="hdr-idle" id="hdr-idle">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.4">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+      </svg>
+      No active downloads
+    </div>
+    <div class="hdr-batch" id="hdr-batch">
+      <div class="hdr-batch-top">
+        <span class="hdr-track" id="hdr-track"></span>
+        <span class="hdr-pct" id="hdr-pct"></span>
+      </div>
+      <div class="hdr-bar-bg"><div class="hdr-bar-fill" id="hdr-bar" style="width:0%"></div></div>
+      <span class="hdr-meta" id="hdr-meta"></span>
+    </div>
+  </header>
 
-    function switchTab(id) {
-        if (!VALID_TABS.has(id)) id = 'ym';
-        tabPanels.forEach(p => p.classList.remove('active'));
-        tabLinks.forEach(l => l.classList.remove('sidebar-active'));
-        document.getElementById('tab-' + id)?.classList.add('active');
-        document.querySelector(`[data-tab="${id}"]`)?.classList.add('sidebar-active');
-        if (window.location.hash !== '#' + id) {
-            history.replaceState(null, '', '#' + id);
-        }
-        if (!tabLoaded[id]) { loadTabData(id); tabLoaded[id] = true; }
-    }
+  <!-- Main -->
+  <main class="main">
+    <div class="inner">
 
-    tabLinks.forEach(l => l.addEventListener('click', e => {
-        e.preventDefault();
-        switchTab(l.dataset.tab);
-    }));
+      <!-- TAB: YANDEX MUSIC -->
+      <div class="tab" id="tab-ym">
+        <div class="pg-head">
+          <div class="pg-title">Yandex Music</div>
+          <div class="pg-sub">Track list exports — titles &amp; artists to .txt / .csv</div>
+        </div>
+        <div class="metrics">
+          <div class="mc">
+            <div class="mc-lbl">Titles Exported</div>
+            <div class="mc-val" id="ym-total">—</div>
+            <svg class="sparkline" id="spark-ym" viewBox="0 0 200 26" preserveAspectRatio="none"></svg>
+            <div class="mc-hint">track names in .txt/.csv</div>
+          </div>
+          <div class="mc">
+            <div class="mc-lbl">Export Sessions</div>
+            <div class="mc-val" id="ym-events">—</div>
+          </div>
+          <div class="mc">
+            <div class="mc-lbl">This Week</div>
+            <div class="mc-val" id="ym-week">—</div>
+          </div>
+        </div>
+        <div class="lg">
+          <div class="lg-main">
+            <div class="card">
+              <div class="card-hdr">
+                <div>
+                  <div class="card-title">Export Velocity</div>
+                  <div class="card-sub">Tracks exported per day</div>
+                </div>
+                <div class="ptog">
+                  <button class="ptog-btn on" data-src="ym" data-days="7">Week</button>
+                  <button class="ptog-btn" data-src="ym" data-days="30">Month</button>
+                </div>
+              </div>
+              <div class="card-body">
+                <div class="chart-wrap">
+                  <svg class="chart-svg" id="chart-ym" viewBox="0 0 800 170" preserveAspectRatio="none"></svg>
+                </div>
+                <div class="x-labels" id="xlbl-ym"></div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-hdr"><div class="card-title">Recent Exports</div></div>
+              <div style="overflow-x:auto">
+                <table class="dt">
+                  <thead><tr><th>Time (MSK)</th><th>User</th><th>Action</th><th>Tracks</th><th>Result</th></tr></thead>
+                  <tbody id="tbl-ym"></tbody>
+                </table>
+              </div>
+              <div class="lm-wrap"><button class="lm-btn" id="more-ym">Load More</button></div>
+            </div>
+          </div>
+          <div class="lg-aside">
+            <div class="card">
+              <div class="card-hdr"><div class="card-title">All-time Stats</div></div>
+              <div class="card-body">
+                <div class="slist">
+                  <div class="srow"><span class="skey">Total Tracks</span><span class="sval" id="ym-st-total">—</span></div>
+                  <div class="srow"><span class="skey">Sessions</span><span class="sval" id="ym-st-events">—</span></div>
+                  <div class="srow"><span class="skey">Unique Users</span><span class="sval" id="ym-st-users">—</span></div>
+                  <div class="srow"><span class="skey">Avg / Session</span><span class="sval" id="ym-st-avg">—</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
-    // ─── Helpers ──────────────────────────────────────────────────────────
-    function fmt(n) { return n == null ? '—' : n.toLocaleString(); }
+      <!-- TAB: SPOTIFY -->
+      <div class="tab" id="tab-spotify">
+        <div class="pg-head">
+          <div class="pg-title">Spotify</div>
+          <div class="pg-sub">Export statistics</div>
+        </div>
+        <div class="metrics">
+          <div class="mc"><div class="mc-lbl">Total Exported</div><div class="mc-val" id="sp-total">—</div><svg class="sparkline" id="spark-sp" viewBox="0 0 200 26" preserveAspectRatio="none"></svg></div>
+          <div class="mc"><div class="mc-lbl">Export Sessions</div><div class="mc-val" id="sp-events">—</div></div>
+          <div class="mc"><div class="mc-lbl">This Week</div><div class="mc-val" id="sp-week">—</div></div>
+        </div>
+        <div class="lg">
+          <div class="lg-main">
+            <div class="card">
+              <div class="card-hdr">
+                <div>
+                  <div class="card-title">Sync Activity</div>
+                  <div class="card-sub">Tracks exported per day</div>
+                </div>
+                <div class="ptog">
+                  <button class="ptog-btn on" data-src="spotify" data-days="7">Week</button>
+                  <button class="ptog-btn" data-src="spotify" data-days="30">Month</button>
+                </div>
+              </div>
+              <div class="card-body">
+                <div class="chart-wrap">
+                  <svg class="chart-svg" id="chart-spotify" viewBox="0 0 800 170" preserveAspectRatio="none"></svg>
+                </div>
+                <div class="x-labels" id="xlbl-spotify"></div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-hdr"><div class="card-title">Recent Exports</div></div>
+              <div style="overflow-x:auto">
+                <table class="dt">
+                  <thead><tr><th>Time (MSK)</th><th>User</th><th>Action</th><th>Tracks</th><th>Result</th></tr></thead>
+                  <tbody id="tbl-spotify"></tbody>
+                </table>
+              </div>
+              <div class="lm-wrap"><button class="lm-btn" id="more-spotify">Load More</button></div>
+            </div>
+          </div>
+          <div class="lg-aside">
+            <div class="card">
+              <div class="card-hdr"><div class="card-title">Account Status</div></div>
+              <div class="card-body">
+                <div class="acc-status"><div class="acc-dot"></div><span class="acc-txt">Authorized</span></div>
+                <div class="acc-note">Development Mode</div>
+                <div class="acc-note">Owner access only</div>
+                <a href="https://developer.spotify.com/dashboard" target="_blank" class="acc-link">Request Extended Quota →</a>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-hdr"><div class="card-title">All-time Stats</div></div>
+              <div class="card-body">
+                <div class="slist">
+                  <div class="srow"><span class="skey">Total Tracks</span><span class="sval" id="sp-st-total">—</span></div>
+                  <div class="srow"><span class="skey">Sessions</span><span class="sval" id="sp-st-events">—</span></div>
+                  <div class="srow"><span class="skey">Avg / Session</span><span class="sval" id="sp-st-avg">—</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
-    function fmtTs(iso) {
-        if (!iso) return '—';
-        const d = new Date(iso);
-        // Display in MSK (UTC+3)
-        return d.toLocaleString('ru-RU', {
-            timeZone: 'Europe/Moscow',
-            day: '2-digit', month: '2-digit',
-            hour: '2-digit', minute: '2-digit'
-        });
-    }
+      <!-- TAB: SC / YT -->
+      <div class="tab" id="tab-sc">
+        <div class="pg-head">
+          <div class="pg-title">SC / YouTube</div>
+          <div class="pg-sub">Download statistics</div>
+        </div>
+        <div class="metrics">
+          <div class="mc"><div class="mc-lbl">Total Downloaded</div><div class="mc-val" id="sc-total">—</div><svg class="sparkline" id="spark-sc" viewBox="0 0 200 26" preserveAspectRatio="none"></svg></div>
+          <div class="mc">
+            <div class="mc-lbl">Active Batches</div>
+            <div class="mc-val" id="sc-active">—</div>
+          </div>
+          <div class="mc"><div class="mc-lbl">This Week</div><div class="mc-val" id="sc-week">—</div></div>
+        </div>
+        <div class="lg">
+          <div class="lg-main">
+            <div class="card">
+              <div class="card-hdr">
+                <div>
+                  <div class="card-title">Download Velocity</div>
+                  <div class="card-sub">Tracks downloaded per day</div>
+                </div>
+                <div class="ptog">
+                  <button class="ptog-btn on" data-src="sc" data-days="7">Week</button>
+                  <button class="ptog-btn" data-src="sc" data-days="30">Month</button>
+                </div>
+              </div>
+              <div class="card-body">
+                <div class="chart-wrap">
+                  <svg class="chart-svg" id="chart-sc" viewBox="0 0 800 170" preserveAspectRatio="none"></svg>
+                </div>
+                <div class="x-labels" id="xlbl-sc"></div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-hdr"><div class="card-title">Recent Downloads</div></div>
+              <div style="overflow-x:auto">
+                <table class="dt">
+                  <thead><tr><th>Time (MSK)</th><th>User</th><th>Action</th><th>Tracks</th><th>Result</th></tr></thead>
+                  <tbody id="tbl-sc"></tbody>
+                </table>
+              </div>
+              <div class="lm-wrap"><button class="lm-btn" id="more-sc">Load More</button></div>
+            </div>
+          </div>
+          <div class="lg-aside">
+            <div class="card">
+              <div class="card-hdr"><div class="card-title">Platform Split</div></div>
+              <div class="card-body">
+                <div class="plat-row">
+                  <div class="plat-hdr"><span class="plat-name">SoundCloud</span><span class="plat-pct" id="sc-pct-sc">—</span></div>
+                  <div class="plat-bg"><div class="plat-fill plat-sc" id="sc-bar-sc" style="width:0%"></div></div>
+                </div>
+                <div class="plat-row">
+                  <div class="plat-hdr"><span class="plat-name">YouTube</span><span class="plat-pct" id="sc-pct-yt">—</span></div>
+                  <div class="plat-bg"><div class="plat-fill plat-yt" id="sc-bar-yt" style="width:0%"></div></div>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-hdr"><div class="card-title">All-time Stats</div></div>
+              <div class="card-body">
+                <div class="slist">
+                  <div class="srow"><span class="skey">Total Tracks</span><span class="sval" id="sc-st-total">—</span></div>
+                  <div class="srow"><span class="skey">This Week</span><span class="sval" id="sc-st-week">—</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
-    function resultBadge(result) {
-        const ok  = result === 'success' || result === 'stopped';
-        const cls = ok
-            ? 'bg-green-500/10 text-green-400'
-            : 'bg-red-500/10 text-red-400';
-        const icon = ok ? 'check_circle' : 'error';
-        const label = result || '—';
-        return `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full ${cls} text-[10px] font-bold uppercase tracking-widest font-sans">
-                    <span class="material-symbols-outlined text-xs">${icon}</span>${label}
-                </span>`;
-    }
+      <!-- TAB: EVENT LOG -->
+      <div class="tab" id="tab-log">
+        <div class="pg-head">
+          <div class="pg-title">Event Log</div>
+          <div class="pg-sub">Full activity feed</div>
+        </div>
+        <div class="card">
+          <div class="card-hdr">
+            <div class="card-title">All Events</div>
+            <div class="filt-wrap" id="filt-wrap">
+              <button class="filt-btn on" data-src="">All</button>
+              <button class="filt-btn" data-src="ym">Yandex Music</button>
+              <button class="filt-btn" data-src="spotify">Spotify</button>
+              <button class="filt-btn" data-src="sc">SC / YT</button>
+            </div>
+          </div>
+          <div style="overflow-x:auto">
+            <table class="dt">
+              <thead><tr><th>Time (MSK)</th><th>User</th><th>Action</th><th>Tracks</th><th>Detail</th><th>Result</th></tr></thead>
+              <tbody id="tbl-log"></tbody>
+            </table>
+          </div>
+          <div class="lm-wrap"><button class="lm-btn" id="more-log">Load More</button></div>
+        </div>
+      </div>
 
-    function clearSkeleton(el) {
-        el.classList.remove('skeleton', 'w-24', 'w-20', 'w-12', 'h-10', 'inline-block');
-    }
+    </div><!-- /inner -->
+  </main>
+</div><!-- /dash -->
 
-    // ─── Chart rendering ──────────────────────────────────────────────────
-    function renderChart(chartId, labelsId, data) {
-        const bars   = document.getElementById(chartId);
-        const labels = document.getElementById(labelsId);
-        if (!bars || !labels || !data.length) return;
+<script>
+/* ── HELPERS ─────────────────────────────────────────────── */
+const fmt = n => n == null ? '—' : n.toLocaleString('en');
+const fmtTs = iso => iso ? new Date(iso).toLocaleString('ru-RU',{timeZone:'Europe/Moscow',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
 
-        const max = Math.max(...data.map(d => d.tracks), 1);
-        const peakIdx = data.reduce((mi, d, i) => d.tracks > data[mi].tracks ? i : mi, 0);
+function badge(r) {
+  if (r==='success') return `<span class="bdg bdg-ok"><span class="bdg-dot"></span>ok</span>`;
+  if (r==='stopped') return `<span class="bdg bdg-stp"><span class="bdg-dot"></span>stopped</span>`;
+  return `<span class="bdg bdg-err"><span class="bdg-dot"></span>error</span>`;
+}
 
-        bars.innerHTML = data.map((d, i) => {
-            const h    = Math.max((d.tracks / max) * 85, 1.5).toFixed(1);
-            const peak = i === peakIdx;
-            return `<div class="flex-1 rounded-t-lg chart-bar${peak ? ' peak' : ''}"
-                         style="height:${h}%" title="${d.tracks} tracks">
-                         ${peak ? `<div class="chart-tooltip">${fmt(d.tracks)}</div>` : ''}
-                    </div>`;
-        }).join('');
+function countUp(el, to) {
+  if (!el) return;
+  if (!to) { el.textContent = '0'; return; }
+  const t0 = performance.now(), dur = 750;
+  const tick = now => {
+    const p = Math.min((now-t0)/dur, 1);
+    const e = 1-Math.pow(1-p,3);
+    el.textContent = Math.round(to*e).toLocaleString('en');
+    if (p<1) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
 
-        // Show day labels spaced to avoid overflow
-        const step = data.length <= 7 ? 1 : Math.ceil(data.length / 7);
-        labels.innerHTML = data.map((d, i) => {
-            const day = new Date(d.day + 'T12:00:00').toLocaleDateString('en', { weekday: 'short' });
-            return i % step === 0 ? `<span>${day}</span>` : '<span></span>';
-        }).join('');
-    }
+/* ── API ─────────────────────────────────────────────────── */
+async function apiFetch(url) {
+  const r = await fetch(url);
+  if (r.status === 401) { window.location.href = '/dashboard/login'; return null; }
+  return r.ok ? r.json() : null;
+}
 
-    async function loadChart(source, days) {
-        const data = await apiFetch(`/api/chart?source=${source}&days=${days}`);
-        if (data) renderChart(`chart-${source}`, `chart-${source}-labels`, data);
-    }
+/* ── AREA CHART ──────────────────────────────────────────── */
+const tip = document.getElementById('chart-tip');
+const tipDate = tip.querySelector('.tip-date');
+const tipVal  = tip.querySelector('.tip-val');
+const tipUnit = tip.querySelector('.tip-unit');
 
-    // ─── Table rendering ──────────────────────────────────────────────────
-    function renderRows(tbodyId, events, append = false) {
-        const tbody = document.getElementById(tbodyId);
-        if (!tbody) return;
+function drawChart(svgId, lblId, data, gid) {
+  const svg = document.getElementById(svgId);
+  const lbl = document.getElementById(lblId);
+  if (!svg || !data.length) return;
+  const W=800, H=170, PX=8, PY=28;
+  const max = Math.max(...data.map(d=>d.tracks), 1);
+  const pts = data.map((d,i)=>({
+    x: PX + (i/(data.length-1))*(W-2*PX),
+    y: H-PY-(d.tracks/max)*(H-2*PY),
+    v: d.tracks, day: d.day
+  }));
 
-        const isLog = tbodyId === 'tbl-log';
-        const html = events.map(e => {
-            const detail = e.detail ? `<span class="text-on-surface-variant/60 truncate max-w-[160px] block">${e.detail}</span>` : '—';
-            const detailCell = isLog
-                ? `<td class="px-8 py-5 text-xs font-sans text-on-surface-variant max-w-[160px]">${detail}</td>`
-                : '';
-            return `<tr class="hover:bg-surface-container/20 transition-colors">
-                <td class="px-8 py-5 text-xs font-sans text-on-surface-variant whitespace-nowrap">${fmtTs(e.ts)}</td>
-                <td class="px-8 py-5 text-xs font-sans font-bold">${e.username || '—'}</td>
-                <td class="px-8 py-5 text-xs text-primary">${e.action}</td>
-                <td class="px-8 py-5 text-xs font-sans text-on-surface-variant">${fmt(e.track_count)}</td>
-                ${detailCell}
-                <td class="px-8 py-5 text-right">${resultBadge(e.result)}</td>
-            </tr>`;
-        }).join('');
+  let line = `M ${pts[0].x.toFixed(1)},${pts[0].y.toFixed(1)}`;
+  for (let i=1;i<pts.length;i++) {
+    const a=pts[i-1], b=pts[i];
+    const c1x=a.x+(b.x-a.x)*.4, c2x=b.x-(b.x-a.x)*.4;
+    line += ` C ${c1x.toFixed(1)},${a.y.toFixed(1)} ${c2x.toFixed(1)},${b.y.toFixed(1)} ${b.x.toFixed(1)},${b.y.toFixed(1)}`;
+  }
+  const area = line + ` L ${pts[pts.length-1].x.toFixed(1)},${H} L ${pts[0].x.toFixed(1)},${H} Z`;
+  const pi = pts.reduce((m,p,i)=>p.v>pts[m].v?i:m, 0);
 
-        if (append) tbody.insertAdjacentHTML('beforeend', html);
-        else        tbody.innerHTML = html;
+  const grid = [.25,.5,.75,1].map(f=>{
+    const y=(H-PY-f*(H-2*PY)).toFixed(1);
+    return `<line x1="${PX}" y1="${y}" x2="${W-PX}" y2="${y}" stroke="rgba(74,68,85,.2)" stroke-width="1" stroke-dasharray="3,4"/>`;
+  }).join('');
 
-        if (!events.length && !append) {
-            const cols = isLog ? 6 : 5;
-            tbody.innerHTML = `<tr><td colspan="${cols}" class="px-8 py-8 text-center text-on-surface-variant text-sm">No events yet</td></tr>`;
-        }
-    }
+  const staticDots = pts.map((p,i)=>{
+    const peak=i===pi;
+    return `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${peak?4:2.5}"
+      fill="${peak?'#d2bbff':'#7c3aed'}" opacity="${peak?1:.55}"/>
+    ${peak?`<text x="${p.x.toFixed(1)}" y="${(p.y-10).toFixed(1)}"
+      text-anchor="middle" fill="#d2bbff" font-size="9"
+      font-family="Fira Code" font-weight="500">${p.v}</text>`:''}`;
+  }).join('');
 
-    async function loadTable(source, tbodyId, offset = 0, append = false) {
-        const src = source ? `&source=${source}` : '';
-        const data = await apiFetch(`/api/events?limit=15&offset=${offset}${src}`);
-        if (data) renderRows(tbodyId, data, append);
-        return data ? data.length : 0;
-    }
+  const hoverCols = pts.map((p,i)=>{
+    const x0 = i===0 ? 0 : (pts[i-1].x+p.x)/2;
+    const x1 = i===pts.length-1 ? W : (p.x+pts[i+1].x)/2;
+    return `<rect class="hcol" x="${x0.toFixed(1)}" y="0"
+      width="${(x1-x0).toFixed(1)}" height="${H}"
+      fill="transparent" data-i="${i}" style="cursor:crosshair"/>`;
+  }).join('');
 
-    // ─── Tab data loading ─────────────────────────────────────────────────
-    let stats = null;
-    let _prevStats = null;
+  svg.innerHTML = `
+    <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#7c3aed" stop-opacity=".22"/>
+      <stop offset="100%" stop-color="#7c3aed" stop-opacity="0"/>
+    </linearGradient></defs>
+    ${grid}
+    <path d="${area}" fill="url(#${gid})"/>
+    <path d="${line}" fill="none" stroke="#7c3aed" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    ${staticDots}
+    <line class="ch-line" x1="0" y1="0" x2="0" y2="${H}"
+      stroke="rgba(210,187,255,.2)" stroke-width="1" stroke-dasharray="3,4" display="none"/>
+    <circle class="ch-dot" cx="0" cy="0" r="5"
+      fill="none" stroke="#d2bbff" stroke-width="1.5" display="none"/>
+    <circle class="ch-dot-inner" cx="0" cy="0" r="2.5"
+      fill="#d2bbff" display="none"/>
+    ${hoverCols}`;
 
-    function getActivePeriod(tabId) {
-        const btn = document.querySelector(`.period-btn.active[data-tab-src="${tabId}"]`);
-        return btn ? parseInt(btn.dataset.days) : 7;
-    }
+  const chLine  = svg.querySelector('.ch-line');
+  const chDot   = svg.querySelector('.ch-dot');
+  const chDotIn = svg.querySelector('.ch-dot-inner');
 
-    function applyStats(s) {
-        // YM
-        const ym = s.ym || {};
-        ['ym-total', 'ym-events', 'ym-week'].forEach(id => clearSkeleton(document.getElementById(id)));
-        document.getElementById('ym-total').textContent  = fmt(ym.total);
-        document.getElementById('ym-events').textContent = fmt(ym.events);
-        document.getElementById('ym-week').textContent   = fmt(ym.week);
-        document.getElementById('ym-stat-total').textContent  = fmt(ym.total);
-        document.getElementById('ym-stat-events').textContent = fmt(ym.events);
-        document.getElementById('ym-stat-users').textContent  = fmt(ym.users);
-        const ymAvg = ym.events ? Math.round(ym.total / ym.events) : 0;
-        document.getElementById('ym-stat-avg').textContent = fmt(ymAvg);
+  const unitLabel = svgId === 'chart-sc' ? 'tracks downloaded' : 'tracks exported';
 
-        // Spotify
-        const sp = s.spotify || {};
-        ['sp-total', 'sp-events', 'sp-week'].forEach(id => clearSkeleton(document.getElementById(id)));
-        document.getElementById('sp-total').textContent  = fmt(sp.total);
-        document.getElementById('sp-events').textContent = fmt(sp.events);
-        document.getElementById('sp-week').textContent   = fmt(sp.week);
-        document.getElementById('sp-stat-total').textContent  = fmt(sp.total);
-        document.getElementById('sp-stat-events').textContent = fmt(sp.events);
-        const spAvg = sp.events ? Math.round(sp.total / sp.events) : 0;
-        document.getElementById('sp-stat-avg').textContent = fmt(spAvg);
-
-        // SC
-        const sc = s.sc || {};
-        ['sc-total', 'sc-active', 'sc-week'].forEach(id => clearSkeleton(document.getElementById(id)));
-        document.getElementById('sc-total').textContent  = fmt(sc.total);
-        document.getElementById('sc-active').textContent = fmt(sc.active_batches);
-        document.getElementById('sc-week').textContent   = fmt(sc.week);
-        document.getElementById('sc-stat-total').textContent = fmt(sc.total);
-        document.getElementById('sc-stat-week').textContent  = fmt(sc.week);
-        if (sc.active_batches > 0) {
-            document.getElementById('sc-active-indicator').classList.remove('hidden');
-        }
-
-        // Platform split
-        const total = (sc.sc_tracks || 0) + (sc.yt_tracks || 0);
-        if (total > 0) {
-            const scPct = Math.round(sc.sc_tracks / total * 100);
-            const ytPct = 100 - scPct;
-            document.getElementById('sc-pct-sc').textContent = scPct + '%';
-            document.getElementById('sc-pct-yt').textContent = ytPct + '%';
-            document.getElementById('sc-bar-sc').style.width = scPct + '%';
-            document.getElementById('sc-bar-yt').style.width = ytPct + '%';
-        }
-
-        // Refresh chart/table for active tab if its total changed; invalidate inactive tabs
-        if (_prevStats) {
-            const activeTab = document.querySelector('.tab-content.active')?.id?.replace('tab-', '');
-            const anyChanged = ['ym', 'spotify', 'sc'].some(k =>
-                (_prevStats[k] || {}).total !== (s[k] || {}).total
-            );
-            if (activeTab && activeTab !== 'log') {
-                const srcKey = activeTab === 'sc' ? 'sc' : activeTab === 'spotify' ? 'spotify' : 'ym';
-                if ((_prevStats[srcKey] || {}).total !== (s[srcKey] || {}).total) {
-                    loadChart(activeTab, getActivePeriod(activeTab));
-                    tabOffsets[activeTab] = 0;
-                    const moreBtn = document.getElementById('more-' + activeTab);
-                    if (moreBtn) { moreBtn.textContent = 'Load More'; moreBtn.disabled = false; }
-                    loadTable(srcKey, 'tbl-' + activeTab, 0, false);
-                }
-            } else if (activeTab === 'log' && anyChanged) {
-                tabOffsets.log = 0;
-                const moreBtn = document.getElementById('more-log');
-                if (moreBtn) { moreBtn.textContent = 'Load More'; moreBtn.disabled = false; }
-                loadTable(logFilter, 'tbl-log', 0, false);
-            }
-            if (anyChanged) {
-                ['ym', 'sc', 'spotify', 'log'].forEach(tab => {
-                    if (tab !== activeTab) tabLoaded[tab] = false;
-                });
-            }
-        }
-        _prevStats = s;
-
-        document.getElementById('last-updated').textContent =
-            'Updated ' + new Date().toLocaleTimeString('ru-RU', { timeZone: 'Europe/Moscow', hour: '2-digit', minute: '2-digit' }) + ' MSK';
-    }
-
-    async function loadStats() {
-        const s = await apiFetch('/api/stats');
-        if (!s) return;
-        stats = s;
-        applyStats(s);
-    }
-
-    async function loadTabData(id) {
-        if (id === 'ym') {
-            await loadTable('ym', 'tbl-ym', 0, false);
-            await loadChart('ym', 7);
-        } else if (id === 'spotify') {
-            await loadTable('spotify', 'tbl-spotify', 0, false);
-            await loadChart('spotify', 7);
-        } else if (id === 'sc') {
-            await loadTable('sc', 'tbl-sc', 0, false);
-            await loadChart('sc', 7);
-        } else if (id === 'log') {
-            tabOffsets.log = 0;
-            await loadTable('', 'tbl-log', 0, false);
-        }
-    }
-
-    // ─── Week / Month toggle ──────────────────────────────────────────────
-    document.querySelectorAll('.period-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const src  = btn.dataset.tabSrc;
-            const days = parseInt(btn.dataset.days);
-            document.querySelectorAll(`.period-btn[data-tab-src="${src}"]`).forEach(b => {
-                b.classList.remove('active');
-                b.classList.add('text-on-surface-variant');
-            });
-            btn.classList.add('active');
-            btn.classList.remove('text-on-surface-variant');
-            loadChart(src, days);
-        });
+  svg.querySelectorAll('.hcol').forEach(col => {
+    col.addEventListener('mouseenter', () => {
+      const p = pts[parseInt(col.dataset.i)];
+      const cx = p.x.toFixed(1), cy = p.y.toFixed(1);
+      chLine.setAttribute('x1', cx); chLine.setAttribute('x2', cx); chLine.removeAttribute('display');
+      chDot.setAttribute('cx', cx);  chDot.setAttribute('cy', cy);  chDot.removeAttribute('display');
+      chDotIn.setAttribute('cx', cx); chDotIn.setAttribute('cy', cy); chDotIn.removeAttribute('display');
+      tipDate.textContent = new Date(p.day+'T12:00:00').toLocaleDateString('en', {weekday:'long', month:'short', day:'numeric'});
+      tipVal.textContent  = p.v.toLocaleString('en');
+      tipUnit.textContent = unitLabel;
+      tip.classList.add('on');
     });
-
-    // ─── Load More buttons ────────────────────────────────────────────────
-    async function handleLoadMore(source, tbodyId, offsetKey) {
-        tabOffsets[offsetKey] += 15;
-        const loaded = await loadTable(source, tbodyId, tabOffsets[offsetKey], true);
-        if (loaded < 15) {
-            document.getElementById('more-' + offsetKey).textContent = 'All loaded';
-            document.getElementById('more-' + offsetKey).disabled = true;
-        }
-    }
-
-    document.getElementById('more-ym')
-        .addEventListener('click', () => handleLoadMore('ym', 'tbl-ym', 'ym'));
-    document.getElementById('more-spotify')
-        .addEventListener('click', () => handleLoadMore('spotify', 'tbl-spotify', 'spotify'));
-    document.getElementById('more-sc')
-        .addEventListener('click', () => handleLoadMore('sc', 'tbl-sc', 'sc'));
-    document.getElementById('more-log')
-        .addEventListener('click', () => handleLoadMore('', 'tbl-log', 'log'));
-
-    // ─── Event log source filter ──────────────────────────────────────────
-    document.querySelectorAll('.filter-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            document.querySelectorAll('.filter-btn').forEach(b => {
-                b.classList.remove('active');
-                b.classList.add('text-on-surface-variant');
-            });
-            btn.classList.add('active');
-            btn.classList.remove('text-on-surface-variant');
-            logFilter = btn.dataset.source;
-            tabOffsets.log = 0;
-            // Reset "Load More" button
-            const moreBtn = document.getElementById('more-log');
-            moreBtn.textContent = 'Load More';
-            moreBtn.disabled = false;
-            loadTable(logFilter, 'tbl-log', 0, false);
-        });
+    col.addEventListener('mousemove', e => {
+      tip.style.left = (e.clientX + 16) + 'px';
+      tip.style.top  = (e.clientY - 60) + 'px';
     });
+  });
 
-    // ─── Batch live ───────────────────────────────────────────────────────
-    function applyBatch(data) {
-        const idle  = document.getElementById('header-idle');
-        const batch = document.getElementById('header-batch');
+  svg.addEventListener('mouseleave', () => {
+    chLine.setAttribute('display','none');
+    chDot.setAttribute('display','none');
+    chDotIn.setAttribute('display','none');
+    tip.classList.remove('on');
+  });
 
-        if (!data || data.length === 0) {
-            idle.classList.remove('hidden');
-            batch.classList.add('hidden');
-        } else {
-            const b   = data[0];
-            const pct = b.total > 0 ? Math.round((b.current_idx / b.total) * 100) : 0;
-            idle.classList.add('hidden');
-            batch.classList.remove('hidden');
-            document.getElementById('batch-track').textContent = b.current_track || '…';
-            document.getElementById('batch-pct').textContent   = pct + '%';
-            document.getElementById('batch-bar').style.width   = pct + '%';
-            document.getElementById('batch-meta').textContent  =
-                `${b.user_label} · ${b.downloaded}/${b.total} downloaded`;
+  if (lbl) {
+    const step = data.length<=7?1:Math.ceil(data.length/7);
+    lbl.innerHTML = data.map((d,i)=>{
+      if (i%step!==0) return '<span></span>';
+      const day = new Date(d.day+'T12:00:00').toLocaleDateString('en',{weekday:'short'});
+      return `<span class="x-lbl">${day}</span>`;
+    }).join('');
+  }
+}
 
-            document.getElementById('sc-active').textContent = data.length;
-            if (data.length > 0) {
-                document.getElementById('sc-active-indicator').classList.remove('hidden');
-            }
-        }
+/* ── SPARKLINE ───────────────────────────────────────────── */
+function drawSparkline(id, data) {
+  const svg = document.getElementById(id);
+  if (!svg || !data.length) return;
+  const W=200, H=26, pad=2;
+  const max = Math.max(...data.map(d=>d.tracks), 1);
+  const pts = data.map((d,i)=>({
+    x: pad+(i/(data.length-1))*(W-2*pad),
+    y: H-pad-(d.tracks/max)*(H-2*pad)
+  }));
+  let line=`M ${pts[0].x.toFixed(1)},${pts[0].y.toFixed(1)}`;
+  for(let i=1;i<pts.length;i++){
+    const a=pts[i-1],b=pts[i];
+    line+=` C ${(a.x+(b.x-a.x)*.4).toFixed(1)},${a.y.toFixed(1)} ${(b.x-(b.x-a.x)*.4).toFixed(1)},${b.y.toFixed(1)} ${b.x.toFixed(1)},${b.y.toFixed(1)}`;
+  }
+  const area=line+` L ${pts[pts.length-1].x.toFixed(1)},${H} L ${pts[0].x.toFixed(1)},${H} Z`;
+  const gid='sg'+id;
+  svg.innerHTML=`<defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="#7c3aed" stop-opacity=".2"/>
+    <stop offset="100%" stop-color="#7c3aed" stop-opacity="0"/>
+  </linearGradient></defs>
+  <path d="${area}" fill="url(#${gid})"/>
+  <path d="${line}" fill="none" stroke="#7c3aed" stroke-width="1.5" stroke-linecap="round"/>`;
+}
+
+/* ── ACTION LABELS & PLATFORM ────────────────────────────── */
+const AL = {
+  export_liked:'YM: Liked Tracks', export_playlist:'YM: Playlist',
+  export_by_link:'YM: By Link', auth_ok:'YM: Auth OK', auth_fail:'YM: Auth Failed',
+  export_error:'YM: Export Error', yms_load:'YM: Link/Album',
+  export_filtered:'YM: Filtered Export',
+  sc_search:'SC: Search', yt_search:'YT: Search',
+  sc_batch:'SC: Batch DL', sc_track_fail:'SC: Track Failed',
+  spotify_playlist_load:'Spotify: Playlist', spotify_liked_load:'Spotify: Liked',
+  spotify_export:'Spotify: Export',
+  inline_pick:'Inline: Pick',
+};
+
+function getPlatform(action) {
+  if (!action) return 'ym';
+  if (action.startsWith('spotify')) return 'spotify';
+  if (['sc_search','yt_search','sc_batch','sc_track_fail'].includes(action)) return 'sc';
+  return 'ym';
+}
+
+/* ── TABLES ──────────────────────────────────────────────── */
+const offsets = {ym:0, spotify:0, sc:0, log:0};
+let logSrc = '';
+
+function renderRows(tbodyId, events, append=false) {
+  const tbody = document.getElementById(tbodyId);
+  if (!tbody) return;
+  const isLog = tbodyId === 'tbl-log';
+  if (!events.length && !append) {
+    tbody.innerHTML = `<tr><td colspan="${isLog?6:5}" class="no-data">No events yet</td></tr>`;
+    return;
+  }
+  const html = events.map(e => {
+    const plt = getPlatform(e.action);
+    const dotCls = plt==='spotify'?'dot-sp':plt==='sc'?'dot-sc':'dot-ym';
+    const det = isLog ? `<td style="color:var(--dim);font-size:10px">${e.detail||'—'}</td>` : '';
+    return `<tr data-plt="${plt}">
+      <td>${fmtTs(e.ts)}</td>
+      <td class="usr">${e.username?'@'+e.username:'—'}</td>
+      <td class="act"><span class="act-dot ${dotCls}"></span>${AL[e.action]||e.action}</td>
+      <td>${e.track_count!=null?e.track_count:'—'}</td>
+      ${det}
+      <td>${badge(e.result)}</td>
+    </tr>`;
+  }).join('');
+  if (append) tbody.insertAdjacentHTML('beforeend', html);
+  else        tbody.innerHTML = html;
+}
+
+async function loadTable(source, tbodyId, offset=0, append=false) {
+  const src = source ? `&source=${source}` : '';
+  const data = await apiFetch(`/api/events?limit=15&offset=${offset}${src}`);
+  if (data) renderRows(tbodyId, data, append);
+  return data ? data.length : 0;
+}
+
+/* ── CHART LOADING ───────────────────────────────────────── */
+const _sparkIds = { ym: 'spark-ym', spotify: 'spark-sp', sc: 'spark-sc' };
+
+async function loadChart(source, days) {
+  const data = await apiFetch(`/api/chart?source=${source}&days=${days}`);
+  if (data) {
+    drawChart(`chart-${source}`, `xlbl-${source}`, data, `g${source}${days}`);
+    if (days === 7 && _sparkIds[source]) drawSparkline(_sparkIds[source], data);
+  }
+}
+
+/* ── STATS ───────────────────────────────────────────────── */
+let stats = null;
+let _prevStats = null;
+const loaded = {};
+
+function getActivePeriod(src) {
+  const btn = document.querySelector(`.ptog-btn.on[data-src="${src}"]`);
+  return btn ? parseInt(btn.dataset.days) : 7;
+}
+
+function applyStats(s) {
+  const ym = s.ym || {};
+  countUp(document.getElementById('ym-total'),  ym.total  || 0);
+  countUp(document.getElementById('ym-events'), ym.events || 0);
+  countUp(document.getElementById('ym-week'),   ym.week   || 0);
+  document.getElementById('ym-st-total').textContent  = fmt(ym.total);
+  document.getElementById('ym-st-events').textContent = fmt(ym.events);
+  document.getElementById('ym-st-users').textContent  = fmt(ym.users);
+  document.getElementById('ym-st-avg').textContent    = ym.events ? fmt(Math.round(ym.total/ym.events)) : '—';
+
+  const sp = s.spotify || {};
+  countUp(document.getElementById('sp-total'),  sp.total  || 0);
+  countUp(document.getElementById('sp-events'), sp.events || 0);
+  countUp(document.getElementById('sp-week'),   sp.week   || 0);
+  document.getElementById('sp-st-total').textContent  = fmt(sp.total);
+  document.getElementById('sp-st-events').textContent = fmt(sp.events);
+  document.getElementById('sp-st-avg').textContent    = sp.events ? fmt(Math.round(sp.total/sp.events)) : '—';
+
+  const sc = s.sc || {};
+  countUp(document.getElementById('sc-total'),  sc.total          || 0);
+  countUp(document.getElementById('sc-active'), sc.active_batches || 0);
+  countUp(document.getElementById('sc-week'),   sc.week           || 0);
+  const scLive = document.getElementById('sc-live');
+  if (scLive) scLive.classList.toggle('on', (sc.active_batches||0) > 0);
+  document.getElementById('sc-st-total').textContent = fmt(sc.total);
+  document.getElementById('sc-st-week').textContent  = fmt(sc.week);
+
+  const tot = (sc.sc_tracks||0) + (sc.yt_tracks||0);
+  if (tot > 0) {
+    const scPct = Math.round(sc.sc_tracks/tot*100);
+    const ytPct = 100 - scPct;
+    document.getElementById('sc-pct-sc').textContent = scPct + '%';
+    document.getElementById('sc-pct-yt').textContent = ytPct + '%';
+    setTimeout(()=>{
+      document.getElementById('sc-bar-sc').style.width = scPct + '%';
+      document.getElementById('sc-bar-yt').style.width = ytPct + '%';
+    }, 400);
+  }
+
+  if (_prevStats) {
+    const activeTab = document.querySelector('.tab.on')?.id?.replace('tab-','');
+    const anyChanged = ['ym','spotify','sc'].some(k =>
+      (_prevStats[k]||{}).total !== (s[k]||{}).total
+    );
+    if (activeTab && activeTab !== 'log') {
+      const key = activeTab === 'sc' ? 'sc' : activeTab === 'spotify' ? 'spotify' : 'ym';
+      if ((_prevStats[key]||{}).total !== (s[key]||{}).total) {
+        loadChart(activeTab, getActivePeriod(activeTab));
+        offsets[activeTab] = 0;
+        const mb = document.getElementById('more-'+activeTab);
+        if (mb) { mb.textContent='Load More'; mb.disabled=false; }
+        loadTable(key, 'tbl-'+activeTab, 0, false);
+      }
+    } else if (activeTab === 'log' && anyChanged) {
+      offsets.log = 0;
+      const mb = document.getElementById('more-log');
+      if (mb) { mb.textContent='Load More'; mb.disabled=false; }
+      loadTable(logSrc,'tbl-log',0,false);
     }
-
-    // ─── WebSocket real-time updates ──────────────────────────────────────
-    let _wsRetryMs = 1000;
-
-    function connectWS() {
-        const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const ws = new WebSocket(`${proto}//${location.host}/api/ws`);
-
-        ws.onmessage = ({ data }) => {
-            try {
-                const msg = JSON.parse(data);
-                if (msg.stats) { stats = msg.stats; applyStats(msg.stats); }
-                if (msg.batch) applyBatch(msg.batch);
-            } catch (_) {}
-        };
-
-        ws.onopen = () => { _wsRetryMs = 1000; };
-
-        ws.onclose = () => {
-            setTimeout(connectWS, _wsRetryMs);
-            _wsRetryMs = Math.min(_wsRetryMs * 2, 30000);
-        };
+    if (anyChanged) {
+      ['ym','spotify','sc','log'].forEach(t => { if (t!==activeTab) loaded[t]=false; });
     }
+  }
+  _prevStats = s;
 
-    // ─── Init ─────────────────────────────────────────────────────────────
-    (async () => {
-        await loadStats();
-        const initialTab = window.location.hash.replace('#', '') || 'ym';
-        switchTab(initialTab);
-        connectWS();
-    })();
+  document.getElementById('sb-updated').textContent =
+    'Updated '+new Date().toLocaleTimeString('ru-RU',{timeZone:'Europe/Moscow',hour:'2-digit',minute:'2-digit'})+' MSK';
+}
 
-    // ─── Particles ────────────────────────────────────────────────────────
-    document.addEventListener("DOMContentLoaded", () => {
-        tsParticles.load("tsparticles", {
-            fpsLimit: 60,
-            particles: {
-                number: { value: 90, density: { enable: true, area: 900 } },
-                color:  { value: "#ffffff" },
-                shape:  { type: "circle" },
-                opacity: {
-                    value: 0.45, random: true,
-                    anim: { enable: true, speed: 0.8, opacity_min: 0.05, sync: false }
-                },
-                size: { value: 3, random: { enable: true, minimumValue: 1 } },
-                links: { enable: false },
-                move: {
-                    enable: true, speed: 0.5, direction: "bottom",
-                    random: true, straight: false,
-                    outModes: { default: "out" }
-                }
-            },
-            interactivity: {
-                detectsOn: "window",
-                events: {
-                    onHover: { enable: true, mode: "grab" },
-                    onClick: { enable: true, mode: "push" },
-                    resize: true
-                },
-                modes: {
-                    grab: { distance: 160, links: { opacity: 0.5 } },
-                    push: { quantity: 3 }
-                }
-            },
-            background: { color: "transparent" }
-        });
-    });
-    </script>
+async function loadStats() {
+  const s = await apiFetch('/api/stats');
+  if (!s) return;
+  stats = s;
+  applyStats(s);
+}
+
+/* ── TABS ────────────────────────────────────────────────── */
+function switchTab(id) {
+  const valid = ['ym','spotify','sc','log'];
+  if (!valid.includes(id)) id='ym';
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
+  document.querySelectorAll('.nav-link').forEach(l=>l.classList.remove('active'));
+  document.getElementById('tab-'+id)?.classList.add('on');
+  document.querySelector(`.nav-link[data-tab="${id}"]`)?.classList.add('active');
+  history.replaceState(null,'','#'+id);
+  if (!loaded[id]) { loadTabData(id); loaded[id]=true; }
+}
+
+async function loadTabData(id) {
+  if (id === 'ym') {
+    await Promise.all([loadTable('ym','tbl-ym',0,false), loadChart('ym',7)]);
+  } else if (id === 'spotify') {
+    await Promise.all([loadTable('spotify','tbl-spotify',0,false), loadChart('spotify',7)]);
+  } else if (id === 'sc') {
+    await Promise.all([loadTable('sc','tbl-sc',0,false), loadChart('sc',7)]);
+  } else {
+    offsets.log = 0;
+    await loadTable(logSrc,'tbl-log',0,false);
+  }
+}
+
+document.querySelectorAll('.nav-link').forEach(l=>
+  l.addEventListener('click', e=>{ e.preventDefault(); switchTab(l.dataset.tab); })
+);
+
+/* ── PERIOD TOGGLE ───────────────────────────────────────── */
+document.querySelectorAll('.ptog-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    const src=btn.dataset.src, days=parseInt(btn.dataset.days);
+    document.querySelectorAll(`.ptog-btn[data-src="${src}"]`).forEach(b=>b.classList.remove('on'));
+    btn.classList.add('on');
+    loadChart(src, days);
+  });
+});
+
+/* ── LOAD MORE ───────────────────────────────────────────── */
+function setupMore(btnId, src, tbodyId, key, isLog=false) {
+  document.getElementById(btnId)?.addEventListener('click', async ()=>{
+    offsets[key] += 15;
+    const theSrc = isLog ? logSrc : src;
+    const n = await loadTable(theSrc, tbodyId, offsets[key], true);
+    if (n < 15) {
+      const b = document.getElementById(btnId);
+      b.textContent='All loaded'; b.disabled=true;
+    }
+  });
+}
+setupMore('more-ym','ym','tbl-ym','ym');
+setupMore('more-spotify','spotify','tbl-spotify','spotify');
+setupMore('more-sc','sc','tbl-sc','sc');
+setupMore('more-log','','tbl-log','log',true);
+
+/* ── LOG FILTERS ─────────────────────────────────────────── */
+document.querySelectorAll('.filt-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('.filt-btn').forEach(b=>b.classList.remove('on'));
+    btn.classList.add('on');
+    logSrc = btn.dataset.src;
+    offsets.log = 0;
+    const more = document.getElementById('more-log');
+    if (more) { more.textContent='Load More'; more.disabled=false; }
+    loadTable(logSrc,'tbl-log',0,false);
+  });
+});
+
+/* ── BATCH LIVE ──────────────────────────────────────────── */
+function applyBatch(data) {
+  const idle  = document.getElementById('hdr-idle');
+  const batch = document.getElementById('hdr-batch');
+  if (!data || data.length === 0) {
+    idle.style.display = '';
+    batch.classList.remove('on');
+  } else {
+    const b   = data[0];
+    const pct = b.total > 0 ? Math.round((b.current_idx/b.total)*100) : 0;
+    idle.style.display = 'none';
+    batch.classList.add('on');
+    document.getElementById('hdr-track').textContent = b.current_track || '…';
+    document.getElementById('hdr-pct').textContent   = pct + '%';
+    document.getElementById('hdr-bar').style.width   = pct + '%';
+    document.getElementById('hdr-meta').textContent  =
+      `${b.user_label} \u00b7 ${b.downloaded}/${b.total} downloaded`;
+    document.getElementById('sc-active').textContent = data.length;
+    document.getElementById('sc-live')?.classList.add('on');
+  }
+}
+
+/* ── WEBSOCKET ───────────────────────────────────────────── */
+let _wsRetryMs = 1000;
+
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const ws = new WebSocket(`${proto}//${location.host}/api/ws`);
+  ws.onmessage = ({ data }) => {
+    try {
+      const msg = JSON.parse(data);
+      if (msg.stats) { stats = msg.stats; applyStats(msg.stats); }
+      if (msg.batch !== undefined) applyBatch(msg.batch);
+    } catch (_) {}
+  };
+  ws.onopen  = () => { _wsRetryMs = 1000; };
+  ws.onclose = () => {
+    setTimeout(connectWS, _wsRetryMs);
+    _wsRetryMs = Math.min(_wsRetryMs * 2, 30000);
+  };
+}
+
+/* ── LOGIN ───────────────────────────────────────────────── */
+const loginPage = document.getElementById('login-page');
+const dash      = document.getElementById('dash');
+const lBtn      = document.getElementById('l-btn');
+const lTok      = document.getElementById('tok');
+const lErr      = document.getElementById('l-err');
+
+function showDash() {
+  loginPage.classList.add('out');
+  dash.classList.add('on');
+}
+
+async function doLogin() {
+  if (!lTok.value.trim()) {
+    lErr.textContent = 'Please enter a token';
+    lErr.classList.add('on');
+    return;
+  }
+  const fd = new FormData();
+  fd.append('token', lTok.value.trim());
+  try {
+    const r = await fetch('/dashboard/login', { method: 'POST', body: fd });
+    if (r.ok && !r.url.includes('/login')) {
+      showDash();
+      initDash();
+    } else {
+      lErr.textContent = 'Invalid access token';
+      lErr.classList.add('on');
+    }
+  } catch {
+    lErr.textContent = 'Connection error';
+    lErr.classList.add('on');
+  }
+}
+
+lBtn.addEventListener('click', doLogin);
+lTok.addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
+lTok.addEventListener('input',  ()=>lErr.classList.remove('on'));
+
+document.getElementById('logout-btn').addEventListener('click', ()=>{
+  window.location.href = '/dashboard/logout';
+});
+
+/* ── LOGIN INTERACTIVITY ─────────────────────────────────── */
+(()=>{
+  const page = document.getElementById('login-page');
+  const lbox = document.querySelector('.lbox');
+  const glow = document.createElement('div');
+  glow.className = 'login-glow';
+  glow.style.left = '-999px'; glow.style.top = '-999px';
+  page.appendChild(glow);
+
+  page.addEventListener('mousemove', e => {
+    const r  = page.getBoundingClientRect();
+    const mx = e.clientX - r.left;
+    const my = e.clientY - r.top;
+    glow.style.left = mx + 'px';
+    glow.style.top  = my + 'px';
+    const dx = (mx - r.width  / 2) / (r.width  / 2);
+    const dy = (my - r.height / 2) / (r.height / 2);
+    lbox.style.transform =
+      `perspective(900px) rotateY(${(dx*6).toFixed(2)}deg) rotateX(${(-dy*4).toFixed(2)}deg)`;
+  });
+  page.addEventListener('mouseleave', () => {
+    glow.style.left = '-999px';
+    lbox.style.transform = 'perspective(900px) rotateY(0deg) rotateX(0deg)';
+  });
+})();
+
+/* ── PARTICLES ───────────────────────────────────────────── */
+document.addEventListener('DOMContentLoaded', () => {
+  tsParticles.load('tsparticles', {
+    fpsLimit: 60,
+    particles: {
+      number: { value: 90, density: { enable: true, area: 900 } },
+      color:  { value: '#ffffff' },
+      shape:  { type: 'circle' },
+      opacity: {
+        value: 0.4, random: true,
+        animation: { enable: true, speed: 0.8, minimumValue: 0.05, sync: false }
+      },
+      size: { value: { min: 1, max: 3 } },
+      links: { enable: false },
+      move: {
+        enable: true, speed: 0.45, direction: 'bottom',
+        random: true, straight: false,
+        outModes: { default: 'out' }
+      }
+    },
+    interactivity: {
+      detectsOn: 'window',
+      events: {
+        onHover: { enable: true, mode: 'grab' },
+        onClick: { enable: true, mode: 'push' },
+        resize: true
+      },
+      modes: {
+        grab: { distance: 160, links: { opacity: 0.45 } },
+        push: { quantity: 3 }
+      }
+    },
+    background: { color: 'transparent' }
+  });
+});
+
+/* ── INIT ────────────────────────────────────────────────── */
+function initDash() {
+  loadStats().then(() => {
+    const tab = location.hash.replace('#','') || 'ym';
+    switchTab(tab);
+  });
+  connectWS();
+}
+
+// On page load: auto-auth check — if already authenticated, skip login screen
+(async () => {
+  const r = await fetch('/api/stats');
+  if (r.status === 401) return; // unauthenticated — show login page
+  const s = await r.json();
+  stats = s;
+  showDash();
+  applyStats(s);
+  const tab = location.hash.replace('#','') || 'ym';
+  switchTab(tab);
+  connectWS();
+})();
+
+</script>
 </body>
 </html>
