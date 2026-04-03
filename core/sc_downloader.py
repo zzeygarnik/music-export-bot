@@ -260,6 +260,32 @@ def _fix_metadata_sync(path: str, meta: dict) -> dict:
     return {"artist": artist, "title": title, "duration": meta.get("duration", 0)}
 
 
+def _check_main_ip_sync() -> bool:
+    """Probe SoundCloud via main IP (no proxy). Returns True if not banned."""
+    import yt_dlp
+    ban_logger = _BanCapturingLogger()
+    opts = {
+        "quiet": True,
+        "no_warnings": False,
+        "noplaylist": True,
+        "ignoreerrors": True,
+        "logger": ban_logger,
+        # intentionally no proxy — testing main IP regardless of _active_proxy
+        **_cookie_opts(),
+    }
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            ydl.extract_info("scsearch1:test", download=False)
+    except Exception:
+        pass
+    return not ban_logger.has_ban()
+
+
+async def check_main_ip() -> bool:
+    """Async wrapper for _check_main_ip_sync."""
+    return await asyncio.to_thread(_check_main_ip_sync)
+
+
 async def extract_url_info(url: str) -> dict:
     """
     Inspect a URL without downloading.
