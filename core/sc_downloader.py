@@ -34,6 +34,17 @@ def _proxy_opts() -> dict:
     return {"proxy": proxy} if proxy else {}
 
 
+def _is_youtube_url(url: str) -> bool:
+    return any(h in url for h in ("youtube.com", "youtu.be", "music.youtube.com"))
+
+
+def _sc_proxy_opts(url: str = "") -> dict:
+    """Return SC proxy opts only for SC URLs; never pollute YT requests with SC proxy."""
+    if url and _is_youtube_url(url):
+        return {}
+    return _proxy_opts()
+
+
 def _is_ban_error(msg: str) -> bool:
     """Return True if the yt-dlp error looks like an IP ban or rate-limit."""
     msg_low = msg.lower()
@@ -96,7 +107,7 @@ def _search_sync(query: str, max_results: int = 5, platform: str = "sc") -> list
         "noplaylist": False,
         "ignoreerrors": True,
         "logger": ban_logger,
-        **_proxy_opts(),
+        **(_proxy_opts() if platform == "sc" else {}),
         **_cookie_opts(),
     }
     try:
@@ -149,7 +160,7 @@ def _download_sync(url: str, output_template: str) -> tuple[str, dict]:
         "no_warnings": True,
         "format": "bestaudio/best",
         "outtmpl": output_template + ".%(ext)s",
-        **_proxy_opts(),
+        **_sc_proxy_opts(url),
         **_cookie_opts(),
     }
     try:
@@ -177,7 +188,7 @@ def _extract_url_info_sync(url: str) -> dict:
         "quiet": True,
         "no_warnings": True,
         "extract_flat": "in_playlist",
-        **_proxy_opts(),
+        **_sc_proxy_opts(url),
         **_cookie_opts(),
     }
     with yt_dlp.YoutubeDL(opts) as ydl:
