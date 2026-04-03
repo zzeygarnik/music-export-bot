@@ -383,14 +383,25 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
   opacity:.55;
   color:var(--primary);
   letter-spacing:.04em;
-  transition:filter .22s ease,opacity .22s ease,max-width .3s ease;
+  transition:filter .22s ease,opacity .22s ease;
   user-select:none;
 }
 .proxy-spoiler:hover .proxy-spoiler-text{
+  position:absolute;
+  left:20px;
+  top:50%;
+  transform:translateY(-50%);
+  z-index:50;
+  max-width:none;
+  overflow:visible;
   filter:none;
   opacity:1;
-  max-width:600px;
   user-select:text;
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:5px;
+  padding:3px 8px;
+  box-shadow:0 4px 16px rgba(0,0,0,.4);
 }
 .proxy-spoiler-icon{
   flex-shrink:0;
