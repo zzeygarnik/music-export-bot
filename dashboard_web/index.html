@@ -417,6 +417,9 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
   filter:none;opacity:1;
 }
 .proxy-test-result{font-family:var(--fm);font-size:9px;color:var(--muted)}
+.pu-badge{display:inline-block;border-radius:3px;padding:1px 6px;font-size:9px;font-family:var(--fm);font-weight:700;letter-spacing:.04em}
+.pu-sc{background:rgba(255,165,0,.15);color:var(--orange)}
+.pu-yt{background:rgba(240,50,50,.15);color:#f04444}
 .p-spin{display:inline-block;width:10px;height:10px;border:1.5px solid var(--dim);
   border-top-color:var(--primary);border-radius:50%;animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -804,6 +807,7 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
                   <th>Last Test</th>
                   <th>Result</th>
                   <th style="text-align:center">Status</th>
+                  <th style="text-align:center">In use</th>
                   <th></th>
                 </tr>
               </thead>
@@ -1270,6 +1274,7 @@ function connectWS() {
       const msg = JSON.parse(data);
       if (msg.stats) { stats = msg.stats; applyStats(msg.stats); }
       if (msg.batch !== undefined) applyBatch(msg.batch);
+      if (msg.proxies !== undefined) _updateProxyUsage(msg.proxies);
     } catch (_) {}
   };
   ws.onopen  = () => { _wsRetryMs = 1000; _setWsStatus('online'); };
@@ -1451,6 +1456,25 @@ document.getElementById('net-refresh-btn')?.addEventListener('click', loadNetwor
 /* ── PROXY MANAGER ───────────────────────────────────────── */
 let _proxies = [];
 
+function _proxyUsageHtml(isSc, isYt) {
+  if (!isSc && !isYt) return '<span style="color:var(--dim)">—</span>';
+  const parts = [];
+  if (isSc) parts.push('<span class="pu-badge pu-sc">SC</span>');
+  if (isYt) parts.push('<span class="pu-badge pu-yt">YT</span>');
+  return parts.join(' ');
+}
+
+function _updateProxyUsage(state) {
+  if (!_proxies.length) return;
+  const scUrl = state.sc || null;
+  const ytUrl = state.yt || null;
+  _proxies.forEach((p, i) => {
+    const cell = document.getElementById(`proxy-use-${i}`);
+    if (!cell) return;
+    cell.innerHTML = _proxyUsageHtml(p.url === scUrl, p.url === ytUrl);
+  });
+}
+
 function _proxyShortLabel(url) {
   try {
     const u = new URL(url);
@@ -1512,6 +1536,7 @@ function _renderProxies(data) {
           ${statusLabel}
         </span>
       </td>
+      <td style="text-align:center" id="proxy-use-${i}">${_proxyUsageHtml(p.active_sc, p.active_yt)}</td>
       <td style="text-align:right;white-space:nowrap;display:flex;gap:6px;justify-content:flex-end">
         <button class="p-btn secondary" style="padding:5px 10px;font-size:8px"
           onclick="testProxy(${i})" id="proxy-test-btn-${i}">Test</button>
