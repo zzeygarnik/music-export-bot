@@ -141,6 +141,15 @@ _SC_URL_PLAYLIST_TEXT = (
     'Отправь ссылку:'
 )
 
+_YT_PLAYLIST_TEXT = (
+    '🎬 <b>YouTube — плейлист по ссылке</b>\n\n'
+    'Поддерживаются:\n'
+    '• <code>youtube.com/playlist?list=...</code>\n'
+    '• <code>music.youtube.com/playlist?list=...</code>\n'
+    '• Ссылки на отдельные треки тоже работают\n\n'
+    'Отправь ссылку:'
+)
+
 _YMS_INPUT_TEXT = (
     '<tg-emoji emoji-id="6042011682497106307">🔗</tg-emoji> <b>Отправь ссылку на плейлист или альбом</b>\n\n'
     '<b>Поддерживаемые форматы:</b>\n'
