@@ -22,13 +22,15 @@ sc_downloads_enabled: bool = True
 _sc_error_last_notified: float = 0.0
 _SC_ERROR_NOTIFY_COOLDOWN: int = 600  # seconds (10 min)
 
-# ── SC proxy rotation state ───────────────────────────────────────────────────
-# List of fallback proxies for SC downloads (from SC_PROXIES env var)
+# ── Shared proxy pool (SC + YT) ───────────────────────────────────────────────
+# Single proxy list used by both SC and YT, with independent rotation indices.
 _sc_proxies: list[str] = [p.strip() for p in settings.SC_PROXIES.split(",") if p.strip()] if settings.SC_PROXIES else []
 # -1 = main server IP, 0..N-1 = index into _sc_proxies
 _sc_proxy_index: int = -1
-# Lock to avoid concurrent rotation from parallel requests
+_yt_proxy_index: int = -1
+# Separate locks to avoid concurrent rotation races
 _sc_proxy_rotate_lock = asyncio.Lock()
+_yt_proxy_rotate_lock = asyncio.Lock()
 # Detected public IP of the server (populated at startup, falls back to SC_SERVER_IP or generic label)
 _detected_server_ip: str = ""
 
@@ -306,7 +308,7 @@ async def notify_admin_sc_error(bot, user_id: int, username: str | None, context
 
 
 def get_network_status() -> dict:
-    """Return current SC network routing status for display in dashboard / admin."""
+    """Return current SC/YT network routing status for display in dashboard / admin."""
     on_proxy = _sc_proxy_index >= 0
     active_proxy = _sc_proxies[_sc_proxy_index] if on_proxy and _sc_proxy_index < len(_sc_proxies) else None
     recovery_running = bool(_recovery_task and not _recovery_task.done())
@@ -317,6 +319,9 @@ def get_network_status() -> dict:
         if ref is not None:
             next_check_in = max(0, int(ref + MAIN_IP_CHECK_INTERVAL_SEC - time.time()))
 
+    yt_on_proxy = _yt_proxy_index >= 0
+    yt_active_proxy = _sc_proxies[_yt_proxy_index] if yt_on_proxy and _yt_proxy_index < len(_sc_proxies) else None
+
     return {
         "on_proxy": on_proxy,
         "main_ip": get_server_ip_label(),
@@ -324,6 +329,8 @@ def get_network_status() -> dict:
         "recovery_running": recovery_running,
         "next_check_in": next_check_in,
         "check_interval": MAIN_IP_CHECK_INTERVAL_SEC,
+        "yt_on_proxy": yt_on_proxy,
+        "yt_active_proxy": yt_active_proxy,
     }
 
 
@@ -485,6 +492,92 @@ async def rotate_sc_proxy(bot) -> bool:
             return False
 
 
+def _pick_next_yt_proxy(start_after: int) -> int | None:
+    """Find next YT proxy index from _sc_proxies, preferring one SC isn't using.
+    Returns None if all proxies are exhausted (past the end of the list).
+    """
+    n = len(_sc_proxies)
+    candidates = list(range(start_after + 1, n))
+    if not candidates:
+        return None
+    # Prefer a proxy SC is not currently using
+    non_sc = [i for i in candidates if i != _sc_proxy_index]
+    return non_sc[0] if non_sc else candidates[0]
+
+
+async def rotate_yt_proxy(bot) -> bool:
+    """Switch YT to the next proxy, preferring one not used by SC.
+
+    Returns True if switched to a new proxy, False if all proxies are exhausted.
+    """
+    global _yt_proxy_index
+    from core import sc_downloader
+
+    async with _yt_proxy_rotate_lock:
+        if not _sc_proxies:
+            if settings.ADMIN_ID:
+                try:
+                    await bot.send_message(
+                        settings.ADMIN_ID,
+                        "⚠️ <b>YouTube: ошибка скачивания</b>\n\n"
+                        "Прокси не настроены — подключить новый IP для YT невозможно.",
+                        parse_mode="HTML",
+                    )
+                except Exception as exc:
+                    log.warning("Failed to notify admin (YT no proxies): %s", exc)
+            return False
+
+        old_index = _yt_proxy_index
+        next_idx = _pick_next_yt_proxy(old_index)
+
+        if next_idx is None:
+            _yt_proxy_index = -1
+            sc_downloader.set_yt_active_proxy("")
+            log.warning("YT proxy rotation: all proxies exhausted, reverting to main IP")
+            if settings.ADMIN_ID:
+                try:
+                    await bot.send_message(
+                        settings.ADMIN_ID,
+                        "🔴 <b>YouTube: все прокси исчерпаны</b>\n\n"
+                        f"Возвращаюсь к {get_server_ip_label()} для YT.",
+                        parse_mode="HTML",
+                    )
+                except Exception as exc:
+                    log.warning("Failed to notify admin (YT proxies exhausted): %s", exc)
+            return False
+
+        _yt_proxy_index = next_idx
+        new_proxy = _sc_proxies[next_idx]
+        sc_downloader.set_yt_active_proxy(new_proxy)
+
+        sc_same = (next_idx == _sc_proxy_index)
+        sc_note = " (тот же прокси что и SC — свободных не осталось)" if sc_same else ""
+        log.warning("YT proxy rotation: main IP → proxy[%d] = %s%s", next_idx, new_proxy,
+                    " [shared with SC]" if sc_same else "")
+
+        if settings.ADMIN_ID:
+            try:
+                if old_index == -1:
+                    await bot.send_message(
+                        settings.ADMIN_ID,
+                        f"⚠️ <b>YouTube: подключаю прокси</b>\n\n"
+                        f"<code>{new_proxy}</code>{sc_note}",
+                        parse_mode="HTML",
+                    )
+                else:
+                    old_proxy = _sc_proxies[old_index] if 0 <= old_index < len(_sc_proxies) else "unknown"
+                    await bot.send_message(
+                        settings.ADMIN_ID,
+                        f"⚠️ <b>YouTube: прокси сменился</b>\n\n"
+                        f"<code>{old_proxy}</code> → <code>{new_proxy}</code>{sc_note}",
+                        parse_mode="HTML",
+                    )
+            except Exception as exc:
+                log.warning("Failed to notify admin (YT proxy switch): %s", exc)
+
+        return True
+
+
 async def download_with_proxy_rotation(url: str, user_id: int, bot) -> tuple[str, dict]:
     """Download from SC with automatic proxy rotation on IP ban errors.
 
@@ -513,6 +606,43 @@ async def download_with_proxy_rotation(url: str, user_id: int, bot) -> tuple[str
         except Exception:
             raise  # non-ban errors propagate immediately
     # Should not be reached, but satisfy type-checker
+    return await sc_downloader.download(url, user_id)
+
+
+async def download_yt_with_proxy_rotation(url: str, user_id: int, bot) -> tuple[str, dict]:
+    """Download from YouTube with automatic proxy rotation on ban errors.
+
+    Uses _yt_proxy_index independently from SC. Smart allocation prefers
+    a proxy not already used by SC when both need one simultaneously.
+    """
+    from core import sc_downloader
+    from core.sc_downloader import SCBanError
+
+    max_attempts = len(_sc_proxies) + 2
+    rotated = False
+    for attempt in range(max_attempts):
+        try:
+            result = await sc_downloader.download(url, user_id)
+            if rotated:
+                proxy_label = sc_downloader.get_yt_active_proxy() or get_server_ip_label()
+                if settings.ADMIN_ID:
+                    try:
+                        await bot.send_message(
+                            settings.ADMIN_ID,
+                            f"✅ <b>YouTube: прокси работает</b>\n\n"
+                            f"<code>{proxy_label}</code> — скачивание прошло успешно.",
+                            parse_mode="HTML",
+                        )
+                    except Exception:
+                        pass
+            return result
+        except SCBanError:
+            rotated = True
+            had_more = await rotate_yt_proxy(bot)
+            if not had_more:
+                raise
+        except Exception:
+            raise
     return await sc_downloader.download(url, user_id)
 
 

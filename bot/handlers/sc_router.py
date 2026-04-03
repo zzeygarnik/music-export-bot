@@ -57,6 +57,7 @@ from .common import (
     _filter_by_artist,
     notify_admin_sc_error,
     download_with_proxy_rotation,
+    download_yt_with_proxy_rotation,
     search_with_proxy_rotation,
 )
 from bot.tracker import set_active_msg
@@ -1690,9 +1691,9 @@ async def _run_batch_download(
 
             if direct_url:
                 if sc_downloader._is_youtube_url(direct_url):
-                    # YT direct URL — bypass SC proxy rotation entirely
+                    # YT direct URL — independent proxy rotation from SC
                     try:
-                        path, meta = await sc_downloader.download(direct_url, user_id)
+                        path, meta = await download_yt_with_proxy_rotation(direct_url, user_id, progress_msg.bot)
                     except Exception as e:
                         log.warning("YT batch direct download failed '%s': %s", direct_url, e)
                         yt_error_count += 1
