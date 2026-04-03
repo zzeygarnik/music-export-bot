@@ -1006,7 +1006,9 @@ function switchTab(id) {
   document.getElementById('tab-'+id)?.classList.add('on');
   document.querySelector(`.nav-link[data-tab="${id}"]`)?.classList.add('active');
   history.replaceState(null,'','#'+id);
-  if (!loaded[id]) { loadTabData(id); loaded[id]=true; }
+  const tbl = document.getElementById('tbl-'+id);
+  const isEmpty = tbl && tbl.children.length === 0;
+  if (!loaded[id] || isEmpty) { loadTabData(id); loaded[id]=true; }
 }
 
 async function loadTabData(id) {
