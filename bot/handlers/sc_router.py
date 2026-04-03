@@ -980,18 +980,20 @@ async def on_sc_resume_input(message: Message, state: FSMContext) -> None:
             best_idx = i
 
     if best_score < 30:
-        await message.answer(
+        msg = await message.answer(
             "😔 Трек не найден в плейлисте. Попробуй другое название.",
             reply_markup=sc_cancel_keyboard(),
         )
+        set_active_msg(message.from_user.id, msg.message_id)
         return
 
     next_idx = best_idx + 1
     if next_idx >= len(tracks):
-        await message.answer(
+        msg = await message.answer(
             "ℹ️ Это последний трек в плейлисте — нечего скачивать после него.",
             reply_markup=sc_cancel_keyboard(),
         )
+        set_active_msg(message.from_user.id, msg.message_id)
         return
 
     found = tracks[best_idx]
@@ -1004,7 +1006,8 @@ async def on_sc_resume_input(message: Message, state: FSMContext) -> None:
         "Верно?"
     )
     await state.update_data(sc_resume_idx=next_idx)
-    await message.answer(confirm_text, parse_mode="HTML", reply_markup=sc_resume_confirm_keyboard())
+    msg = await message.answer(confirm_text, parse_mode="HTML", reply_markup=sc_resume_confirm_keyboard())
+    set_active_msg(message.from_user.id, msg.message_id)
     await state.set_state(SCBatchFlow.sc_resume_confirm)
 
 
@@ -1182,10 +1185,11 @@ async def on_sc_filter_input(message: Message, state: FSMContext) -> None:
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="← Назад", callback_data="sc_resume:filter_back")]
         ])
-        await message.answer(
+        msg = await message.answer(
             f"😔 Исполнитель <b>{query}</b> не найден в плейлисте.\n\nПопробуй другое имя.",
             parse_mode="HTML", reply_markup=kb,
         )
+        set_active_msg(message.from_user.id, msg.message_id)
         return
 
     artists = list(data.get("sc_filter_artists") or [])
@@ -1200,12 +1204,13 @@ async def on_sc_filter_input(message: Message, state: FSMContext) -> None:
     union_tracks = [t for t in original_tracks if (t.get("artist", ""), t.get("title", "")) in matched_keys]
 
     await state.update_data(sc_tracks=union_tracks, sc_filter_artists=artists, sc_original_tracks=original_tracks)
-    await message.answer(
+    msg = await message.answer(
         f"✅ Найдено <b>{len(matched)}</b> треков исполнителя <b>{query}</b>. "
         f"Всего в фильтре: <b>{len(union_tracks)}</b>.\n\nС какого трека начать?",
         parse_mode="HTML",
         reply_markup=sc_resume_keyboard(filter_artists=artists),
     )
+    set_active_msg(message.from_user.id, msg.message_id)
     await state.set_state(SCBatchFlow.sc_resume_choice)
 
 
