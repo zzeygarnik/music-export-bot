@@ -1820,3 +1820,4 @@ async def _run_batch_download(
         else:
             next_msg = await progress_msg.answer(_SC_MENU_TEXT, parse_mode="HTML", reply_markup=sc_menu_keyboard())
             set_active_msg(progress_msg.chat.id, next_msg.message_id)
+            await state.set_state(SCSearchFlow.sc_menu)
