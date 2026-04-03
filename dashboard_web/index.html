@@ -342,6 +342,38 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
   background:var(--primary);box-shadow:0 0 6px var(--primary);
   animation:blink 1.5s infinite;margin-left:auto;flex-shrink:0}
 .nav-live.on{display:block}
+
+/* ── PROXY MANAGER ───────────────────────────────────────── */
+.proxy-add-row{display:flex;gap:8px;margin-bottom:20px}
+.proxy-input{flex:1;background:var(--s2);border:1px solid var(--border);
+  border-radius:6px;padding:9px 12px;color:var(--text);
+  font-family:var(--fm);font-size:11px;outline:none;
+  transition:border-color .2s}
+.proxy-input:focus{border-color:var(--accent)}
+.proxy-input::placeholder{color:var(--dim)}
+.p-btn{padding:9px 18px;background:var(--accent);color:#fff;border:none;
+  border-radius:6px;font-family:var(--fu);font-size:10px;font-weight:700;
+  letter-spacing:.1em;text-transform:uppercase;cursor:pointer;
+  white-space:nowrap;transition:opacity .15s}
+.p-btn:hover{opacity:.85}
+.p-btn:disabled{opacity:.4;cursor:default}
+.p-btn.danger{background:rgba(248,113,113,.15);color:var(--red);border:1px solid rgba(248,113,113,.2)}
+.p-btn.danger:hover{background:rgba(248,113,113,.25)}
+.p-btn.secondary{background:var(--s2);color:var(--muted);border:1px solid var(--border)}
+.p-btn.secondary:hover{color:var(--text);border-color:var(--dim)}
+.proxy-status{display:inline-flex;align-items:center;gap:5px;
+  font-family:var(--fm);font-size:9px;letter-spacing:.1em}
+.proxy-status-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.ps-ok  {background:var(--green);box-shadow:0 0 5px var(--green)}
+.ps-err {background:var(--red);box-shadow:0 0 5px var(--red)}
+.ps-unk {background:var(--dim)}
+.ps-act {background:var(--primary);box-shadow:0 0 5px var(--primary);animation:blink 2s infinite}
+.proxy-url-cell{font-family:var(--fm);font-size:10px;color:var(--text);
+  max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.proxy-test-result{font-family:var(--fm);font-size:9px;color:var(--muted)}
+.p-spin{display:inline-block;width:10px;height:10px;border:1.5px solid var(--dim);
+  border-top-color:var(--primary);border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
 </style>
 </head>
 <body>
@@ -404,6 +436,15 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
             <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2M9 12h6m-6 4h4"/>
           </svg>
           Event Log
+        </a>
+      </div>
+      <div class="sb-section" style="margin-top:14px">
+        <div class="sb-section-lbl">Config</div>
+        <a class="nav-link" data-tab="proxies">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          </svg>
+          SC Proxies
         </a>
       </div>
     </nav>
@@ -671,6 +712,53 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
             </table>
           </div>
           <div class="lm-wrap"><button class="lm-btn" id="more-log">Load More</button></div>
+        </div>
+      </div>
+
+      <!-- TAB: SC PROXIES -->
+      <div class="tab" id="tab-proxies">
+        <div class="pg-head">
+          <div class="pg-title">SC Proxies</div>
+          <div class="pg-sub">Manage SoundCloud download proxies — stored in Redis, applied without restart</div>
+        </div>
+
+        <div class="card" style="margin-bottom:18px">
+          <div class="card-hdr">
+            <div class="card-title">Add Proxy</div>
+          </div>
+          <div class="card-body">
+            <div class="proxy-add-row">
+              <input class="proxy-input" id="proxy-url-input"
+                placeholder="http://user:pass@host:port  or  socks5://user:pass@host:port"
+                spellcheck="false" autocomplete="off">
+              <button class="p-btn" id="proxy-add-btn">Add</button>
+            </div>
+            <div id="proxy-add-msg" style="font-family:var(--fm);font-size:9px;color:var(--muted);min-height:14px"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-hdr">
+            <div class="card-title">Proxy List</div>
+            <button class="p-btn secondary" id="proxy-refresh-btn" style="padding:6px 14px">Refresh</button>
+          </div>
+          <div style="overflow-x:auto">
+            <table class="dt" id="proxy-table">
+              <thead>
+                <tr>
+                  <th style="width:36px">#</th>
+                  <th>Proxy URL</th>
+                  <th>Added</th>
+                  <th>Last Test</th>
+                  <th>Result</th>
+                  <th style="text-align:center">Status</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="proxy-tbody"></tbody>
+            </table>
+          </div>
+          <div id="proxy-empty" class="no-data" style="display:none">No proxies configured</div>
         </div>
       </div>
 
@@ -999,7 +1087,7 @@ async function loadStats() {
 
 /* ── TABS ────────────────────────────────────────────────── */
 function switchTab(id) {
-  const valid = ['ym','spotify','sc','log'];
+  const valid = ['ym','spotify','sc','log','proxies'];
   if (!valid.includes(id)) id='ym';
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
   document.querySelectorAll('.nav-link').forEach(l=>l.classList.remove('active'));
@@ -1008,7 +1096,7 @@ function switchTab(id) {
   history.replaceState(null,'','#'+id);
   const tbl = document.getElementById('tbl-'+id);
   const isEmpty = tbl && tbl.children.length === 0;
-  if (!loaded[id] || isEmpty) { loadTabData(id); loaded[id]=true; }
+  if (!loaded[id] || isEmpty || id === 'proxies') { loadTabData(id); loaded[id]=true; }
 }
 
 async function loadTabData(id) {
@@ -1018,6 +1106,8 @@ async function loadTabData(id) {
     await Promise.all([loadTable('spotify','tbl-spotify',0,false), loadChart('spotify',7)]);
   } else if (id === 'sc') {
     await Promise.all([loadTable('sc','tbl-sc',0,false), loadChart('sc',7)]);
+  } else if (id === 'proxies') {
+    await loadProxies();
   } else {
     offsets.log = 0;
     await loadTable(logSrc,'tbl-log',0,false);
@@ -1223,6 +1313,129 @@ document.addEventListener('DOMContentLoaded', () => {
     background: { color: 'transparent' }
   });
 });
+
+/* ── PROXY MANAGER ───────────────────────────────────────── */
+let _proxies = [];
+
+function _proxyShortLabel(url) {
+  try {
+    const u = new URL(url);
+    return u.hostname + (u.port ? ':' + u.port : '');
+  } catch { return url.slice(0, 30); }
+}
+
+function _fmtDate(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('ru-RU', {
+    timeZone: 'Europe/Moscow', day: '2-digit', month: '2-digit',
+    hour: '2-digit', minute: '2-digit'
+  });
+}
+
+function _renderProxies(data) {
+  _proxies = data;
+  const tbody = document.getElementById('proxy-tbody');
+  const empty = document.getElementById('proxy-empty');
+  const table = document.getElementById('proxy-table');
+  if (!tbody) return;
+  if (!data.length) {
+    tbody.innerHTML = '';
+    empty.style.display = '';
+    table.style.display = 'none';
+    return;
+  }
+  empty.style.display = 'none';
+  table.style.display = '';
+  tbody.innerHTML = data.map((p, i) => {
+    const isActive = p.active;
+    const ok = p.last_test_ok;
+    const dotCls = isActive ? 'ps-act' : ok === true ? 'ps-ok' : ok === false ? 'ps-err' : 'ps-unk';
+    const statusLabel = isActive ? 'Active' : ok === true ? 'OK' : ok === false ? 'Error' : 'Untested';
+    const resultText = p.last_test_detail || '—';
+    return `<tr id="proxy-row-${i}">
+      <td style="color:var(--dim)">${i + 1}</td>
+      <td class="proxy-url-cell" title="${p.url}">${p.url}</td>
+      <td style="color:var(--dim);font-size:10px">${_fmtDate(p.added_at)}</td>
+      <td style="color:var(--dim);font-size:10px">${_fmtDate(p.last_test_at)}</td>
+      <td class="proxy-test-result" id="proxy-detail-${i}">${resultText}</td>
+      <td style="text-align:center">
+        <span class="proxy-status">
+          <span class="proxy-status-dot ${dotCls}"></span>
+          ${statusLabel}
+        </span>
+      </td>
+      <td style="text-align:right;white-space:nowrap;display:flex;gap:6px;justify-content:flex-end">
+        <button class="p-btn secondary" style="padding:5px 10px;font-size:8px"
+          onclick="testProxy(${i})" id="proxy-test-btn-${i}">Test</button>
+        <button class="p-btn danger" style="padding:5px 10px;font-size:8px"
+          onclick="deleteProxy(${i})">Del</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function loadProxies() {
+  const data = await apiFetch('/api/proxies');
+  if (data) _renderProxies(data);
+}
+
+async function testProxy(idx) {
+  const btn = document.getElementById(`proxy-test-btn-${idx}`);
+  const detail = document.getElementById(`proxy-detail-${idx}`);
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="p-spin"></span>'; }
+  if (detail) detail.textContent = 'Testing…';
+  try {
+    const r = await fetch(`/api/proxies/${idx}/test`, { method: 'POST' });
+    if (r.status === 401) { window.location.href = '/dashboard/login'; return; }
+    const d = await r.json();
+    await loadProxies(); // re-render with updated status from server
+  } catch (e) {
+    if (detail) detail.textContent = 'Error: ' + e.message;
+    if (btn) { btn.disabled = false; btn.textContent = 'Test'; }
+  }
+}
+
+async function deleteProxy(idx) {
+  if (!confirm(`Remove proxy #${idx + 1}?\n${_proxies[idx]?.url || ''}`)) return;
+  const r = await fetch(`/api/proxies/${idx}`, { method: 'DELETE' });
+  if (r.status === 401) { window.location.href = '/dashboard/login'; return; }
+  if (r.ok) await loadProxies();
+}
+
+document.getElementById('proxy-add-btn')?.addEventListener('click', async () => {
+  const input = document.getElementById('proxy-url-input');
+  const msg   = document.getElementById('proxy-add-msg');
+  const btn   = document.getElementById('proxy-add-btn');
+  const url = (input?.value || '').trim();
+  if (!url) { msg.style.color = 'var(--red)'; msg.textContent = 'Enter proxy URL'; return; }
+  btn.disabled = true;
+  msg.style.color = 'var(--muted)'; msg.textContent = 'Adding…';
+  try {
+    const r = await fetch('/api/proxies', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    if (r.status === 401) { window.location.href = '/dashboard/login'; return; }
+    if (r.ok) {
+      msg.style.color = 'var(--green)';
+      msg.textContent = `Added: ${_proxyShortLabel(url)}. Admin notified via Telegram.`;
+      input.value = '';
+      await loadProxies();
+    } else if (r.status === 409) {
+      msg.style.color = 'var(--orange)'; msg.textContent = 'Proxy already exists';
+    } else if (r.status === 422) {
+      msg.style.color = 'var(--red)'; msg.textContent = 'Invalid URL format';
+    } else {
+      msg.style.color = 'var(--red)'; msg.textContent = `Error ${r.status}`;
+    }
+  } catch (e) {
+    msg.style.color = 'var(--red)'; msg.textContent = 'Connection error';
+  }
+  btn.disabled = false;
+});
+
+document.getElementById('proxy-refresh-btn')?.addEventListener('click', loadProxies);
 
 /* ── INIT ────────────────────────────────────────────────── */
 function initDash() {

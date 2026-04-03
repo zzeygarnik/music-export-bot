@@ -1,4 +1,5 @@
 """Bot-level middlewares: throttling, stale-button guard, auto-answer for callback queries."""
+import logging
 import time
 from typing import Any, Awaitable, Callable
 
@@ -8,6 +9,8 @@ from aiogram.types import TelegramObject, Message, CallbackQuery
 from config import settings
 from utils import db
 from bot.tracker import _active_msg
+
+log = logging.getLogger(__name__)
 
 # Callback prefixes that are exempt from stale check (must work until explicitly acted on).
 _ETERNAL_CALLBACK_PREFIXES = ("batch_req:approve:", "batch_req:reject:", "batch_req:send")
@@ -88,6 +91,36 @@ class StaleButtonMiddleware(BaseMiddleware):
                 if tracked is not None and event.message.message_id != tracked:
                     await event.answer("Используй последнее сообщение бота.")
                     return
+        return await handler(event, data)
+
+
+class DeduplicateUpdateMiddleware(BaseMiddleware):
+    """
+    Drop duplicate Telegram updates based on update_id stored in Redis (TTL 24 h).
+    Protects against double-processing during polling↔webhook switches or bot restarts.
+    """
+
+    def __init__(self, redis_url: str) -> None:
+        import redis.asyncio as aioredis
+        self._redis = aioredis.from_url(redis_url, decode_responses=True)
+
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
+        data: dict[str, Any],
+    ) -> Any:
+        update_id = getattr(event, "update_id", None)
+        if update_id is not None:
+            key = f"dedup:upd:{update_id}"
+            try:
+                was_new = await self._redis.set(key, "1", nx=True, ex=86400)
+                if not was_new:
+                    log.debug("Duplicate update_id=%d dropped", update_id)
+                    return
+            except Exception as e:
+                # Redis unavailable — fail open (don't block updates)
+                log.warning("DeduplicateUpdateMiddleware Redis error: %s", e)
         return await handler(event, data)
 
 
