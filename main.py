@@ -15,6 +15,7 @@ from aiogram.webhook.aiohttp_server import SimpleRequestHandler
 from config import settings
 from bot.handlers import router
 from bot.handlers.common import _pending_spotify_codes, detect_and_store_server_ip
+from bot.tracker import set_active_msg
 from bot.middleware import BanMiddleware, ThrottlingMiddleware, StaleButtonMiddleware, CallbackAnswerMiddleware
 from utils import db
 
@@ -363,16 +364,18 @@ def _make_spotify_callback(bot: Bot):
             return aiohttp_web.Response(text=_SPOTIFY_CALLBACK_HTML_ERR, content_type="text/html")
 
         _pending_spotify_codes[user_id] = code
-        kb = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="🎵 Загрузить лайки", callback_data="spotify:load_liked_auto"),
-        ]])
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🎵 Загрузить лайки", callback_data="spotify:load_liked_auto")],
+            [InlineKeyboardButton(text="← Назад", callback_data="spotify:to_menu")],
+        ])
         try:
-            await bot.send_message(
+            sent = await bot.send_message(
                 user_id,
                 "✅ <b>Авторизация прошла успешно!</b>\n\nНажми кнопку для загрузки лайков.",
                 parse_mode="HTML",
                 reply_markup=kb,
             )
+            set_active_msg(user_id, sent.message_id)
         except Exception as e:
             log.warning("Failed to notify user %d after Spotify OAuth: %s", user_id, e)
 
