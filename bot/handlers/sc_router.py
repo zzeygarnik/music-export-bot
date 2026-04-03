@@ -1628,7 +1628,8 @@ async def _run_batch_download(
     failed_tracks: list[dict] = []
     downloaded_count = 0
     cache_hits_count = 0  # tracks served from file_id cache without re-downloading
-    sc_error_count = 0  # tracks SC-specific download failures (not YT fallback)
+    sc_error_count = 0   # SC-specific download failures
+    yt_error_count = 0   # YT direct download failures
     started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     await update_batch_live(user_id, username, {
@@ -1688,13 +1689,24 @@ async def _run_batch_download(
                         # fall through to normal download
 
             if direct_url:
-                try:
-                    path, meta = await download_with_proxy_rotation(direct_url, user_id, progress_msg.bot)
-                except Exception as e:
-                    log.warning("SC batch URL download failed '%s': %s", direct_url, e)
-                    not_found.append(f"{artist} — {title}")
-                    failed_tracks.append(track)
-                    continue
+                if sc_downloader._is_youtube_url(direct_url):
+                    # YT direct URL — bypass SC proxy rotation entirely
+                    try:
+                        path, meta = await sc_downloader.download(direct_url, user_id)
+                    except Exception as e:
+                        log.warning("YT batch direct download failed '%s': %s", direct_url, e)
+                        yt_error_count += 1
+                        not_found.append(f"{artist} — {title}")
+                        failed_tracks.append(track)
+                        continue
+                else:
+                    try:
+                        path, meta = await download_with_proxy_rotation(direct_url, user_id, progress_msg.bot)
+                    except Exception as e:
+                        log.warning("SC batch URL download failed '%s': %s", direct_url, e)
+                        not_found.append(f"{artist} — {title}")
+                        failed_tracks.append(track)
+                        continue
             else:
                 path, meta = None, {}
                 sc_ok = False
@@ -1768,6 +1780,17 @@ async def _run_batch_download(
         asyncio.create_task(notify_admin_sc_error(
             progress_msg.bot, user_id, username,
             f"Батч: {sc_error_count} из {total} треков не скачались с SC",
+        ))
+
+    # Notify admin if YT direct downloads repeatedly failed
+    if yt_error_count >= 3 and settings.ADMIN_ID:
+        asyncio.create_task(progress_msg.bot.send_message(
+            settings.ADMIN_ID,
+            f"⚠️ <b>YouTube: ошибки при батч-скачивании</b>\n\n"
+            f"👤 {'@' + username if username else f'#{user_id}'}\n"
+            f"❌ {yt_error_count} из {total} треков не скачались с YouTube.\n\n"
+            f"Возможно: бан по IP, требование куки или недоступность видео.",
+            parse_mode="HTML",
         ))
 
     batch_result = "stopped" if cancel_event.is_set() else "success"
