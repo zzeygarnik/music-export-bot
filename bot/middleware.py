@@ -25,7 +25,7 @@ class BanMiddleware(BaseMiddleware):
         user = getattr(event, "from_user", None)
         if user and user.id != settings.ADMIN_ID:
             try:
-                if db.is_banned(user.id):
+                if await db.is_banned(user.id):
                     if isinstance(event, CallbackQuery):
                         await event.answer("⛔ Ты заблокирован.", show_alert=True)
                     elif isinstance(event, Message):

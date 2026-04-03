@@ -40,7 +40,7 @@ async def on_inline_query(query: InlineQuery) -> None:
         await query.answer([], cache_time=0)
         return
 
-    hits = search_cache_fuzzy(q, threshold=70)
+    hits = await search_cache_fuzzy(q, threshold=70)
     results = [
         InlineQueryResultCachedAudio(id=str(i), audio_file_id=hit["file_id"])
         for i, hit in enumerate(hits[:5])
@@ -81,7 +81,7 @@ async def on_chosen_inline_result(result: ChosenInlineResult) -> None:
     except ValueError:
         return
 
-    hits = search_cache_fuzzy(query, threshold=70)
+    hits = await search_cache_fuzzy(query, threshold=70)
     if idx < len(hits):
         hit = hits[idx]
         artist = hit.get("artist", "")
@@ -90,4 +90,4 @@ async def on_chosen_inline_result(result: ChosenInlineResult) -> None:
     else:
         detail = query
 
-    log_event(user_id, username, "inline_pick", "success", track_count=1, detail=detail)
+    await log_event(user_id, username, "inline_pick", "success", track_count=1, detail=detail)

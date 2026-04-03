@@ -483,7 +483,7 @@ async def _show_batch_access_page(call: CallbackQuery, back_cb: str, use_answer:
     """
     from bot.keyboards import batch_access_request_keyboard, batch_access_pending_keyboard
 
-    has_pending = db.get_pending_request(call.from_user.id) is not None
+    has_pending = await db.get_pending_request(call.from_user.id) is not None
 
     text = _BATCH_ACCESS_PENDING_TEXT if has_pending else _BATCH_ACCESS_TEXT
     kb = batch_access_pending_keyboard(back_cb) if has_pending else batch_access_request_keyboard(back_cb)

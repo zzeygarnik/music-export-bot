@@ -124,7 +124,10 @@ body::after{content:'';position:fixed;inset:0;z-index:9999;pointer-events:none;
 .sb-status{display:flex;align-items:center;gap:8px;font-family:var(--fm);
   font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
 .status-dot{width:6px;height:6px;border-radius:50%;background:var(--green);
-  box-shadow:0 0 8px var(--green);animation:blink 2s infinite}
+  box-shadow:0 0 8px var(--green);animation:blink 2s infinite;
+  transition:background .3s,box-shadow .3s}
+.status-dot.offline{background:var(--red);box-shadow:0 0 8px var(--red);animation:none}
+.status-dot.reconnecting{background:var(--orange);box-shadow:0 0 8px var(--orange);animation:blink 1s infinite}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
 .sb-updated{font-family:var(--fm);font-size:8px;color:var(--dim);letter-spacing:.1em}
 .sb-logout{display:flex;align-items:center;gap:8px;padding:6px 8px;
@@ -405,7 +408,7 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
       </div>
     </nav>
     <div class="sb-foot">
-      <div class="sb-status"><span class="status-dot"></span>Bot Online</div>
+      <div class="sb-status"><span class="status-dot" id="status-dot"></span><span id="status-text">Bot Online</span></div>
       <div class="sb-updated" id="sb-updated">—</div>
       <button class="sb-logout" id="logout-btn">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -689,11 +692,14 @@ function badge(r) {
 function countUp(el, to) {
   if (!el) return;
   if (!to) { el.textContent = '0'; return; }
+  const current = parseInt(el.textContent.replace(/,/g, ''), 10) || 0;
+  if (current === to) return;
+  const from = current;
   const t0 = performance.now(), dur = 750;
   const tick = now => {
     const p = Math.min((now-t0)/dur, 1);
     const e = 1-Math.pow(1-p,3);
-    el.textContent = Math.round(to*e).toLocaleString('en');
+    el.textContent = Math.round(from + (to - from) * e).toLocaleString('en');
     if (p<1) requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
@@ -1085,6 +1091,14 @@ function applyBatch(data) {
 /* ── WEBSOCKET ───────────────────────────────────────────── */
 let _wsRetryMs = 1000;
 
+function _setWsStatus(state) {
+  const dot  = document.getElementById('status-dot');
+  const text = document.getElementById('status-text');
+  if (!dot || !text) return;
+  dot.className = 'status-dot' + (state === 'online' ? '' : state === 'reconnecting' ? ' reconnecting' : ' offline');
+  text.textContent = state === 'online' ? 'Bot Online' : state === 'reconnecting' ? 'Reconnecting…' : 'Disconnected';
+}
+
 function connectWS() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const ws = new WebSocket(`${proto}//${location.host}/api/ws`);
@@ -1095,8 +1109,9 @@ function connectWS() {
       if (msg.batch !== undefined) applyBatch(msg.batch);
     } catch (_) {}
   };
-  ws.onopen  = () => { _wsRetryMs = 1000; };
+  ws.onopen  = () => { _wsRetryMs = 1000; _setWsStatus('online'); };
   ws.onclose = () => {
+    _setWsStatus(_wsRetryMs <= 1000 ? 'reconnecting' : 'offline');
     setTimeout(connectWS, _wsRetryMs);
     _wsRetryMs = Math.min(_wsRetryMs * 2, 30000);
   };

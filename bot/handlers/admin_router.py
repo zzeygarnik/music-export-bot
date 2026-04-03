@@ -95,7 +95,7 @@ async def on_back_to_menu(call: CallbackQuery) -> None:
 
 @router.callback_query(AdminFlow.menu, F.data == "admin:stats")
 async def on_stats(call: CallbackQuery) -> None:
-    stats = db.get_admin_stats()
+    stats = await db.get_admin_stats()
     if not stats:
         await call.message.edit_text("❌ Не удалось получить статистику (БД недоступна).", reply_markup=_back_kb())
         return
@@ -129,7 +129,7 @@ async def on_stats(call: CallbackQuery) -> None:
 
 @router.callback_query(AdminFlow.menu, F.data == "admin:logs")
 async def on_logs(call: CallbackQuery) -> None:
-    events = db.get_recent_events(20)
+    events = await db.get_recent_events(20)
     if not events:
         await call.message.edit_text("📋 Событий нет.", reply_markup=_back_kb())
         return
@@ -162,7 +162,7 @@ def _batch_text(whitelist: list[dict]) -> str:
 
 @router.callback_query(AdminFlow.menu, F.data == "admin:batch")
 async def on_batch(call: CallbackQuery) -> None:
-    whitelist = db.get_batch_whitelist()
+    whitelist = await db.get_batch_whitelist()
     await call.message.edit_text(_batch_text(whitelist), parse_mode="HTML", reply_markup=_batch_kb(whitelist))
 
 
@@ -181,7 +181,7 @@ async def on_batch_add(call: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(AdminFlow.batch_add, F.data == "admin:cancel_batch_add")
 async def on_cancel_batch_add(call: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(AdminFlow.menu)
-    whitelist = db.get_batch_whitelist()
+    whitelist = await db.get_batch_whitelist()
     await call.message.edit_text(_batch_text(whitelist), parse_mode="HTML", reply_markup=_batch_kb(whitelist))
 
 
@@ -191,9 +191,9 @@ async def on_batch_add_input(message: Message, state: FSMContext) -> None:
     if user_id is None:
         await message.answer("❌ Не удалось определить user_id. Отправь число или перешли сообщение.")
         return
-    db.add_batch_whitelist(user_id, username)
+    await db.add_batch_whitelist(user_id, username)
     await state.set_state(AdminFlow.menu)
-    whitelist = db.get_batch_whitelist()
+    whitelist = await db.get_batch_whitelist()
     name = f"@{username}" if username else str(user_id)
     await message.answer(
         f"✅ {name} (<code>{user_id}</code>) добавлен в whitelist.",
@@ -205,8 +205,8 @@ async def on_batch_add_input(message: Message, state: FSMContext) -> None:
 @router.callback_query(AdminFlow.menu, F.data.startswith("admin:batch_rm:"))
 async def on_batch_rm(call: CallbackQuery) -> None:
     user_id = int(call.data.split(":")[-1])
-    db.remove_batch_whitelist(user_id)
-    whitelist = db.get_batch_whitelist()
+    await db.remove_batch_whitelist(user_id)
+    whitelist = await db.get_batch_whitelist()
     await call.message.edit_text(_batch_text(whitelist), parse_mode="HTML", reply_markup=_batch_kb(whitelist))
 
 
@@ -214,7 +214,7 @@ async def on_batch_rm(call: CallbackQuery) -> None:
 
 @router.callback_query(AdminFlow.menu, F.data == "admin:bans")
 async def on_bans(call: CallbackQuery) -> None:
-    banned = db.get_banned_users()
+    banned = await db.get_banned_users()
     await call.message.edit_text(
         f"🚫 <b>Заблокированные</b>\nВсего: {len(banned)}",
         parse_mode="HTML",
@@ -237,7 +237,7 @@ async def on_ban_add(call: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(AdminFlow.ban_input, F.data == "admin:cancel_ban_add")
 async def on_cancel_ban_add(call: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(AdminFlow.menu)
-    banned = db.get_banned_users()
+    banned = await db.get_banned_users()
     await call.message.edit_text(
         f"🚫 <b>Заблокированные</b>\nВсего: {len(banned)}",
         parse_mode="HTML",
@@ -254,9 +254,9 @@ async def on_ban_input(message: Message, state: FSMContext) -> None:
     if user_id == settings.ADMIN_ID:
         await message.answer("❌ Нельзя заблокировать самого себя.")
         return
-    db.ban_user(user_id, username)
+    await db.ban_user(user_id, username)
     await state.set_state(AdminFlow.menu)
-    banned = db.get_banned_users()
+    banned = await db.get_banned_users()
     name = f"@{username}" if username else str(user_id)
     await message.answer(
         f"🚫 {name} (<code>{user_id}</code>) заблокирован.",
@@ -268,8 +268,8 @@ async def on_ban_input(message: Message, state: FSMContext) -> None:
 @router.callback_query(AdminFlow.menu, F.data.startswith("admin:unban:"))
 async def on_unban(call: CallbackQuery) -> None:
     user_id = int(call.data.split(":")[-1])
-    db.unban_user(user_id)
-    banned = db.get_banned_users()
+    await db.unban_user(user_id)
+    banned = await db.get_banned_users()
     await call.message.edit_text(
         f"🚫 <b>Заблокированные</b>\nВсего: {len(banned)}",
         parse_mode="HTML",
@@ -284,11 +284,11 @@ async def on_batch_req_send(call: CallbackQuery) -> None:
     user_id = call.from_user.id
     username = call.from_user.username
 
-    if db.get_pending_request(user_id) is not None:
+    if await db.get_pending_request(user_id) is not None:
         await call.answer("⏳ Твой запрос уже на рассмотрении.", show_alert=True)
         return
 
-    request_id = db.create_batch_request(user_id, username)
+    request_id = await db.create_batch_request(user_id, username)
     if request_id == -1:
         await call.answer("❌ Ошибка при отправке запроса. Попробуй позже.", show_alert=True)
         return
@@ -302,7 +302,7 @@ async def on_batch_req_send(call: CallbackQuery) -> None:
                 parse_mode="HTML",
                 reply_markup=admin_batch_request_keyboard(request_id),
             )
-            db.set_request_admin_msg(request_id, msg.message_id, settings.ADMIN_ID)
+            await db.set_request_admin_msg(request_id, msg.message_id, settings.ADMIN_ID)
         except Exception as e:
             log.warning("Failed to notify admin about batch request %s: %s", request_id, e)
 
@@ -318,7 +318,7 @@ async def on_batch_req_approve(call: CallbackQuery) -> None:
         return
 
     request_id = int(call.data.split(":")[-1])
-    req = db.get_request_by_id(request_id)
+    req = await db.get_request_by_id(request_id)
     if not req:
         await call.answer("Запрос не найден.", show_alert=True)
         return
@@ -326,8 +326,8 @@ async def on_batch_req_approve(call: CallbackQuery) -> None:
         await call.answer("Запрос уже обработан.", show_alert=True)
         return
 
-    db.resolve_batch_request(request_id, "approved")
-    db.add_batch_whitelist(req["user_id"], req["username"])
+    await db.resolve_batch_request(request_id, "approved")
+    await db.add_batch_whitelist(req["user_id"], req["username"])
 
     name = f"@{req['username']}" if req["username"] else f"ID {req['user_id']}"
     await call.message.edit_text(
@@ -351,7 +351,7 @@ async def on_batch_req_reject(call: CallbackQuery) -> None:
         return
 
     request_id = int(call.data.split(":")[-1])
-    req = db.get_request_by_id(request_id)
+    req = await db.get_request_by_id(request_id)
     if not req:
         await call.answer("Запрос не найден.", show_alert=True)
         return
@@ -359,7 +359,7 @@ async def on_batch_req_reject(call: CallbackQuery) -> None:
         await call.answer("Запрос уже обработан.", show_alert=True)
         return
 
-    db.resolve_batch_request(request_id, "rejected")
+    await db.resolve_batch_request(request_id, "rejected")
 
     name = f"@{req['username']}" if req["username"] else f"ID {req['user_id']}"
     await call.message.edit_text(

@@ -60,11 +60,11 @@ async def on_yms_token(message: Message, state: FSMContext) -> None:
         await source._get_client()
     except Exception as e:
         log.warning("YMShare auth failed user=%s: %s", user_id, e)
-        log_event(user_id, username, "auth_fail", "error", detail=type(e).__name__)
+        await log_event(user_id, username, "auth_fail", "error", detail=type(e).__name__)
         await status_msg.edit_text("❌ Не удалось авторизоваться. Отправь токен ещё раз.")
         return
 
-    log_event(user_id, username, "auth_ok", "success")
+    await log_event(user_id, username, "auth_ok", "success")
     await state.update_data(yms_token=token)
     await status_msg.edit_text(
         _YMS_INPUT_TEXT,
@@ -130,7 +130,7 @@ async def on_yms_waiting(message: Message, state: FSMContext) -> None:
         )
         return
 
-    log_event(user_id, username, "yms_load", "success", track_count=len(tracks), detail=title)
+    await log_event(user_id, username, "yms_load", "success", track_count=len(tracks), detail=title)
     await state.update_data(yms_tracks=tracks, yms_playlist_title=title, yms_filter_artists=[], yms_filtered_tracks=None)
     safe_title = title[:50] if title else "Плейлист"
     await status_msg.edit_text(
@@ -143,7 +143,7 @@ async def on_yms_waiting(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(YMShareFlow.actions, F.data == "yms:download_all")
 async def on_yms_download_all(call: CallbackQuery, state: FSMContext) -> None:
-    if not is_batch_allowed(call.from_user.id, call.from_user.username):
+    if not await is_batch_allowed(call.from_user.id, call.from_user.username):
         await _show_batch_access_page(call, back_cb="yms:back_to_actions")
         return
     user_id = call.from_user.id
@@ -288,7 +288,7 @@ async def on_yms_filter_input(message: Message, state: FSMContext) -> None:
             parse_mode="HTML",
             reply_markup=ym_share_filter_result_keyboard(),
         )
-        log_event(message.from_user.id, message.from_user.username, "export_filtered", "success", track_count=len(matched))
+        await log_event(message.from_user.id, message.from_user.username, "export_filtered", "success", track_count=len(matched))
     finally:
         await cleanup(tmp_path)
 
@@ -304,7 +304,7 @@ async def on_yms_filter_input(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "yms:download_filtered")
 async def on_yms_download_filtered(call: CallbackQuery, state: FSMContext) -> None:
-    if not is_batch_allowed(call.from_user.id, call.from_user.username):
+    if not await is_batch_allowed(call.from_user.id, call.from_user.username):
         # Document caption can't be edited as text — send new message
         await _show_batch_access_page(call, back_cb="yms:back_to_actions", use_answer=True)
         return
@@ -375,7 +375,7 @@ async def on_yms_seek_input(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(YMShareFlow.seek_confirm, F.data == "yms_resume:confirm")
 async def on_yms_seek_confirm(call: CallbackQuery, state: FSMContext) -> None:
-    if not is_batch_allowed(call.from_user.id, call.from_user.username):
+    if not await is_batch_allowed(call.from_user.id, call.from_user.username):
         await _show_batch_access_page(call, back_cb="yms:back_to_actions")
         return
     user_id = call.from_user.id

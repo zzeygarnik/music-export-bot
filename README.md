@@ -59,6 +59,9 @@ Telegram bot with three main sections: **export your music library to `.txt` / `
   - **Batch queue**: if all slots are taken (`SC_MAX_BATCH_DOWNLOADS` limit), the user is placed in a numbered queue instead of receiving "bot is busy"; download starts automatically when a slot frees up; users can cancel their position at any time; `/start` also removes them from the queue
   - Concurrency limit: configurable via `SC_MAX_BATCH_DOWNLOADS`
 - **Auto-retry**: one automatic retry on network error before giving up
+- **Stale cache auto-cleanup**: if Telegram rejects a cached `file_id`, the entry is deleted automatically and a fresh download starts transparently ("⏳ Cache expired, searching again…")
+- **SC proxy rotation**: configure `SC_PROXIES` with a comma-separated list of fallback proxies — on IP ban the bot switches to the next proxy automatically and notifies the admin; all rotation attempts are transparent to the user
+- **YouTube fallback on SC ban**: when SoundCloud is unreachable (IP ban / all proxies exhausted), an inline **"🔍 Find on YouTube"** button appears for single-track searches — one tap searches YouTube with the same query, no re-entry needed
 
 **Spotify integration (automatic OAuth)**
 - Spotify is available inside the **Export** and **Playlist/Album by link** sections — not a separate top-level button
@@ -89,10 +92,16 @@ Telegram bot with three main sections: **export your music library to `.txt` / `
 **Personal statistics** (`/mystats`)
 - Per-user download and export stats: tracks downloaded (search + batch), exports (with **YM / Spotify breakdown**), playlists downloaded, date of first activity — broken down into **last 7 days** and **all time**
 
+**Inline mode**
+- Type `@botname query` in any Telegram chat — returns up to 5 cached tracks as instant audio without opening the bot
+- Cache miss: shows a **"🔍 Find «query» in bot →"** button that deep-links directly to SC/YT search for that query
+- Uses the same fuzzy matching as the regular cache (rapidfuzz, threshold 70)
+- Only previously downloaded and cached tracks are available inline; new downloads require opening the bot
+
 **General**
 - **Web dashboard** — **4 tabs**: Yandex Music / Spotify / SC+YouTube / Event log; served by the bot at `/dashboard` (password-protected via `DASHBOARD_TOKEN`)
 - PostgreSQL stores events, live batch state, track file_id cache, banned users, batch whitelist, access requests
-- Redis FSM storage with graceful fallback to MemoryStorage
+- Redis FSM storage (required — bot won't start if Redis is unavailable)
 - Middleware: **Ban check** → Throttling → Stale-button guard (eternal callbacks exempted) → Callback auto-answer
 - **Batch access control**: `BATCH_ALLOWED_USERS` env var (`*` / `""` / static list) + DB whitelist via admin panel + in-bot request flow
 - **Bot commands** registered on startup: `/start`, `/faq`, `/mystats` (`/admin` is intentionally omitted from the command list)
@@ -152,6 +161,7 @@ music-export-bot/
 │   │   ├── admin_router.py   # AdminFlow: stats, logs, batch whitelist, bans, requests; admin reply forwarding
 │   │   ├── common.py         # Shared globals, constants, helper functions, _pending_spotify_codes
 │   │   ├── fallback.py       # Fallback handlers (registered last)
+│   │   ├── inline_router.py  # Inline query handler: fuzzy cache search → InlineQueryResultCachedAudio; deep link on miss
 │   │   ├── sc_router.py      # SCSearchFlow + SCBatchFlow + download helpers + retry
 │   │   ├── spotify_router.py # SpotifyFlow: playlists + liked tracks OAuth + auto callback
 │   │   ├── ym_router.py      # ExportFlow: YM export, delivery, filter; /faq + contact flow
@@ -188,13 +198,25 @@ Create a `.env` file in the project root:
 ```env
 BOT_TOKEN=your_telegram_bot_token
 
-# Optional — MemoryStorage used if unavailable (sessions reset on restart)
+# Required — bot refuses to start if Redis is unavailable (no silent fallback)
 REDIS_URL=redis://localhost:6379/0
 
-# Required if Telegram or SoundCloud is blocked by your ISP (e.g. Russia/DPI)
-# Used as proxy for BOTH Telegram API connection and SoundCloud downloads
+# Required if Telegram is blocked by your ISP (e.g. Russia/DPI)
+# Used ONLY as proxy for the Telegram API connection (not for SoundCloud downloads)
 # Format: http://user:pass@host:port  or  socks5://user:pass@host:port
 SC_PROXY=
+
+# Comma-separated list of proxy fallbacks for SoundCloud/YouTube downloads (rotated automatically on IP ban)
+# Format: http://user:pass@host:port,http://user:pass@host2:port2
+# Leave empty to download directly
+SC_PROXIES=
+
+# Server's public IP — shown in admin proxy-rotation alerts (optional, auto-detected if empty)
+SC_SERVER_IP=
+
+# Path to Netscape cookie file for SoundCloud authentication (optional)
+# Helps avoid rate-limiting; mount the file into the container: -v /path/to/sc_cookies.txt:/app/sc_cookies.txt
+SC_COOKIE_FILE=
 
 # Max concurrent SC batch downloads across all users (default: 2)
 SC_MAX_BATCH_DOWNLOADS=2
@@ -241,6 +263,8 @@ DASHBOARD_TOKEN=
 ```
 
 > **Note on `SC_PROXY`:** If Telegram is blocked by your provider, this variable is required — without it the bot won't connect to Telegram at all. Requires `aiohttp-socks` (already in `requirements.txt`).
+
+> **Note on `SC_PROXIES`:** Used only for SoundCloud/YouTube downloads. On IP ban the bot rotates through the list automatically and alerts the admin. Leave empty to download directly.
 
 > **Note on `POSTGRES_URL`:** The database must exist before starting the bot. Use `migrate_to_postgres.py` to create the schema and optionally migrate existing data from `events.jsonl`.
 
@@ -345,7 +369,7 @@ The web dashboard is served by the bot itself at `/dashboard` (no separate proce
 - **☁️ SC / YouTube** — separate metrics for SoundCloud and YouTube searches, batch stats
 - **📋 Event log** — filterable recent events table
 
-**Real-time updates via WebSocket** — all numbers, charts, and batch progress update automatically every 5 seconds without page refresh. Charts refresh only when underlying data changes. Auto-reconnects on disconnect.
+**Real-time updates via WebSocket** — all numbers, charts, and batch progress update automatically every 5 seconds without page refresh. Charts refresh only when underlying data changes. Auto-reconnects on disconnect with exponential backoff; the status indicator in the sidebar turns orange (reconnecting) or red (disconnected) on connection loss.
 
 **UX features:**
 - Active tab is saved in the URL hash (`#ym`, `#sc`, `#log`) — survives page refresh
@@ -366,8 +390,8 @@ Set `DASHBOARD_TOKEN` in `.env` (generate with `openssl rand -hex 20`), then ope
 | OAuth callback + webhook | aiohttp (built into bot process) |
 | Audio metadata | [mutagen](https://github.com/quodlibet/mutagen) |
 | Audio processing | ffmpeg (in Docker image) |
-| FSM storage | Redis / MemoryStorage fallback |
-| Event storage | PostgreSQL (psycopg2) |
+| FSM storage | Redis (required) |
+| Event storage | PostgreSQL (asyncpg) |
 | Dashboard | Custom web UI (aiohttp + vanilla JS) |
 | Containerization | Docker |
 | Hosting | Aeza VPS / TrueNAS Scale / any Linux server |
@@ -429,6 +453,9 @@ Set `DASHBOARD_TOKEN` in `.env` (generate with `openssl rand -hex 20`), then ope
   - **Очередь загрузок**: если все слоты заняты (лимит `SC_MAX_BATCH_DOWNLOADS`), пользователь встаёт в пронумерованную очередь вместо сообщения «бот занят»; скачивание стартует автоматически при освобождении слота; можно выйти из очереди в любой момент; `/start` также снимает с очереди
   - Ограничение параллельности: `SC_MAX_BATCH_DOWNLOADS`
 - **Авто-повтор**: одна попытка при сетевой ошибке
+- **Авто-очистка устаревшего кэша**: если Telegram отклоняет закэшированный `file_id`, запись автоматически удаляется из кэша и запускается свежий поиск («⏳ Кэш устарел, ищу заново…»)
+- **Ротация прокси SC**: задай `SC_PROXIES` со списком fallback-прокси через запятую — при IP-бане бот переключается на следующий прокси автоматически и уведомляет администратора; все попытки ротации прозрачны для пользователя
+- **YouTube-фолбэк при бане SC**: если SoundCloud недоступен (IP-бан / все прокси исчерпаны), при одиночном поиске появляется кнопка **«🔍 Найти на YouTube»** — один тап запускает поиск на YouTube с тем же запросом, повторный ввод не нужен
 
 **Интеграция со Spotify (автоматический OAuth)**
 - Spotify встроен в разделы **Экспорт** и **Плейлист/Альбом по ссылке** — не отдельная кнопка на главном экране
@@ -459,10 +486,16 @@ Set `DASHBOARD_TOKEN` in `.env` (generate with `openssl rand -hex 20`), then ope
 **Персональная статистика** (`/mystats`)
 - Статистика загрузок и экспортов для текущего пользователя: скачано треков (поиском и плейлистами), экспортировано (с **разбивкой ЯМ / Spotify**), плейлистов скачано, дата первой активности — за **последние 7 дней** и **за всё время**
 
+**Inline-режим**
+- Напиши `@botname запрос` в любом чате Telegram — бот вернёт до 5 треков из кэша прямо в чате, без открытия бота
+- Промах: появляется кнопка **«🔍 Найти «запрос» в боте →»** — диплинк сразу на поиск SC/YT по этому запросу
+- Те же fuzzy-метрики что и в обычном кэше (rapidfuzz, порог 70)
+- Inline-ответы — только ранее скачанные и закэшированные треки; новые треки нужно искать в боте
+
 **Общее**
 - **Веб-дашборд** — **4 вкладки**: Яндекс Музыка / Spotify / SC+YouTube / Лог событий; раздаётся ботом по `/dashboard`; **real-time обновления через WebSocket** (каждые 5 сек); hash-навигация по вкладкам; кнопка выхода; защита через `DASHBOARD_TOKEN`
 - PostgreSQL хранит события, состояние батча, кэш file_id, банлист, вайтлист, запросы
-- Redis FSM с graceful fallback на MemoryStorage
+- Redis FSM (обязателен — бот не стартует если Redis недоступен)
 - Стек middleware: **проверка бана** → throttling → защита от устаревших кнопок → авто-ответ на callback
 - **Управление доступом к батчу**: env `BATCH_ALLOWED_USERS` + DB-вайтлист + система запросов в боте
 - **Bot commands** регистрируются при старте: `/start`, `/faq`, `/mystats` (`/admin` намеренно не добавлен в список подсказок)
@@ -522,6 +555,7 @@ music-export-bot/
 │   │   ├── admin_router.py   # AdminFlow: статистика, логи, вайтлист, баны, запросы; пересылка ответов
 │   │   ├── common.py         # Общие константы, хелперы, _pending_spotify_codes
 │   │   ├── fallback.py       # Fallback-хендлеры
+│   │   ├── inline_router.py  # Inline-запросы: fuzzy-поиск по кэшу → InlineQueryResultCachedAudio; диплинк при промахе
 │   │   ├── sc_router.py      # SCSearchFlow + SCBatchFlow + хелперы скачивания + retry
 │   │   ├── spotify_router.py # SpotifyFlow: плейлисты + лайки OAuth + авто callback
 │   │   ├── ym_router.py      # ExportFlow: экспорт YM, доставка, фильтр; /faq + контакт
@@ -558,13 +592,25 @@ music-export-bot/
 ```env
 BOT_TOKEN=токен_твоего_telegram_бота
 
-# Опционально — без Redis используется MemoryStorage (сессии сбрасываются при рестарте)
+# Обязателен — при недоступности Redis бот не запустится
 REDIS_URL=redis://localhost:6379/0
 
-# Нужен если Telegram или SoundCloud заблокированы провайдером (Россия/ТСПУ)
-# Используется как прокси для Telegram API И для загрузок с SoundCloud
+# Нужен если Telegram заблокирован провайдером (Россия/ТСПУ)
+# Используется ТОЛЬКО для подключения к Telegram API (не для загрузок с SoundCloud)
 # Формат: http://user:pass@host:port  или  socks5://user:pass@host:port
 SC_PROXY=
+
+# Список fallback-прокси для загрузок с SoundCloud/YouTube через запятую (ротируются автоматически при IP-бане)
+# Формат: http://user:pass@host:port,http://user:pass@host2:port2
+# Оставь пустым для прямого соединения
+SC_PROXIES=
+
+# Публичный IP сервера — отображается в алертах при ротации прокси (опционально, определяется автоматически)
+SC_SERVER_IP=
+
+# Путь к Netscape cookie-файлу для авторизации на SoundCloud (опционально)
+# Помогает обходить rate-limiting; монтируй в контейнер: -v /path/to/sc_cookies.txt:/app/sc_cookies.txt
+SC_COOKIE_FILE=
 
 # Макс. одновременных батч-загрузок SC (по умолчанию: 2)
 SC_MAX_BATCH_DOWNLOADS=2
@@ -609,6 +655,8 @@ DASHBOARD_TOKEN=
 ```
 
 > **Про `SC_PROXY`:** Если Telegram заблокирован — переменная обязательна, без неё бот не подключится вообще. Требует `aiohttp-socks` (уже в `requirements.txt`).
+
+> **Про `SC_PROXIES`:** Используется только для загрузок с SoundCloud/YouTube. При IP-бане бот автоматически переключается на следующий прокси и уведомляет администратора. Без этой переменной загрузки идут напрямую.
 
 > **Про `POSTGRES_URL`:** База должна существовать до запуска бота. Используй `migrate_to_postgres.py` для создания схемы и переноса данных из `events.jsonl`.
 
@@ -728,8 +776,8 @@ docker run --rm \
 | OAuth callback + webhook | aiohttp (встроен в процесс бота) |
 | Метаданные аудио | [mutagen](https://github.com/quodlibet/mutagen) |
 | Аудио | ffmpeg (в Docker-образе) |
-| FSM-хранилище | Redis / MemoryStorage fallback |
-| Хранилище событий | PostgreSQL (psycopg2) |
+| FSM-хранилище | Redis (обязателен) |
+| Хранилище событий | PostgreSQL (asyncpg) |
 | Дашборд | Кастомный веб-интерфейс (aiohttp + vanilla JS) |
 | Контейнеризация | Docker |
 | Хостинг | Aeza VPS / TrueNAS Scale / любой Linux-сервер |
