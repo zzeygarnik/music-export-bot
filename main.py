@@ -188,12 +188,17 @@ async def _ws_handler(request: aiohttp_web.Request) -> aiohttp_web.WebSocketResp
         return aiohttp_web.Response(status=401)
     ws = aiohttp_web.WebSocketResponse(heartbeat=30)
     await ws.prepare(request)
+    from core import sc_downloader as _scd
     try:
         while not ws.closed:
             s = await db.get_dashboard_stats()
             b = await db.get_batch_live_data()
+            p = {
+                "sc": _scd.get_active_proxy() or None,
+                "yt": _scd.get_yt_active_proxy() or None,
+            }
             try:
-                await ws.send_json({"stats": s, "batch": b})
+                await ws.send_json({"stats": s, "batch": b, "proxies": p})
             except Exception:
                 break
             await asyncio.sleep(5)
@@ -502,12 +507,21 @@ async def _api_proxies_get(request: aiohttp_web.Request) -> aiohttp_web.Response
     redis = request.app["redis"]
     from bot.handlers import common as hcommon
     proxies = await _load_proxies_from_redis(redis)
-    active_url = hcommon._sc_proxies[hcommon._sc_proxy_index] if (
+    active_sc_url = hcommon._sc_proxies[hcommon._sc_proxy_index] if (
         0 <= hcommon._sc_proxy_index < len(hcommon._sc_proxies)
+    ) else None
+    active_yt_url = hcommon._sc_proxies[hcommon._yt_proxy_index] if (
+        0 <= hcommon._yt_proxy_index < len(hcommon._sc_proxies)
     ) else None
     result = []
     for i, p in enumerate(proxies):
-        result.append({**p, "active": p["url"] == active_url, "index": i})
+        result.append({
+            **p,
+            "active": p["url"] == active_sc_url,
+            "active_sc": p["url"] == active_sc_url,
+            "active_yt": p["url"] == active_yt_url,
+            "index": i,
+        })
     return aiohttp_web.Response(text=json.dumps(result), content_type="application/json")
 
 
