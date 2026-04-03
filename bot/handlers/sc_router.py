@@ -1613,6 +1613,7 @@ async def _run_batch_download(
     not_found: list[str] = []
     failed_tracks: list[dict] = []
     downloaded_count = 0
+    cache_hits_count = 0  # tracks served from file_id cache without re-downloading
     sc_error_count = 0  # tracks SC-specific download failures (not YT fallback)
     started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -1658,6 +1659,7 @@ async def _run_batch_download(
                             performer=artist,
                         )
                         downloaded_count += 1
+                        cache_hits_count += 1
                         try:
                             await progress_msg.edit_text(
                                 f"⚡ {_progress_bar(i, total)} — {artist} — {title}",
@@ -1773,9 +1775,12 @@ async def _run_batch_download(
         await log_event(user_id, username, "sc_track_fail", "error", detail=track_name)
 
     summary = "⛔ Скачивание остановлено." if cancel_event.is_set() else "✅ Плейлист скачан!"
+    summary += f"\n\n📊 Скачано: {downloaded_count}/{total}"
+    if cache_hits_count:
+        summary += f"  ·  ⚡ {cache_hits_count} из кэша"
     if not_found:
         nf_list = "\n".join(not_found[:20])
-        summary += f"\n\n❌ Не найдено нигде ({len(not_found)}):\n{nf_list}"
+        summary += f"\n❌ Не найдено нигде ({len(not_found)}):\n{nf_list}"
         if len(not_found) > 20:
             summary += f"\n...и ещё {len(not_found) - 20}"
 

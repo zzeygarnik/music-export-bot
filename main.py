@@ -4,6 +4,7 @@ import logging
 import os
 import time
 from collections import defaultdict
+from datetime import datetime, timezone
 
 from aiohttp import web as aiohttp_web
 from aiogram import Bot, Dispatcher
@@ -16,7 +17,7 @@ from config import settings
 from bot.handlers import router
 from bot.handlers.common import _pending_spotify_codes, detect_and_store_server_ip
 from bot.tracker import set_active_msg
-from bot.middleware import BanMiddleware, ThrottlingMiddleware, StaleButtonMiddleware, CallbackAnswerMiddleware
+from bot.middleware import BanMiddleware, ThrottlingMiddleware, StaleButtonMiddleware, CallbackAnswerMiddleware, DeduplicateUpdateMiddleware
 from utils import db
 
 log = logging.getLogger(__name__)
@@ -296,6 +297,260 @@ def _make_spotify_callback(bot: Bot):
     return handler
 
 
+_SC_PROXY_REDIS_KEY = "sc:proxies"
+
+
+async def _test_proxy_url(proxy_url: str) -> tuple[bool, str]:
+    """Test a proxy by fetching api.ipify.org through it. Returns (ok, detail)."""
+    import aiohttp
+    try:
+        if proxy_url.lower().startswith("socks"):
+            from aiohttp_socks import ProxyConnector
+            connector = ProxyConnector.from_url(proxy_url)
+            async with aiohttp.ClientSession(connector=connector) as s:
+                async with s.get("https://api.ipify.org", timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        return True, f"OK — exit IP: {(await resp.text()).strip()}"
+                    return False, f"HTTP {resp.status}"
+        else:
+            async with aiohttp.ClientSession() as s:
+                async with s.get("https://api.ipify.org", proxy=proxy_url,
+                                 timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        return True, f"OK — exit IP: {(await resp.text()).strip()}"
+                    return False, f"HTTP {resp.status}"
+    except Exception as e:
+        return False, str(e)[:120]
+
+
+def _proxy_short_label(url: str) -> str:
+    """Extract host:port from proxy URL for display."""
+    from urllib.parse import urlparse
+    try:
+        p = urlparse(url)
+        return f"{p.hostname}:{p.port}" if p.port else (p.hostname or url[:30])
+    except Exception:
+        return url[:30]
+
+
+async def _load_proxies_from_redis(redis) -> list[dict]:
+    raw = await redis.get(_SC_PROXY_REDIS_KEY)
+    if raw:
+        try:
+            return json.loads(raw)
+        except Exception:
+            pass
+    return []
+
+
+async def _save_proxies_to_redis(redis, proxies: list[dict]) -> None:
+    await redis.set(_SC_PROXY_REDIS_KEY, json.dumps(proxies))
+
+
+async def _init_sc_proxies(redis) -> None:
+    """Seed Redis proxy list from SC_PROXIES env if Redis list is empty, then load into runtime."""
+    from bot.handlers import common as hcommon
+    proxies = await _load_proxies_from_redis(redis)
+    if not proxies and settings.SC_PROXIES:
+        # First run: import env proxies into Redis
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        proxies = [
+            {"url": p.strip(), "added_at": now, "last_test_at": None,
+             "last_test_ok": None, "last_test_detail": None}
+            for p in settings.SC_PROXIES.split(",") if p.strip()
+        ]
+        await _save_proxies_to_redis(redis, proxies)
+        log.info("SC proxies: seeded %d proxies from env into Redis", len(proxies))
+    # Apply to runtime
+    urls = [p["url"] for p in proxies]
+    hcommon._sc_proxies[:] = urls
+    log.info("SC proxies loaded: %d proxies", len(urls))
+
+
+async def _check_sc_cookies_task(bot: Bot) -> None:
+    """Check SC cookie validity at startup and every 24 h. Alert admin if cookies look expired."""
+    from core import sc_downloader
+    from core.sc_downloader import SCBanError
+    import http.cookiejar
+
+    if not settings.SC_COOKIE_FILE or not settings.ADMIN_ID:
+        return
+
+    # Small delay so bot is fully running before the check
+    await asyncio.sleep(15)
+
+    while True:
+        try:
+            # Step 1: parse cookie file
+            jar = http.cookiejar.MozillaCookieJar()
+            jar.load(settings.SC_COOKIE_FILE, ignore_discard=True, ignore_expires=True)
+            oauth_cookies = [c for c in jar if c.name == "oauth_token"]
+            if not oauth_cookies:
+                await bot.send_message(
+                    settings.ADMIN_ID,
+                    "⚠️ <b>SC cookies: oauth_token не найден</b>\n\n"
+                    f"Файл <code>{settings.SC_COOKIE_FILE}</code> загружен, но cookie "
+                    f"<code>oauth_token</code> отсутствует.\n"
+                    "Скорее всего куки устарели — нужно обновить.",
+                    parse_mode="HTML",
+                )
+                log.warning("SC cookie healthcheck: oauth_token missing")
+            else:
+                # Step 2: test actual search
+                try:
+                    results = await sc_downloader.search("billie eilish", max_results=1)
+                    if results:
+                        log.info("SC cookie healthcheck: OK")
+                    else:
+                        # No results might mean cookies are expired (SC blocks scraping)
+                        log.warning("SC cookie healthcheck: search returned empty — cookies might be stale")
+                        await bot.send_message(
+                            settings.ADMIN_ID,
+                            "⚠️ <b>SC cookies: тест-поиск вернул пустой результат</b>\n\n"
+                            "Возможно куки устарели — SoundCloud не возвращает результаты.\n"
+                            "Рекомендуется обновить <code>sc_cookies.txt</code>.",
+                            parse_mode="HTML",
+                        )
+                except SCBanError:
+                    log.info("SC cookie healthcheck: IP ban detected, skipping cookie alert")
+                except Exception as e:
+                    log.warning("SC cookie healthcheck search error: %s", e)
+        except FileNotFoundError:
+            log.warning("SC cookie healthcheck: file not found: %s", settings.SC_COOKIE_FILE)
+            try:
+                await bot.send_message(
+                    settings.ADMIN_ID,
+                    f"⚠️ <b>SC cookies: файл не найден</b>\n\n"
+                    f"<code>{settings.SC_COOKIE_FILE}</code> не существует.",
+                    parse_mode="HTML",
+                )
+            except Exception:
+                pass
+        except Exception as e:
+            log.warning("SC cookie healthcheck failed: %s", e)
+
+        await asyncio.sleep(86400)  # repeat every 24 h
+
+
+# ── Proxy API handlers ────────────────────────────────────────────────────────
+
+async def _api_proxies_get(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    if not _check_auth(request):
+        return aiohttp_web.Response(status=401)
+    redis = request.app["redis"]
+    from bot.handlers import common as hcommon
+    proxies = await _load_proxies_from_redis(redis)
+    active_url = hcommon._sc_proxies[hcommon._sc_proxy_index] if (
+        0 <= hcommon._sc_proxy_index < len(hcommon._sc_proxies)
+    ) else None
+    result = []
+    for i, p in enumerate(proxies):
+        result.append({**p, "active": p["url"] == active_url, "index": i})
+    return aiohttp_web.Response(text=json.dumps(result), content_type="application/json")
+
+
+async def _api_proxies_add(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    if not _check_auth(request):
+        return aiohttp_web.Response(status=401)
+    try:
+        body = await request.json()
+        url = (body.get("url") or "").strip()
+    except Exception:
+        return aiohttp_web.Response(status=400, text="Invalid JSON")
+
+    if not url or not any(url.startswith(s) for s in ("http://", "https://", "socks4://", "socks5://")):
+        return aiohttp_web.Response(status=422, text="Invalid proxy URL")
+
+    redis = request.app["redis"]
+    bot: Bot = request.app["bot"]
+    from bot.handlers import common as hcommon
+
+    proxies = await _load_proxies_from_redis(redis)
+    if any(p["url"] == url for p in proxies):
+        return aiohttp_web.Response(status=409, text="Proxy already exists")
+
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    entry = {"url": url, "added_at": now, "last_test_at": None,
+             "last_test_ok": None, "last_test_detail": None}
+    proxies.append(entry)
+    await _save_proxies_to_redis(redis, proxies)
+
+    # Update runtime list
+    hcommon._sc_proxies.append(url)
+    log.info("SC proxy added via dashboard: %s", url)
+
+    # Notify admin
+    try:
+        await bot.send_message(
+            settings.ADMIN_ID,
+            f"🔌 <b>Новый SC прокси добавлен через дашборд</b>\n\n"
+            f"<code>{url}</code>\n"
+            f"Метка: <b>{_proxy_short_label(url)}</b>",
+            parse_mode="HTML",
+        )
+    except Exception as e:
+        log.warning("Failed to notify admin about new proxy: %s", e)
+
+    return aiohttp_web.Response(text=json.dumps(entry), content_type="application/json", status=201)
+
+
+async def _api_proxies_delete(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    if not _check_auth(request):
+        return aiohttp_web.Response(status=401)
+    try:
+        idx = int(request.match_info["idx"])
+    except (KeyError, ValueError):
+        return aiohttp_web.Response(status=400, text="Invalid index")
+
+    redis = request.app["redis"]
+    from bot.handlers import common as hcommon
+    from core import sc_downloader
+
+    proxies = await _load_proxies_from_redis(redis)
+    if idx < 0 or idx >= len(proxies):
+        return aiohttp_web.Response(status=404, text="Proxy not found")
+
+    removed = proxies.pop(idx)
+    await _save_proxies_to_redis(redis, proxies)
+
+    # Rebuild runtime list and reset active proxy to avoid stale index
+    hcommon._sc_proxies[:] = [p["url"] for p in proxies]
+    hcommon._sc_proxy_index = -1
+    sc_downloader.set_active_proxy("")
+    log.info("SC proxy removed via dashboard: %s", removed["url"])
+
+    return aiohttp_web.Response(text=json.dumps({"removed": removed["url"]}), content_type="application/json")
+
+
+async def _api_proxies_test(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    if not _check_auth(request):
+        return aiohttp_web.Response(status=401)
+    try:
+        idx = int(request.match_info["idx"])
+    except (KeyError, ValueError):
+        return aiohttp_web.Response(status=400, text="Invalid index")
+
+    redis = request.app["redis"]
+    proxies = await _load_proxies_from_redis(redis)
+    if idx < 0 or idx >= len(proxies):
+        return aiohttp_web.Response(status=404, text="Proxy not found")
+
+    url = proxies[idx]["url"]
+    ok, detail = await _test_proxy_url(url)
+
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    proxies[idx]["last_test_at"] = now
+    proxies[idx]["last_test_ok"] = ok
+    proxies[idx]["last_test_detail"] = detail
+    await _save_proxies_to_redis(redis, proxies)
+
+    log.info("SC proxy test [%d] %s: ok=%s detail=%s", idx, url, ok, detail)
+    return aiohttp_web.Response(
+        text=json.dumps({"ok": ok, "detail": detail}),
+        content_type="application/json",
+    )
+
+
 def _build_storage():
     """Connect to Redis for FSM storage. Raises on failure — no silent fallback."""
     import redis as redis_sync
@@ -327,6 +582,7 @@ async def main() -> None:
     )
     bot = Bot(token=settings.BOT_TOKEN, session=session)
     dp = Dispatcher(storage=_build_storage())
+    dp.update.outer_middleware(DeduplicateUpdateMiddleware(settings.REDIS_URL))
     dp.message.middleware(BanMiddleware())
     dp.callback_query.middleware(BanMiddleware())
     dp.message.middleware(ThrottlingMiddleware(rate_limit=0.7))
@@ -340,6 +596,13 @@ async def main() -> None:
         BotCommand(command="faq", description="FAQ и обратная связь"),
         BotCommand(command="mystats", description="Моя статистика"),
     ])
+    # Shared async Redis client (proxy manager + other dashboard APIs)
+    import redis.asyncio as aioredis
+    _redis = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+
+    # Initialise SC proxy list from Redis (seeds from env SC_PROXIES on first run)
+    await _init_sc_proxies(_redis)
+
     need_server = bool(
         (settings.SPOTIFY_CLIENT_ID and settings.SPOTIFY_CALLBACK_PORT)
         or settings.WEBHOOK_URL
@@ -347,6 +610,8 @@ async def main() -> None:
     )
     if need_server:
         web_app = aiohttp_web.Application()
+        web_app["bot"]   = bot
+        web_app["redis"] = _redis
 
         if settings.SPOTIFY_CLIENT_ID and settings.SPOTIFY_CALLBACK_PORT:
             web_app.router.add_get("/spotify/callback", _make_spotify_callback(bot))
@@ -364,6 +629,10 @@ async def main() -> None:
             web_app.router.add_get("/api/chart",        _api_chart)
             web_app.router.add_get("/api/batch_live",   _api_batch_live)
             web_app.router.add_get("/api/ws",           _ws_handler)
+            web_app.router.add_get("/api/proxies",              _api_proxies_get)
+            web_app.router.add_post("/api/proxies",             _api_proxies_add)
+            web_app.router.add_delete("/api/proxies/{idx}",     _api_proxies_delete)
+            web_app.router.add_post("/api/proxies/{idx}/test",  _api_proxies_test)
             log.info("Dashboard registered at /dashboard")
 
         if settings.WEBHOOK_URL:
@@ -388,6 +657,7 @@ async def main() -> None:
         log.info("HTTP server started on port %d", settings.SPOTIFY_CALLBACK_PORT)
 
     await detect_and_store_server_ip()
+    asyncio.create_task(_check_sc_cookies_task(bot))
     log.info("Bot started")
     if settings.WEBHOOK_URL:
         await asyncio.Event().wait()
