@@ -23,87 +23,6 @@ log = logging.getLogger(__name__)
 
 _DASHBOARD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard_web")
 
-_LOGIN_HTML = """\
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dashboard — Login</title>
-<script src="https://cdn.jsdelivr.net/npm/tsparticles@2.12.0/tsparticles.bundle.min.js"></script>
-<style>
-  *{{margin:0;padding:0;box-sizing:border-box}}
-  body{{background:#0d0d14;color:#e4e1ec;font-family:Inter,sans-serif;
-        display:flex;align-items:center;justify-content:center;min-height:100vh}}
-  #tsparticles{{position:fixed;width:100%;height:100%;top:0;left:0;z-index:0;pointer-events:none}}
-  .card{{background:rgba(19,19,26,.9);border:1px solid rgba(124,58,237,.2);
-         border-radius:1.5rem;padding:2.5rem;width:100%;max-width:360px;
-         box-shadow:0 8px 32px rgba(0,0,0,.4);position:relative;z-index:1}}
-  h1{{font-size:1.1rem;font-weight:800;letter-spacing:.2em;text-transform:uppercase;
-      color:#d2bbff;margin-bottom:.4rem}}
-  p{{font-size:.65rem;color:#8a8198;margin-bottom:2rem;letter-spacing:.1em;text-transform:uppercase}}
-  input{{width:100%;background:#1f1f26;border:1px solid #4a4455;border-radius:.75rem;
-         color:#e4e1ec;padding:.875rem 1rem;font-size:.875rem;outline:none;
-         margin-bottom:1rem;transition:border-color .2s}}
-  input:focus{{border-color:#7c3aed}}
-  button{{width:100%;background:#7c3aed;color:#fff;border:none;border-radius:.75rem;
-          padding:.875rem;font-size:.65rem;font-weight:700;letter-spacing:.2em;
-          text-transform:uppercase;cursor:pointer;transition:filter .2s}}
-  button:hover{{filter:brightness(1.1)}}
-  .err{{color:#f87171;font-size:.65rem;margin-bottom:1rem;text-align:center}}
-</style>
-</head>
-<body>
-<div id="tsparticles"></div>
-<div class="card">
-  <h1>ZGRNK Music</h1>
-  <p>Admin access only</p>
-  {error}
-  <form method="POST" action="/dashboard/login">
-    <input type="password" name="token" placeholder="Access token" autofocus>
-    <button type="submit">Enter</button>
-  </form>
-</div>
-<script>
-document.addEventListener("DOMContentLoaded", () => {{
-  tsParticles.load("tsparticles", {{
-    fpsLimit: 60,
-    particles: {{
-      number: {{ value: 90, density: {{ enable: true, area: 900 }} }},
-      color:  {{ value: "#ffffff" }},
-      shape:  {{ type: "circle" }},
-      opacity: {{
-        value: 0.45, random: true,
-        anim: {{ enable: true, speed: 0.8, opacity_min: 0.05, sync: false }}
-      }},
-      size: {{ value: 3, random: {{ enable: true, minimumValue: 1 }} }},
-      links: {{ enable: false }},
-      move: {{
-        enable: true, speed: 0.5, direction: "bottom",
-        random: true, straight: false,
-        outModes: {{ default: "out" }}
-      }}
-    }},
-    interactivity: {{
-      detectsOn: "window",
-      events: {{
-        onHover: {{ enable: true, mode: "grab" }},
-        onClick: {{ enable: true, mode: "push" }},
-        resize: true
-      }},
-      modes: {{
-        grab: {{ distance: 160, links: {{ opacity: 0.5 }} }},
-        push: {{ quantity: 3 }}
-      }}
-    }},
-    background: {{ color: "transparent" }}
-  }});
-}});
-</script>
-</body>
-</html>"""
-
-
 _RATE_LIMIT_HTML = """\
 <!DOCTYPE html>
 <html lang="en">
@@ -140,7 +59,7 @@ _RATE_LIMIT_HTML = """\
   var el = document.getElementById('t');
   var iv = setInterval(function() {{
     s--;
-    if (s <= 0) {{ clearInterval(iv); window.location = '/dashboard/login'; return; }}
+    if (s <= 0) {{ clearInterval(iv); window.location = '/dashboard'; return; }}
     el.textContent = s;
   }}, 1000);
   document.addEventListener("DOMContentLoaded", () => {{
@@ -214,8 +133,6 @@ def _check_auth(request: aiohttp_web.Request) -> bool:
 
 
 async def _dashboard_handler(request: aiohttp_web.Request) -> aiohttp_web.Response:
-    if not _check_auth(request):
-        raise aiohttp_web.HTTPFound("/dashboard/login")
     html_path = os.path.join(_DASHBOARD_DIR, "index.html")
     try:
         with open(html_path, "r", encoding="utf-8") as f:
@@ -226,9 +143,7 @@ async def _dashboard_handler(request: aiohttp_web.Request) -> aiohttp_web.Respon
 
 
 async def _dashboard_login_get(request: aiohttp_web.Request) -> aiohttp_web.Response:
-    return aiohttp_web.Response(
-        text=_LOGIN_HTML.format(error=""), content_type="text/html"
-    )
+    raise aiohttp_web.HTTPFound("/dashboard")
 
 
 async def _dashboard_login_post(request: aiohttp_web.Request) -> aiohttp_web.Response:
@@ -257,14 +172,11 @@ async def _dashboard_login_post(request: aiohttp_web.Request) -> aiohttp_web.Res
             content_type="text/html",
             status=429,
         )
-    return aiohttp_web.Response(
-        text=_LOGIN_HTML.format(error='<p class="err">Wrong token</p>'),
-        content_type="text/html",
-    )
+    return aiohttp_web.Response(status=401)
 
 
 async def _dashboard_logout(request: aiohttp_web.Request) -> aiohttp_web.Response:
-    response = aiohttp_web.HTTPFound("/dashboard/login")
+    response = aiohttp_web.HTTPFound("/dashboard")
     response.del_cookie("dashboard_auth")
     return response
 
