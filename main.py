@@ -9,7 +9,6 @@ from aiohttp import web as aiohttp_web
 from aiogram import Bot, Dispatcher
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.fsm.storage.redis import RedisStorage
-from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler
 
@@ -276,8 +275,8 @@ async def _ws_handler(request: aiohttp_web.Request) -> aiohttp_web.WebSocketResp
     await ws.prepare(request)
     try:
         while not ws.closed:
-            s = await asyncio.to_thread(db.get_dashboard_stats)
-            b = await asyncio.to_thread(db.get_batch_live_data)
+            s = await db.get_dashboard_stats()
+            b = await db.get_batch_live_data()
             try:
                 await ws.send_json({"stats": s, "batch": b})
             except Exception:
@@ -292,7 +291,7 @@ async def _ws_handler(request: aiohttp_web.Request) -> aiohttp_web.WebSocketResp
 async def _api_stats(request: aiohttp_web.Request) -> aiohttp_web.Response:
     if not _check_auth(request):
         return aiohttp_web.Response(status=401)
-    data = await asyncio.to_thread(db.get_dashboard_stats)
+    data = await db.get_dashboard_stats()
     return aiohttp_web.Response(text=json.dumps(data), content_type="application/json")
 
 
@@ -305,7 +304,7 @@ async def _api_events(request: aiohttp_web.Request) -> aiohttp_web.Response:
     except ValueError:
         limit, offset = 50, 0
     source = request.query.get("source", "")
-    data = await asyncio.to_thread(db.get_events_dashboard, limit, source, offset)
+    data = await db.get_events_dashboard(limit, source, offset)
     return aiohttp_web.Response(text=json.dumps(data), content_type="application/json")
 
 
@@ -317,14 +316,18 @@ async def _api_chart(request: aiohttp_web.Request) -> aiohttp_web.Response:
         days = min(int(request.query.get("days", 7)), 30)
     except ValueError:
         days = 7
-    data = await asyncio.to_thread(db.get_chart_data, source, days)
+    data = await db.get_chart_data(source, days)
     return aiohttp_web.Response(text=json.dumps(data), content_type="application/json")
+
+
+async def _health(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    return aiohttp_web.Response(text="ok")
 
 
 async def _api_batch_live(request: aiohttp_web.Request) -> aiohttp_web.Response:
     if not _check_auth(request):
         return aiohttp_web.Response(status=401)
-    data = await asyncio.to_thread(db.get_batch_live_data)
+    data = await db.get_batch_live_data()
     return aiohttp_web.Response(text=json.dumps(data), content_type="application/json")
 
 
@@ -379,21 +382,14 @@ def _make_spotify_callback(bot: Bot):
 
 
 def _build_storage():
-    """Use Redis if reachable, fall back to MemoryStorage with a warning."""
-    try:
-        import redis as redis_sync
-        r = redis_sync.from_url(settings.REDIS_URL, socket_connect_timeout=2)
-        r.ping()
-        r.close()
-        storage = RedisStorage.from_url(settings.REDIS_URL)
-        log.info("FSM storage: Redis (%s) — sessions survive restarts", settings.REDIS_URL)
-        return storage
-    except Exception as e:
-        log.warning(
-            "Redis unavailable (%s) — using MemoryStorage (sessions will NOT survive restarts)",
-            e,
-        )
-        return MemoryStorage()
+    """Connect to Redis for FSM storage. Raises on failure — no silent fallback."""
+    import redis as redis_sync
+    r = redis_sync.from_url(settings.REDIS_URL, socket_connect_timeout=2)
+    r.ping()
+    r.close()
+    storage = RedisStorage.from_url(settings.REDIS_URL)
+    log.info("FSM storage: Redis (%s)", settings.REDIS_URL)
+    return storage
 
 
 async def main() -> None:
@@ -404,7 +400,7 @@ async def main() -> None:
 
     if settings.POSTGRES_URL:
         try:
-            db.init_pool(settings.POSTGRES_URL)
+            await db.init_pool(settings.POSTGRES_URL)
         except Exception as e:
             log.error("Failed to connect to PostgreSQL: %s — event logging will be unavailable", e)
     else:
@@ -440,6 +436,8 @@ async def main() -> None:
         if settings.SPOTIFY_CLIENT_ID and settings.SPOTIFY_CALLBACK_PORT:
             web_app.router.add_get("/spotify/callback", _make_spotify_callback(bot))
             log.info("Spotify OAuth callback registered at /spotify/callback")
+
+        web_app.router.add_get("/health", _health)
 
         if settings.DASHBOARD_TOKEN:
             web_app.router.add_get("/dashboard",         _dashboard_handler)

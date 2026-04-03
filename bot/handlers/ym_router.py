@@ -108,7 +108,7 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject)
 @router.message(Command("mystats"))
 async def cmd_mystats(message: Message) -> None:
     user_id = message.from_user.id
-    stats = get_user_stats(user_id)
+    stats = await get_user_stats(user_id)
 
     if not stats:
         await message.answer(
@@ -270,7 +270,7 @@ async def on_service_share_pick(call: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(ExportFlow.choosing_service, F.data == "service:ym_playlists")
 async def on_service_ym_playlists(call: CallbackQuery, state: FSMContext) -> None:
-    if not is_batch_allowed(call.from_user.id, call.from_user.username):
+    if not await is_batch_allowed(call.from_user.id, call.from_user.username):
         await _show_batch_access_page(call, back_cb="batch_req_back:share_source")
         return
     await state.update_data(sc_cancel_target="share_source", sc_resume_back_cb="sc_ym_playlists")
@@ -400,7 +400,7 @@ async def on_token_received(message: Message, state: FSMContext) -> None:
         await source._get_client()
     except Exception as e:
         log.warning("Auth failed for user=%s: %s", user_id, e)
-        log_event(user_id, username, "auth_fail", "error", detail=type(e).__name__)
+        await log_event(user_id, username, "auth_fail", "error", detail=type(e).__name__)
         await status_msg.edit_text(
             "❌ Не удалось авторизоваться.\n\n"
             "<b>Отправь токен ещё раз</b> или нажми /start чтобы начать заново.",
@@ -408,7 +408,7 @@ async def on_token_received(message: Message, state: FSMContext) -> None:
         )
         return
 
-    log_event(user_id, username, "auth_ok", "success")
+    await log_event(user_id, username, "auth_ok", "success")
     await state.update_data(token=token)
     await status_msg.edit_text(_EXPORT_MENU_TEXT, reply_markup=export_type_keyboard())
     await state.set_state(ExportFlow.choosing_export_type)
@@ -430,7 +430,7 @@ async def on_export_liked(call: CallbackQuery, state: FSMContext) -> None:
         tracks = await YandexMusicSource(data["token"]).get_liked_tracks()
     except Exception as e:
         log.exception("export_liked failed user=%s: %s", user_id, e)
-        log_event(user_id, username, "export_liked", "error", detail=type(e).__name__)
+        await log_event(user_id, username, "export_liked", "error", detail=type(e).__name__)
         await call.message.edit_text(
             "❌ Не удалось загрузить треки. Возможно, токен устарел.\n\n"
             "Нажми /start чтобы авторизоваться заново.",
@@ -438,7 +438,7 @@ async def on_export_liked(call: CallbackQuery, state: FSMContext) -> None:
         await state.clear()
         return
 
-    log_event(user_id, username, "export_liked", "success", track_count=len(tracks))
+    await log_event(user_id, username, "export_liked", "success", track_count=len(tracks))
     await state.update_data(sc_tracks=tracks, export_filename="liked_tracks.txt", is_exporting=False)
     await call.message.edit_text(
         f"✅ Загружено: <b>{len(tracks)}</b> треков.\n\nЧто делаем?",
@@ -458,7 +458,7 @@ async def on_export_playlists(call: CallbackQuery, state: FSMContext) -> None:
         playlists = await YandexMusicSource(data["token"]).get_playlists()
     except Exception as e:
         log.exception("get_playlists failed user=%s: %s", user_id, e)
-        log_event(user_id, username, "export_playlist", "error", detail=type(e).__name__)
+        await log_event(user_id, username, "export_playlist", "error", detail=type(e).__name__)
         await call.message.edit_text(
             "❌ Не удалось загрузить плейлисты.\n\nНажми /start чтобы авторизоваться заново.",
         )
@@ -521,7 +521,7 @@ async def on_link_received(message: Message, state: FSMContext) -> None:
         title, tracks = await YandexMusicSource(data["token"]).get_playlist_by_url(url)
     except ValueError as e:
         log.warning("export_by_link ValueError user=%s url=%s: %s", user_id, url[:80], e)
-        log_event(user_id, username, "export_by_link", "error", detail="invalid_url_or_not_found")
+        await log_event(user_id, username, "export_by_link", "error", detail="invalid_url_or_not_found")
         await status_msg.edit_text(
             f"❌ {e}\n\n"
             "Отправь другую ссылку или нажми «Отмена» чтобы вернуться в меню.",
@@ -531,7 +531,7 @@ async def on_link_received(message: Message, state: FSMContext) -> None:
         return
     except Exception as e:
         log.exception("export_by_link failed user=%s url=%s: %s", user_id, url[:80], e)
-        log_event(user_id, username, "export_by_link", "error", detail=type(e).__name__)
+        await log_event(user_id, username, "export_by_link", "error", detail=type(e).__name__)
         await status_msg.edit_text(
             "❌ Не удалось загрузить плейлист.\n\n"
             "Отправь другую ссылку или нажми «Отмена» чтобы вернуться в меню.",
@@ -539,7 +539,7 @@ async def on_link_received(message: Message, state: FSMContext) -> None:
         )
         return
 
-    log_event(user_id, username, "export_by_link", "success", track_count=len(tracks))
+    await log_event(user_id, username, "export_by_link", "success", track_count=len(tracks))
     safe_title = "".join(c for c in title if c.isalnum() or c in " _-").strip() or "playlist"
     await state.update_data(sc_tracks=tracks, export_filename=f"{safe_title}.txt")
     await status_msg.edit_text(
@@ -578,7 +578,7 @@ async def on_playlist_selected(call: CallbackQuery, state: FSMContext) -> None:
         tracks = await YandexMusicSource(data["token"]).get_playlist_tracks(playlist_id)
     except Exception as e:
         log.exception("export_playlist failed user=%s: %s", user_id, e)
-        log_event(user_id, username, "export_playlist", "error", detail=type(e).__name__)
+        await log_event(user_id, username, "export_playlist", "error", detail=type(e).__name__)
         await call.message.edit_text(
             "❌ Не удалось загрузить треки. Плейлист недоступен или токен устарел.\n\n"
             "Нажми /start чтобы авторизоваться заново.",
@@ -586,7 +586,7 @@ async def on_playlist_selected(call: CallbackQuery, state: FSMContext) -> None:
         await state.clear()
         return
 
-    log_event(user_id, username, "export_playlist", "success", track_count=len(tracks))
+    await log_event(user_id, username, "export_playlist", "success", track_count=len(tracks))
     await state.update_data(sc_tracks=tracks, export_filename=f"{safe_title}.txt", is_exporting=False)
     await call.message.edit_text(
         f"✅ Загружено <b>«{safe_title}»</b> — {len(tracks)} треков.\n\nЧто делаем?",
@@ -701,7 +701,7 @@ async def on_export_filter_input(message: Message, state: FSMContext) -> None:
             parse_mode="HTML",
             reply_markup=export_filter_result_keyboard(),
         )
-        log_event(message.from_user.id, message.from_user.username, "export_filtered", "success", track_count=len(matched))
+        await log_event(message.from_user.id, message.from_user.username, "export_filtered", "success", track_count=len(matched))
     finally:
         await cleanup(tmp_path)
 
