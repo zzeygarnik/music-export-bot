@@ -486,6 +486,16 @@ async def _check_sc_cookies_task(bot: Bot) -> None:
 
 # ── Proxy API handlers ────────────────────────────────────────────────────────
 
+async def _api_network_status(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    if not _check_auth(request):
+        return aiohttp_web.Response(status=401)
+    from bot.handlers import common as hcommon
+    return aiohttp_web.Response(
+        text=json.dumps(hcommon.get_network_status()),
+        content_type="application/json",
+    )
+
+
 async def _api_proxies_get(request: aiohttp_web.Request) -> aiohttp_web.Response:
     if not _check_auth(request):
         return aiohttp_web.Response(status=401)
@@ -683,6 +693,7 @@ async def main() -> None:
             web_app.router.add_get("/api/chart",        _api_chart)
             web_app.router.add_get("/api/batch_live",   _api_batch_live)
             web_app.router.add_get("/api/ws",           _ws_handler)
+            web_app.router.add_get("/api/network-status",       _api_network_status)
             web_app.router.add_get("/api/proxies",              _api_proxies_get)
             web_app.router.add_post("/api/proxies",             _api_proxies_add)
             web_app.router.add_delete("/api/proxies/{idx}",     _api_proxies_delete)
