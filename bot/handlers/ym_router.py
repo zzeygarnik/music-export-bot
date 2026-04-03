@@ -53,6 +53,7 @@ from .common import (
     _YMS_INPUT_TEXT,
     _FAQ_TEXT,
     _SC_URL_PLAYLIST_TEXT,
+    _YT_PLAYLIST_TEXT,
     _show_batch_access_page,
 )
 from bot.tracker import set_active_msg
@@ -293,6 +294,24 @@ async def on_service_sc_url_playlist(call: CallbackQuery, state: FSMContext) -> 
     )
     await call.message.edit_text(
         _SC_URL_PLAYLIST_TEXT, parse_mode="HTML", reply_markup=sc_cancel_keyboard(),
+    )
+    await state.set_state(SCSearchFlow.sc_url_input)
+
+
+@router.callback_query(ExportFlow.choosing_service, F.data == "service:yt_playlist")
+async def on_service_yt_playlist(call: CallbackQuery, state: FSMContext) -> None:
+    if not await is_batch_allowed(call.from_user.id, call.from_user.username):
+        await _show_batch_access_page(call, back_cb="batch_req_back:share_source")
+        return
+    await state.update_data(
+        sc_input_mode="url",
+        sc_url_allow_playlist=True,
+        sc_url_yt_only=True,
+        sc_cancel_target="share_source",
+        sc_resume_back_cb="share_source",
+    )
+    await call.message.edit_text(
+        _YT_PLAYLIST_TEXT, parse_mode="HTML", reply_markup=sc_cancel_keyboard(),
     )
     await state.set_state(SCSearchFlow.sc_url_input)
 

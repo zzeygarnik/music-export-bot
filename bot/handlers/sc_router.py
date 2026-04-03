@@ -654,6 +654,16 @@ async def on_sc_url_input(message: Message, state: FSMContext) -> None:
         return
 
     url = message.text.strip()
+    data = await state.get_data()
+    yt_only = data.get("sc_url_yt_only", False)
+
+    if yt_only and not any(h in url for h in ("youtube.com", "youtu.be", "music.youtube.com")):
+        await message.answer(
+            "❌ Нужна ссылка на YouTube (youtube.com или youtu.be).",
+            reply_markup=sc_cancel_keyboard(),
+        )
+        return
+
     status_msg = await message.answer("⏳ Получаю информацию по ссылке…")
     set_active_msg(user_id, status_msg.message_id)
 
@@ -667,7 +677,6 @@ async def on_sc_url_input(message: Message, state: FSMContext) -> None:
         )
         return
 
-    data = await state.get_data()
     allow_playlist = data.get("sc_url_allow_playlist", True)
 
     if info["type"] == "track":

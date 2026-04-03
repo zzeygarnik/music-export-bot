@@ -41,6 +41,7 @@ def share_source_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🎵 ЯМ — мои плейлисты", callback_data="service:ym_playlists")],
         [InlineKeyboardButton(text="🟢 Spotify", callback_data="service:spotify")],
         [InlineKeyboardButton(text="☁️ SoundCloud / YouTube — по ссылке", callback_data="service:sc_url_playlist")],
+        [InlineKeyboardButton(text="🎬 YouTube — плейлист по ссылке", callback_data="service:yt_playlist")],
         [InlineKeyboardButton(text="← Назад", callback_data="service:back_to_main")],
     ])
 
