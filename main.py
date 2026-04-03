@@ -530,6 +530,7 @@ async def _api_proxies_delete(request: aiohttp_web.Request) -> aiohttp_web.Respo
     hcommon._sc_proxies[:] = [p["url"] for p in proxies]
     hcommon._sc_proxy_index = -1
     sc_downloader.set_active_proxy("")
+    hcommon.cancel_recovery_check()
     log.info("SC proxy removed via dashboard: %s", removed["url"])
 
     return aiohttp_web.Response(text=json.dumps({"removed": removed["url"]}), content_type="application/json")
