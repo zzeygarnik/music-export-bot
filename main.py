@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import time
+from urllib.parse import urlparse
 from collections import defaultdict
 from datetime import datetime, timezone
 
