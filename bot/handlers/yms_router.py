@@ -248,7 +248,8 @@ async def on_yms_remove_artist(call: CallbackQuery, state: FSMContext) -> None:
 @router.message(YMShareFlow.filter_input)
 async def on_yms_filter_input(message: Message, state: FSMContext) -> None:
     if not message.text:
-        await message.answer("❌ Нужно отправить текст — имя исполнителя.", reply_markup=ym_share_back_keyboard())
+        msg = await message.answer("❌ Нужно отправить текст — имя исполнителя.", reply_markup=ym_share_back_keyboard())
+        set_active_msg(message.from_user.id, msg.message_id)
         return
 
     query = message.text.strip()
@@ -257,11 +258,12 @@ async def on_yms_filter_input(message: Message, state: FSMContext) -> None:
 
     matched = _filter_by_artist(original_tracks, query)
     if not matched:
-        await message.answer(
+        msg = await message.answer(
             f"😔 Исполнитель <b>{query}</b> не найден в плейлисте.\n\nПопробуй другое имя.",
             parse_mode="HTML",
             reply_markup=ym_share_back_keyboard(),
         )
+        set_active_msg(message.from_user.id, msg.message_id)
         return
 
     artists = list(data.get("yms_filter_artists") or [])
@@ -294,11 +296,12 @@ async def on_yms_filter_input(message: Message, state: FSMContext) -> None:
 
     title = data.get("yms_playlist_title", "Плейлист")
     safe_title = title[:50] if title else "Плейлист"
-    await message.answer(
+    msg = await message.answer(
         f'✅ <b>«{safe_title}»</b> — {len(original_tracks)} треков.\n\nЧто делаем?',
         parse_mode="HTML",
         reply_markup=ym_share_actions_keyboard(filter_artists=artists),
     )
+    set_active_msg(message.from_user.id, msg.message_id)
     await state.set_state(YMShareFlow.actions)
 
 
@@ -318,18 +321,20 @@ async def on_yms_download_filtered(call: CallbackQuery, state: FSMContext) -> No
     except Exception:
         pass
     await state.update_data(sc_tracks=filtered, sc_resume_back_cb="yms_actions", sc_filter_artists=[], sc_original_tracks=None)
-    await call.message.answer(
+    msg = await call.message.answer(
         f"📥 Готов скачать <b>{len(filtered)}</b> треков с SoundCloud.\n\nС какого трека начать?",
         parse_mode="HTML",
         reply_markup=sc_resume_keyboard(),
     )
+    set_active_msg(call.from_user.id, msg.message_id)
     await state.set_state(SCBatchFlow.sc_resume_choice)
 
 
 @router.message(YMShareFlow.seek_input)
 async def on_yms_seek_input(message: Message, state: FSMContext) -> None:
     if not message.text:
-        await message.answer("❌ Нужно отправить текст — название трека.", reply_markup=ym_share_back_keyboard())
+        msg = await message.answer("❌ Нужно отправить текст — название трека.", reply_markup=ym_share_back_keyboard())
+        set_active_msg(message.from_user.id, msg.message_id)
         return
 
     query = message.text.strip()
@@ -345,17 +350,19 @@ async def on_yms_seek_input(message: Message, state: FSMContext) -> None:
             best_idx = i
 
     if best_score < 30:
-        await message.answer(
+        msg = await message.answer(
             "😔 Трек не найден в плейлисте. Попробуй другое название.",
             reply_markup=ym_share_back_keyboard(),
         )
+        set_active_msg(message.from_user.id, msg.message_id)
         return
 
     if best_idx + 1 >= len(tracks):
-        await message.answer(
+        msg = await message.answer(
             "ℹ️ Это последний трек в плейлисте — нечего скачивать после него.",
             reply_markup=ym_share_back_keyboard(),
         )
+        set_active_msg(message.from_user.id, msg.message_id)
         return
 
     found = tracks[best_idx]
@@ -369,7 +376,8 @@ async def on_yms_seek_input(message: Message, state: FSMContext) -> None:
         "Верно?"
     )
     await state.update_data(yms_resume_idx=best_idx + 1)
-    await message.answer(confirm_text, parse_mode="HTML", reply_markup=ym_share_seek_confirm_keyboard())
+    msg = await message.answer(confirm_text, parse_mode="HTML", reply_markup=ym_share_seek_confirm_keyboard())
+    set_active_msg(message.from_user.id, msg.message_id)
     await state.set_state(YMShareFlow.seek_confirm)
 
 

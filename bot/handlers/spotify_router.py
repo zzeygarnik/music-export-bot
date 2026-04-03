@@ -369,8 +369,10 @@ async def on_spotify_filter(call: CallbackQuery, state: FSMContext) -> None:
 
 @router.message(SpotifyFlow.filter_input)
 async def on_spotify_filter_input(message: Message, state: FSMContext) -> None:
+    user_id = message.from_user.id
     if not message.text:
-        await message.answer("❌ Введи имя исполнителя.", reply_markup=spotify_cancel_keyboard())
+        msg = await message.answer("❌ Введи имя исполнителя.", reply_markup=spotify_cancel_keyboard())
+        set_active_msg(user_id, msg.message_id)
         return
 
     query = message.text.strip()
@@ -379,11 +381,12 @@ async def on_spotify_filter_input(message: Message, state: FSMContext) -> None:
 
     matched = _filter_by_artist(tracks, query)
     if not matched:
-        await message.answer(
+        msg = await message.answer(
             f"😔 Исполнитель <b>{query}</b> не найден.\n\nПопробуй другое имя.",
             parse_mode="HTML",
             reply_markup=spotify_cancel_keyboard(),
         )
+        set_active_msg(user_id, msg.message_id)
         return
 
     await state.update_data(spotify_filtered_tracks=matched)
@@ -392,12 +395,13 @@ async def on_spotify_filter_input(message: Message, state: FSMContext) -> None:
     try:
         async with aiofiles.open(tmp_path, "rb") as f:
             content = await f.read()
-        await message.answer_document(
+        doc_msg = await message.answer_document(
             document=BufferedInputFile(content, filename=filename),
             caption=f"✅ Треков исполнителя <b>{query}</b>: {len(matched)}.",
             parse_mode="HTML",
             reply_markup=spotify_filter_result_keyboard(),
         )
+        set_active_msg(user_id, doc_msg.message_id)
     finally:
         await cleanup(tmp_path)
 
