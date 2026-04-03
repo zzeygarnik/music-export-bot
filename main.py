@@ -303,6 +303,7 @@ _SC_PROXY_REDIS_KEY = "sc:proxies"
 async def _test_proxy_url(proxy_url: str) -> tuple[bool, str]:
     """Test a proxy by fetching api.ipify.org through it. Returns (ok, detail)."""
     import aiohttp
+    from urllib.parse import urlparse
     try:
         if proxy_url.lower().startswith("socks"):
             from aiohttp_socks import ProxyConnector
@@ -313,9 +314,21 @@ async def _test_proxy_url(proxy_url: str) -> tuple[bool, str]:
                         return True, f"OK — exit IP: {(await resp.text()).strip()}"
                     return False, f"HTTP {resp.status}"
         else:
+            # aiohttp does NOT auto-extract credentials from proxy URL — pass them separately
+            parsed = urlparse(proxy_url)
+            proxy_auth = None
+            if parsed.username:
+                proxy_auth = aiohttp.BasicAuth(parsed.username, parsed.password or "")
+                clean_url = f"{parsed.scheme}://{parsed.hostname}:{parsed.port}"
+            else:
+                clean_url = proxy_url
             async with aiohttp.ClientSession() as s:
-                async with s.get("https://api.ipify.org", proxy=proxy_url,
-                                 timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                async with s.get(
+                    "https://api.ipify.org",
+                    proxy=clean_url,
+                    proxy_auth=proxy_auth,
+                    timeout=aiohttp.ClientTimeout(total=10),
+                ) as resp:
                     if resp.status == 200:
                         return True, f"OK — exit IP: {(await resp.text()).strip()}"
                     return False, f"HTTP {resp.status}"
