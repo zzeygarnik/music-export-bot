@@ -17,6 +17,8 @@ class SCBanError(Exception):
 # Active proxy for SC downloads; empty string = use server's main IP.
 # Managed externally by bot/handlers/common.py proxy rotation logic.
 _active_proxy: str = ""
+# Active proxy for YouTube downloads; independent from SC proxy.
+_yt_active_proxy: str = ""
 
 
 def set_active_proxy(proxy: str) -> None:
@@ -26,6 +28,15 @@ def set_active_proxy(proxy: str) -> None:
 
 def get_active_proxy() -> str:
     return _active_proxy
+
+
+def set_yt_active_proxy(proxy: str) -> None:
+    global _yt_active_proxy
+    _yt_active_proxy = proxy
+
+
+def get_yt_active_proxy() -> str:
+    return _yt_active_proxy
 
 
 def _proxy_opts() -> dict:
@@ -38,10 +49,10 @@ def _is_youtube_url(url: str) -> bool:
     return any(h in url for h in ("youtube.com", "youtu.be", "music.youtube.com"))
 
 
-def _sc_proxy_opts(url: str = "") -> dict:
-    """Return SC proxy opts only for SC URLs; never pollute YT requests with SC proxy."""
+def _url_proxy_opts(url: str = "") -> dict:
+    """Return correct proxy opts based on URL platform: SC proxy for SC, YT proxy for YT."""
     if url and _is_youtube_url(url):
-        return {}
+        return {"proxy": _yt_active_proxy} if _yt_active_proxy else {}
     return _proxy_opts()
 
 
@@ -160,7 +171,7 @@ def _download_sync(url: str, output_template: str) -> tuple[str, dict]:
         "no_warnings": True,
         "format": "bestaudio/best",
         "outtmpl": output_template + ".%(ext)s",
-        **_sc_proxy_opts(url),
+        **_url_proxy_opts(url),
         **_cookie_opts(),
     }
     try:
@@ -188,7 +199,7 @@ def _extract_url_info_sync(url: str) -> dict:
         "quiet": True,
         "no_warnings": True,
         "extract_flat": "in_playlist",
-        **_sc_proxy_opts(url),
+        **_url_proxy_opts(url),
         **_cookie_opts(),
     }
     with yt_dlp.YoutubeDL(opts) as ydl:
