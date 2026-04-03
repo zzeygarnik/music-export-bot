@@ -299,6 +299,44 @@ def _make_spotify_callback(bot: Bot):
 
 _SC_PROXY_REDIS_KEY = "sc:proxies"
 
+_PROXY_SCHEMES = ("http://", "https://", "socks4://", "socks5://")
+
+
+def _normalize_proxy_url(raw: str) -> str | None:
+    """Normalize a free-form proxy string to a valid scheme://... URL.
+
+    Accepts:
+      - Already valid:   http://user:pass@host:port, socks5://host:port, …
+      - Missing slashes: socks5:host:port  →  socks5://host:port
+      - No scheme:       host:port         →  http://host:port
+                         user:pass@host:port →  http://user:pass@host:port
+    Returns None if the string cannot be interpreted as a proxy URL.
+    """
+    url = raw.strip()
+    if not url:
+        return None
+
+    # Already has a recognised scheme
+    if any(url.startswith(s) for s in _PROXY_SCHEMES):
+        parsed = urlparse(url)
+        return url if parsed.hostname else None
+
+    # Scheme present but missing the double-slash (e.g. socks5:host:1080)
+    for scheme in ("socks5", "socks4", "https", "http"):
+        if url.lower().startswith(scheme + ":") and not url.startswith(scheme + "://"):
+            candidate = f"{scheme}://{url[len(scheme) + 1:]}"
+            parsed = urlparse(candidate)
+            return candidate if parsed.hostname else None
+
+    # No scheme: bare host:port or user:pass@host:port
+    # Require at least one colon or an @-sign so we don't accept random strings
+    if ":" in url or "@" in url:
+        candidate = f"http://{url}"
+        parsed = urlparse(candidate)
+        return candidate if parsed.hostname else None
+
+    return None
+
 
 async def _test_proxy_url(proxy_url: str) -> tuple[bool, str]:
     """Test a proxy by fetching api.ipify.org through it. Returns (ok, detail)."""
@@ -471,7 +509,8 @@ async def _api_proxies_add(request: aiohttp_web.Request) -> aiohttp_web.Response
     except Exception:
         return aiohttp_web.Response(status=400, text="Invalid JSON")
 
-    if not url or not any(url.startswith(s) for s in ("http://", "https://", "socks4://", "socks5://")):
+    url = _normalize_proxy_url(url) or ""
+    if not url:
         return aiohttp_web.Response(status=422, text="Invalid proxy URL")
 
     redis = request.app["redis"]
