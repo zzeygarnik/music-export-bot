@@ -37,6 +37,9 @@ _detected_server_ip: str = ""
 MAIN_IP_CHECK_INTERVAL_SEC: int = 1800  # 30 minutes
 # Background task handle; None when not running
 _recovery_task: asyncio.Task | None = None
+# Timestamps for "next check in N sec" calculation
+_recovery_started_at: float | None = None
+_last_recovery_check_at: float | None = None
 
 
 async def detect_and_store_server_ip() -> None:
@@ -293,9 +296,31 @@ async def notify_admin_sc_error(bot, user_id: int, username: str | None, context
         log.warning("Failed to notify admin about SC error: %s", exc)
 
 
+def get_network_status() -> dict:
+    """Return current SC network routing status for display in dashboard / admin."""
+    on_proxy = _sc_proxy_index >= 0
+    active_proxy = _sc_proxies[_sc_proxy_index] if on_proxy and _sc_proxy_index < len(_sc_proxies) else None
+    recovery_running = bool(_recovery_task and not _recovery_task.done())
+
+    next_check_in: int | None = None
+    if recovery_running:
+        ref = _last_recovery_check_at or _recovery_started_at
+        if ref is not None:
+            next_check_in = max(0, int(ref + MAIN_IP_CHECK_INTERVAL_SEC - time.time()))
+
+    return {
+        "on_proxy": on_proxy,
+        "main_ip": get_server_ip_label(),
+        "active_proxy": active_proxy,
+        "recovery_running": recovery_running,
+        "next_check_in": next_check_in,
+        "check_interval": MAIN_IP_CHECK_INTERVAL_SEC,
+    }
+
+
 async def _recovery_check_loop(bot) -> None:
     """Periodically probe main IP and switch back when it's no longer banned."""
-    global _sc_proxy_index
+    global _sc_proxy_index, _last_recovery_check_at
     from core import sc_downloader
 
     while True:
@@ -304,6 +329,7 @@ async def _recovery_check_loop(bot) -> None:
         if _sc_proxy_index == -1:
             break  # already on main IP (e.g. all proxies exhausted or manual reset)
 
+        _last_recovery_check_at = time.time()
         log.info("SC main IP recovery check: probing…")
         try:
             ok = await sc_downloader.check_main_ip()
@@ -339,20 +365,24 @@ async def _recovery_check_loop(bot) -> None:
 
 def _start_recovery_check(bot) -> None:
     """Start the main IP recovery background task if not already running."""
-    global _recovery_task
+    global _recovery_task, _recovery_started_at, _last_recovery_check_at
     if _recovery_task and not _recovery_task.done():
         return
+    _recovery_started_at = time.time()
+    _last_recovery_check_at = None
     _recovery_task = asyncio.create_task(_recovery_check_loop(bot))
     log.info("SC main IP recovery check task started (interval=%ds)", MAIN_IP_CHECK_INTERVAL_SEC)
 
 
 def cancel_recovery_check() -> None:
     """Cancel the main IP recovery task (call when returning to main IP manually)."""
-    global _recovery_task
+    global _recovery_task, _recovery_started_at, _last_recovery_check_at
     if _recovery_task and not _recovery_task.done():
         _recovery_task.cancel()
         log.info("SC main IP recovery check task cancelled")
     _recovery_task = None
+    _recovery_started_at = None
+    _last_recovery_check_at = None
 
 
 async def rotate_sc_proxy(bot) -> bool:

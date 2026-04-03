@@ -40,6 +40,7 @@ def _menu_kb() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(text=sc_label, callback_data="admin:sc"),
+            InlineKeyboardButton(text="🌐 Сеть", callback_data="admin:network"),
         ],
     ])
 
@@ -374,6 +375,39 @@ async def on_batch_req_reject(call: CallbackQuery) -> None:
         )
     except Exception:
         pass
+
+
+# ── Network status ────────────────────────────────────────────────────────
+
+def _network_text() -> str:
+    import time as _time
+    s = _hcommon.get_network_status()
+    if s["on_proxy"]:
+        lines = [
+            "🌐 <b>Сетевой статус SC</b>\n",
+            "Режим: <b>прокси</b> (основной IP заблокирован)",
+            f"Основной IP сервера: <code>{s['main_ip']}</code>",
+            f"Активный прокси: <code>{s['active_proxy'] or '—'}</code>",
+        ]
+        if s["next_check_in"] is not None:
+            m, sec = divmod(s["next_check_in"], 60)
+            countdown = f"{m} мин {sec} сек" if m else f"{sec} сек"
+            lines.append(f"Следующая проверка основного IP: через <b>{countdown}</b>")
+        else:
+            lines.append("Проверка основного IP: не запущена")
+        lines.append(f"\n<i>Интервал проверки: {s['check_interval'] // 60} мин</i>")
+    else:
+        lines = [
+            "🌐 <b>Сетевой статус SC</b>\n",
+            "Режим: <b>основной IP</b> ✅",
+            f"IP сервера: <code>{s['main_ip']}</code>",
+        ]
+    return "\n".join(lines)
+
+
+@router.callback_query(AdminFlow.menu, F.data == "admin:network")
+async def on_network(call: CallbackQuery) -> None:
+    await call.message.edit_text(_network_text(), parse_mode="HTML", reply_markup=_back_kb())
 
 
 # ── SC download toggle ────────────────────────────────────────────────────

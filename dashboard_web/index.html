@@ -446,6 +446,12 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
           </svg>
           SC Proxies
         </a>
+        <a class="nav-link" data-tab="network">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+            <circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+          </svg>
+          Network
+        </a>
       </div>
     </nav>
     <div class="sb-foot">
@@ -759,6 +765,23 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
             </table>
           </div>
           <div id="proxy-empty" class="no-data" style="display:none">No proxies configured</div>
+        </div>
+      </div>
+
+      <div class="tab" id="tab-network">
+        <div class="pg-head">
+          <div class="pg-title">Network Status</div>
+          <div class="pg-sub">Current SC routing — main IP or proxy fallback</div>
+        </div>
+
+        <div class="card">
+          <div class="card-hdr" style="display:flex;align-items:center;justify-content:space-between">
+            <div class="card-title">SC Routing</div>
+            <button class="p-btn secondary" id="net-refresh-btn" style="padding:6px 14px">Refresh</button>
+          </div>
+          <div class="card-body" id="net-body">
+            <div style="font-family:var(--fm);font-size:10px;color:var(--muted)">Loading…</div>
+          </div>
         </div>
       </div>
 
@@ -1087,7 +1110,7 @@ async function loadStats() {
 
 /* ── TABS ────────────────────────────────────────────────── */
 function switchTab(id) {
-  const valid = ['ym','spotify','sc','log','proxies'];
+  const valid = ['ym','spotify','sc','log','proxies','network'];
   if (!valid.includes(id)) id='ym';
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
   document.querySelectorAll('.nav-link').forEach(l=>l.classList.remove('active'));
@@ -1096,7 +1119,7 @@ function switchTab(id) {
   history.replaceState(null,'','#'+id);
   const tbl = document.getElementById('tbl-'+id);
   const isEmpty = tbl && tbl.children.length === 0;
-  if (!loaded[id] || isEmpty || id === 'proxies') { loadTabData(id); loaded[id]=true; }
+  if (!loaded[id] || isEmpty || id === 'proxies' || id === 'network') { loadTabData(id); loaded[id]=true; }
 }
 
 async function loadTabData(id) {
@@ -1108,6 +1131,8 @@ async function loadTabData(id) {
     await Promise.all([loadTable('sc','tbl-sc',0,false), loadChart('sc',7)]);
   } else if (id === 'proxies') {
     await loadProxies();
+  } else if (id === 'network') {
+    await loadNetworkStatus();
   } else {
     offsets.log = 0;
     await loadTable(logSrc,'tbl-log',0,false);
@@ -1313,6 +1338,69 @@ document.addEventListener('DOMContentLoaded', () => {
     background: { color: 'transparent' }
   });
 });
+
+/* ── NETWORK STATUS ──────────────────────────────────────── */
+let _netCountdownInterval = null;
+let _netNextCheckAt = null;
+
+function _fmtCountdown(sec) {
+  if (sec <= 0) return '< 1 min';
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return m > 0 ? `${m} min ${s} sec` : `${s} sec`;
+}
+
+function _renderNetStatus(d) {
+  const body = document.getElementById('net-body');
+  if (!body) return;
+
+  if (d.on_proxy) {
+    _netNextCheckAt = d.next_check_in != null ? Date.now() + d.next_check_in * 1000 : null;
+    const proxyHtml = `<code style="font-size:11px">${d.active_proxy || '—'}</code>`;
+    body.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:14px;font-family:var(--fm);font-size:11px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="width:8px;height:8px;border-radius:50%;background:var(--orange);display:inline-block;flex-shrink:0"></span>
+          <span style="color:var(--orange);font-weight:600;font-size:12px">Proxy mode — main IP blocked</span>
+        </div>
+        <div><span style="color:var(--dim)">Main IP:&nbsp;</span><code style="font-size:11px">${d.main_ip}</code></div>
+        <div><span style="color:var(--dim)">Active proxy:&nbsp;</span>${proxyHtml}</div>
+        <div><span style="color:var(--dim)">Next main IP check:&nbsp;</span>
+          <span id="net-countdown" style="color:var(--text)">
+            ${d.next_check_in != null ? _fmtCountdown(d.next_check_in) : '—'}
+          </span>
+        </div>
+        <div style="color:var(--dim);font-size:9px">Check interval: ${Math.round(d.check_interval / 60)} min</div>
+      </div>`;
+
+    if (_netCountdownInterval) clearInterval(_netCountdownInterval);
+    if (_netNextCheckAt) {
+      _netCountdownInterval = setInterval(() => {
+        const el = document.getElementById('net-countdown');
+        if (!el) { clearInterval(_netCountdownInterval); return; }
+        const sec = Math.max(0, Math.round((_netNextCheckAt - Date.now()) / 1000));
+        el.textContent = _fmtCountdown(sec);
+      }, 1000);
+    }
+  } else {
+    if (_netCountdownInterval) { clearInterval(_netCountdownInterval); _netCountdownInterval = null; }
+    body.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:14px;font-family:var(--fm);font-size:11px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;flex-shrink:0"></span>
+          <span style="color:var(--green);font-weight:600;font-size:12px">Main IP — no active ban</span>
+        </div>
+        <div><span style="color:var(--dim)">Server IP:&nbsp;</span><code style="font-size:11px">${d.main_ip}</code></div>
+      </div>`;
+  }
+}
+
+async function loadNetworkStatus() {
+  const r = await fetch('/api/network-status');
+  if (r.status === 401) { window.location.href = '/dashboard/login'; return; }
+  if (r.ok) _renderNetStatus(await r.json());
+}
+
+document.getElementById('net-refresh-btn')?.addEventListener('click', loadNetworkStatus);
 
 /* ── PROXY MANAGER ───────────────────────────────────────── */
 let _proxies = [];
