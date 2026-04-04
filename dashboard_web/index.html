@@ -283,7 +283,54 @@ body::after{content:'';position:fixed;inset:0;z-index:9999;pointer-events:none;
 .acc-link:hover{opacity:.7}
 
 /* log filters */
-.filt-wrap{display:flex;gap:5px;flex-wrap:wrap}
+.filt-wrap{display:flex;gap:5px;flex-wrap:wrap;align-items:center}
+.log-search-wrap{display:flex;align-items:center;gap:8px;margin-top:10px}
+.log-search{background:transparent;border:1px solid var(--border);border-radius:6px;
+  padding:5px 10px;color:var(--text);font-family:var(--fm);font-size:11px;
+  width:200px;outline:none;transition:border-color .2s}
+.log-search:focus{border-color:rgba(124,58,237,.5)}
+.log-search::placeholder{color:var(--dim)}
+.log-search-clear{background:none;border:none;color:var(--dim);cursor:pointer;
+  font-family:var(--fm);font-size:10px;padding:4px 6px;border-radius:4px;
+  transition:color .15s}
+.log-search-clear:hover{color:var(--text)}
+/* ── Moderation tabs ── */
+.mod-form{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap;align-items:flex-end}
+.mod-form-field{display:flex;flex-direction:column;gap:4px}
+.mod-form-label{font-family:var(--fm);font-size:8px;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--muted)}
+.mod-form-input{background:var(--s2);border:1px solid var(--border);border-radius:6px;
+  padding:6px 10px;color:var(--text);font-family:var(--fm);font-size:12px;
+  width:160px;outline:none;transition:border-color .2s}
+.mod-form-input:focus{border-color:rgba(124,58,237,.5)}
+.mod-form-input::placeholder{color:var(--dim)}
+.mod-action-btn{padding:6px 14px;border:1px solid var(--accent);background:transparent;
+  color:var(--primary);font-family:var(--fu);font-size:10px;font-weight:700;
+  letter-spacing:.12em;text-transform:uppercase;cursor:pointer;border-radius:6px;
+  transition:all .2s;align-self:flex-end;white-space:nowrap}
+.mod-action-btn:hover{background:var(--adim)}
+.mod-action-btn.danger{border-color:var(--red);color:var(--red)}
+.mod-action-btn.danger:hover{background:rgba(248,113,113,.08)}
+.mod-action-btn.ok{border-color:var(--green);color:var(--green)}
+.mod-action-btn.ok:hover{background:rgba(74,222,128,.08)}
+.mod-msg{font-family:var(--fm);font-size:9px;min-height:14px;margin-top:4px}
+/* ── System tab ── */
+.sys-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px}
+@media(max-width:900px){.sys-grid{grid-template-columns:1fr}}
+.sys-row{display:flex;justify-content:space-between;align-items:center;
+  padding:7px 0;border-bottom:1px solid rgba(74,68,85,.18)}
+.sys-row:last-child{border-bottom:none}
+.sys-key{font-family:var(--fm);font-size:10px;color:var(--muted)}
+.sys-val{font-family:var(--fm);font-size:11px;color:var(--text);font-weight:500}
+.sys-badge{display:inline-block;padding:2px 7px;border-radius:3px;
+  font-family:var(--fm);font-size:8px;letter-spacing:.12em;text-transform:uppercase}
+.sys-badge.ok{background:rgba(74,222,128,.12);color:var(--green)}
+.sys-badge.warn{background:rgba(251,146,60,.12);color:var(--orange)}
+.sys-tbl{width:100%;border-collapse:collapse;font-family:var(--fm);font-size:10px;margin-top:8px}
+.sys-tbl th{color:var(--dim);font-weight:400;text-align:left;padding:4px 6px;
+  border-bottom:1px solid var(--border);font-size:8px;letter-spacing:.15em;text-transform:uppercase}
+.sys-tbl td{padding:5px 6px;border-bottom:1px solid rgba(74,68,85,.12);color:var(--text)}
+.sys-tbl tr:last-child td{border-bottom:none}
 .filt-btn{padding:4px 11px;border-radius:4px;font-family:var(--fm);font-size:8.5px;
   letter-spacing:.14em;text-transform:uppercase;color:var(--dim);
   background:var(--s2);border:1px solid var(--border);cursor:pointer;transition:all .15s}
@@ -501,6 +548,23 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
         </a>
       </div>
       <div class="sb-section" style="margin-top:14px">
+        <div class="sb-section-lbl">Moderation</div>
+        <a class="nav-link" data-tab="bans">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+            <circle cx="12" cy="12" r="10"/><path d="M4.93 4.93l14.14 14.14"/>
+          </svg>
+          Bans
+        </a>
+        <a class="nav-link" data-tab="batch">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
+            <path d="M19 8l2 2 4-4" style="stroke:var(--green)"/>
+          </svg>
+          Batch Access
+        </a>
+      </div>
+      <div class="sb-section" style="margin-top:14px">
         <div class="sb-section-lbl">Config</div>
         <a class="nav-link" data-tab="proxies">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
@@ -513,6 +577,13 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
             <circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
           </svg>
           Network
+        </a>
+        <a class="nav-link" data-tab="system">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+            <rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>
+            <path d="M6 8h.01M10 8h4"/>
+          </svg>
+          System
         </a>
       </div>
     </nav>
@@ -764,13 +835,19 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
           <div class="pg-sub">Full activity feed</div>
         </div>
         <div class="card">
-          <div class="card-hdr">
+          <div class="card-hdr" style="flex-wrap:wrap;gap:10px">
             <div class="card-title">All Events</div>
-            <div class="filt-wrap" id="filt-wrap">
-              <button class="filt-btn on" data-src="">All</button>
-              <button class="filt-btn" data-src="ym">Yandex Music</button>
-              <button class="filt-btn" data-src="spotify">Spotify</button>
-              <button class="filt-btn" data-src="sc">SC / YT</button>
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+              <div class="filt-wrap" id="filt-wrap">
+                <button class="filt-btn on" data-src="">All</button>
+                <button class="filt-btn" data-src="ym">Yandex Music</button>
+                <button class="filt-btn" data-src="spotify">Spotify</button>
+                <button class="filt-btn" data-src="sc">SC / YT</button>
+              </div>
+              <div class="log-search-wrap" style="margin-top:0">
+                <input class="log-search" id="log-user-search" placeholder="Filter by @username…" autocomplete="off" spellcheck="false">
+                <button class="log-search-clear" id="log-user-clear" title="Clear">✕</button>
+              </div>
             </div>
           </div>
           <div style="overflow-x:auto">
@@ -884,6 +961,195 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
             </table>
           </div>
           <div id="users-empty" class="no-data" style="display:none">No users found</div>
+        </div>
+      </div>
+
+      <!-- TAB: BANS -->
+      <div class="tab" id="tab-bans">
+        <div class="pg-head">
+          <div class="pg-title">Bans</div>
+          <div class="pg-sub">Block users from accessing the bot</div>
+        </div>
+        <div class="lg">
+          <div class="lg-main">
+            <div class="card" style="margin-bottom:18px">
+              <div class="card-hdr"><div class="card-title">Ban User</div></div>
+              <div class="card-body">
+                <div class="mod-form">
+                  <div class="mod-form-field">
+                    <label class="mod-form-label">User ID</label>
+                    <input class="mod-form-input" id="ban-uid-input" placeholder="123456789" type="number" min="1">
+                  </div>
+                  <div class="mod-form-field">
+                    <label class="mod-form-label">Username (optional)</label>
+                    <input class="mod-form-input" id="ban-uname-input" placeholder="@username">
+                  </div>
+                  <div class="mod-form-field">
+                    <label class="mod-form-label">Reason (optional)</label>
+                    <input class="mod-form-input" id="ban-reason-input" placeholder="Spam, abuse…" style="width:200px">
+                  </div>
+                  <button class="mod-action-btn danger" id="ban-add-btn">Ban</button>
+                </div>
+                <div class="mod-msg" id="ban-add-msg"></div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-hdr" style="justify-content:space-between">
+                <div class="card-title">Banned Users</div>
+                <button class="p-btn secondary" id="bans-refresh-btn" style="padding:6px 14px">Refresh</button>
+              </div>
+              <div style="overflow-x:auto">
+                <table class="dt" id="tbl-bans-wrap">
+                  <thead>
+                    <tr><th>User ID</th><th>Username</th><th>Banned At (MSK)</th><th>Reason</th><th></th></tr>
+                  </thead>
+                  <tbody id="tbl-bans"></tbody>
+                </table>
+              </div>
+              <div id="bans-empty" class="no-data" style="display:none">No banned users</div>
+            </div>
+          </div>
+          <div class="lg-aside">
+            <div class="card">
+              <div class="card-hdr"><div class="card-title">Stats</div></div>
+              <div class="card-body">
+                <div class="slist">
+                  <div class="srow"><span class="skey">Total Banned</span><span class="sval" id="bans-count">—</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: BATCH ACCESS -->
+      <div class="tab" id="tab-batch">
+        <div class="pg-head">
+          <div class="pg-title">Batch Access</div>
+          <div class="pg-sub">Manage who can run batch downloads</div>
+        </div>
+        <div class="metrics">
+          <div class="mc"><div class="mc-lbl">Whitelisted</div><div class="mc-val" id="batch-wl-count">—</div></div>
+          <div class="mc"><div class="mc-lbl">Pending Requests</div><div class="mc-val" id="batch-req-count">—</div></div>
+        </div>
+
+        <div class="card" style="margin-top:18px;margin-bottom:18px" id="batch-req-card">
+          <div class="card-hdr" style="justify-content:space-between">
+            <div class="card-title">Pending Requests</div>
+            <button class="p-btn secondary" id="batch-req-refresh-btn" style="padding:6px 14px">Refresh</button>
+          </div>
+          <div style="overflow-x:auto">
+            <table class="dt">
+              <thead>
+                <tr><th>ID</th><th>User ID</th><th>Username</th><th>Requested At (MSK)</th><th style="text-align:center">Action</th></tr>
+              </thead>
+              <tbody id="tbl-batch-req"></tbody>
+            </table>
+          </div>
+          <div id="batch-req-empty" class="no-data" style="display:none">No pending requests</div>
+        </div>
+
+        <div class="lg">
+          <div class="lg-main">
+            <div class="card" style="margin-bottom:18px">
+              <div class="card-hdr"><div class="card-title">Add to Whitelist</div></div>
+              <div class="card-body">
+                <div class="mod-form">
+                  <div class="mod-form-field">
+                    <label class="mod-form-label">User ID</label>
+                    <input class="mod-form-input" id="batch-uid-input" placeholder="123456789" type="number" min="1">
+                  </div>
+                  <div class="mod-form-field">
+                    <label class="mod-form-label">Username (optional)</label>
+                    <input class="mod-form-input" id="batch-uname-input" placeholder="@username">
+                  </div>
+                  <button class="mod-action-btn" id="batch-wl-add-btn">Add</button>
+                </div>
+                <div class="mod-msg" id="batch-wl-add-msg"></div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-hdr" style="justify-content:space-between">
+                <div class="card-title">Whitelist</div>
+                <button class="p-btn secondary" id="batch-wl-refresh-btn" style="padding:6px 14px">Refresh</button>
+              </div>
+              <div style="overflow-x:auto">
+                <table class="dt">
+                  <thead>
+                    <tr><th>User ID</th><th>Username</th><th>Added At (MSK)</th><th></th></tr>
+                  </thead>
+                  <tbody id="tbl-batch-wl"></tbody>
+                </table>
+              </div>
+              <div id="batch-wl-empty" class="no-data" style="display:none">Whitelist is empty</div>
+            </div>
+          </div>
+          <div class="lg-aside">
+            <div class="card">
+              <div class="card-hdr"><div class="card-title">Access Mode</div></div>
+              <div class="card-body">
+                <div class="slist">
+                  <div class="srow"><span class="skey">BATCH_ALLOWED_USERS</span><span class="sval" id="batch-mode-val" style="font-size:10px">—</span></div>
+                  <div class="srow"><span class="skey">Whitelisted</span><span class="sval" id="batch-wl-count-aside">—</span></div>
+                  <div class="srow"><span class="skey">Pending</span><span class="sval" id="batch-req-count-aside">—</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: SYSTEM -->
+      <div class="tab" id="tab-system">
+        <div class="pg-head" style="display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <div class="pg-title">System</div>
+            <div class="pg-sub">Database, Redis &amp; bot uptime</div>
+          </div>
+          <button class="p-btn secondary" id="system-refresh-btn" style="padding:7px 16px">Refresh</button>
+        </div>
+
+        <div class="metrics" style="margin-top:18px">
+          <div class="mc"><div class="mc-lbl">Bot Uptime</div><div class="mc-val" id="sys-uptime">—</div></div>
+          <div class="mc"><div class="mc-lbl">DB Size</div><div class="mc-val" id="sys-db-size">—</div></div>
+          <div class="mc"><div class="mc-lbl">Redis Memory</div><div class="mc-val" id="sys-redis-mem">—</div></div>
+          <div class="mc"><div class="mc-lbl">Cache Entries</div><div class="mc-val" id="sys-cache">—</div></div>
+        </div>
+
+        <div class="sys-grid">
+          <div class="card">
+            <div class="card-hdr"><div class="card-title">PostgreSQL</div></div>
+            <div class="card-body">
+              <div id="sys-db-rows">
+                <div style="font-family:var(--fm);font-size:10px;color:var(--muted)">Loading…</div>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-hdr"><div class="card-title">Redis</div></div>
+            <div class="card-body">
+              <div id="sys-redis-rows">
+                <div style="font-family:var(--fm);font-size:10px;color:var(--muted)">Loading…</div>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-hdr"><div class="card-title">Table Sizes</div></div>
+            <div class="card-body" style="padding:0">
+              <table class="sys-tbl" id="sys-tables-tbl">
+                <thead><tr><th>Table</th><th style="text-align:right">Rows</th><th style="text-align:right">Size</th></tr></thead>
+                <tbody id="sys-tables-body"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-hdr"><div class="card-title">Moderation</div></div>
+            <div class="card-body">
+              <div id="sys-mod-rows">
+                <div style="font-family:var(--fm);font-size:10px;color:var(--muted)">Loading…</div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1213,7 +1479,7 @@ async function loadStats() {
 
 /* ── TABS ────────────────────────────────────────────────── */
 function switchTab(id) {
-  const valid = ['ym','spotify','sc','log','proxies','network','users'];
+  const valid = ['ym','spotify','sc','log','proxies','network','users','bans','batch','system'];
   if (!valid.includes(id)) id='ym';
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
   document.querySelectorAll('.nav-link').forEach(l=>l.classList.remove('active'));
@@ -1222,7 +1488,8 @@ function switchTab(id) {
   history.replaceState(null,'','#'+id);
   const tbl = document.getElementById('tbl-'+id);
   const isEmpty = tbl && tbl.children.length === 0;
-  if (!loaded[id] || isEmpty || id === 'proxies' || id === 'network' || id === 'users') { loadTabData(id); loaded[id]=true; }
+  const alwaysReload = ['proxies','network','users','bans','batch','system'];
+  if (!loaded[id] || isEmpty || alwaysReload.includes(id)) { loadTabData(id); loaded[id]=true; }
 }
 
 async function loadTabData(id) {
@@ -1238,9 +1505,15 @@ async function loadTabData(id) {
     await loadNetworkStatus();
   } else if (id === 'users') {
     await loadUsers();
+  } else if (id === 'bans') {
+    await loadBans();
+  } else if (id === 'batch') {
+    await loadBatchAdmin();
+  } else if (id === 'system') {
+    await loadSystem();
   } else {
     offsets.log = 0;
-    await loadTable(logSrc,'tbl-log',0,false);
+    await loadTable(logSrc, 'tbl-log', 0, false, logUsernameFilter);
   }
 }
 
@@ -1263,7 +1536,8 @@ function setupMore(btnId, src, tbodyId, key, isLog=false) {
   document.getElementById(btnId)?.addEventListener('click', async ()=>{
     offsets[key] += 15;
     const theSrc = isLog ? logSrc : src;
-    const n = await loadTable(theSrc, tbodyId, offsets[key], true);
+    const uname  = isLog ? logUsernameFilter : '';
+    const n = await loadTable(theSrc, tbodyId, offsets[key], true, uname);
     if (n < 15) {
       const b = document.getElementById(btnId);
       b.textContent='All loaded'; b.disabled=true;
@@ -1275,18 +1549,7 @@ setupMore('more-spotify','spotify','tbl-spotify','spotify');
 setupMore('more-sc','sc','tbl-sc','sc');
 setupMore('more-log','','tbl-log','log',true);
 
-/* ── LOG FILTERS ─────────────────────────────────────────── */
-document.querySelectorAll('.filt-btn').forEach(btn=>{
-  btn.addEventListener('click', ()=>{
-    document.querySelectorAll('.filt-btn').forEach(b=>b.classList.remove('on'));
-    btn.classList.add('on');
-    logSrc = btn.dataset.src;
-    offsets.log = 0;
-    const more = document.getElementById('more-log');
-    if (more) { more.textContent='Load More'; more.disabled=false; }
-    loadTable(logSrc,'tbl-log',0,false);
-  });
-});
+/* ── LOG FILTERS — handled below with username support ─────── */
 
 /* ── BATCH LIVE ──────────────────────────────────────────── */
 function applyBatch(data) {
@@ -1751,6 +2014,360 @@ async function loadUsers() {
 }
 
 document.getElementById('users-refresh-btn')?.addEventListener('click', loadUsers);
+
+/* ── LOG USERNAME SEARCH ─────────────────────────────────── */
+let logUsernameFilter = '';
+let _logSearchTimer = null;
+
+function _applyLogSearch(val) {
+  logUsernameFilter = val.replace(/^@/, '').trim();
+  offsets.log = 0;
+  const more = document.getElementById('more-log');
+  if (more) { more.textContent='Load More'; more.disabled=false; }
+  loadTable(logSrc, 'tbl-log', 0, false, logUsernameFilter);
+}
+
+document.getElementById('log-user-search')?.addEventListener('input', e => {
+  clearTimeout(_logSearchTimer);
+  _logSearchTimer = setTimeout(() => _applyLogSearch(e.target.value), 350);
+});
+
+document.getElementById('log-user-clear')?.addEventListener('click', () => {
+  const inp = document.getElementById('log-user-search');
+  if (inp) inp.value = '';
+  _applyLogSearch('');
+});
+
+async function loadTable(source, tbodyId, offset=0, append=false, username='') {
+  const src  = source   ? `&source=${source}` : '';
+  const user = username ? `&username=${encodeURIComponent(username)}` : '';
+  const data = await apiFetch(`/api/events?limit=15&offset=${offset}${src}${user}`);
+  if (data) renderRows(tbodyId, data, append);
+  return data ? data.length : 0;
+}
+
+// Patch log filter buttons to pass current username filter
+document.querySelectorAll('.filt-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.filt-btn').forEach(b=>b.classList.remove('on'));
+    btn.classList.add('on');
+    logSrc = btn.dataset.src;
+    offsets.log = 0;
+    const more = document.getElementById('more-log');
+    if (more) { more.textContent='Load More'; more.disabled=false; }
+    loadTable(logSrc, 'tbl-log', 0, false, logUsernameFilter);
+  });
+});
+
+/* ── BANS ────────────────────────────────────────────────── */
+let _bans = [];
+
+async function loadBans() {
+  const tbody = document.getElementById('tbl-bans');
+  const empty = document.getElementById('bans-empty');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="5" style="color:var(--muted);font-family:var(--fm);font-size:10px;padding:12px">Loading…</td></tr>';
+
+  const data = await apiFetch('/api/bans');
+  if (!data) return;
+  _bans = data;
+
+  const count = document.getElementById('bans-count');
+  if (count) count.textContent = data.length;
+
+  if (!tbody) return;
+  if (!data.length) {
+    tbody.innerHTML = '';
+    if (empty) empty.style.display = '';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+
+  tbody.innerHTML = data.map(u => {
+    const name = u.username ? `@${u.username}` : '—';
+    const ts   = u.banned_at ? new Date(u.banned_at).toLocaleString('ru-RU', {
+      timeZone:'Europe/Moscow', day:'2-digit', month:'2-digit',
+      hour:'2-digit', minute:'2-digit'
+    }) : '—';
+    return `<tr>
+      <td style="font-family:var(--fm);font-size:10px;color:var(--dim)">${u.user_id}</td>
+      <td style="font-family:var(--fm);font-size:11px">${name}</td>
+      <td style="font-size:10px;color:var(--muted)">${ts}</td>
+      <td style="font-size:10px;color:var(--dim)">${u.reason || '—'}</td>
+      <td style="text-align:right">
+        <button class="mod-action-btn ok" style="padding:4px 10px;font-size:8px"
+          onclick="unbanUser(${u.user_id})">Unban</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function unbanUser(userId) {
+  if (!confirm(`Unban user ID ${userId}?`)) return;
+  const r = await fetch(`/api/bans/${userId}`, { method: 'DELETE' });
+  if (r.status === 401) { window.location.href = '/dashboard/login'; return; }
+  await loadBans();
+}
+
+document.getElementById('ban-add-btn')?.addEventListener('click', async () => {
+  const msg    = document.getElementById('ban-add-msg');
+  const uidVal = document.getElementById('ban-uid-input')?.value.trim();
+  const uid    = parseInt(uidVal, 10);
+  if (!uid || uid <= 0) {
+    msg.style.color = 'var(--red)'; msg.textContent = 'Enter a valid user ID'; return;
+  }
+  const username = (document.getElementById('ban-uname-input')?.value || '').replace(/^@/, '').trim() || null;
+  const reason   = (document.getElementById('ban-reason-input')?.value || '').trim() || null;
+  const r = await fetch('/api/bans', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ user_id: uid, username, reason }),
+  });
+  if (r.status === 401) { window.location.href = '/dashboard/login'; return; }
+  if (r.ok) {
+    msg.style.color = 'var(--green)';
+    msg.textContent = `✓ User ${uid} banned`;
+    document.getElementById('ban-uid-input').value   = '';
+    document.getElementById('ban-uname-input').value = '';
+    document.getElementById('ban-reason-input').value = '';
+    await loadBans();
+  } else {
+    msg.style.color = 'var(--red)';
+    msg.textContent = 'Error: ' + (await r.text());
+  }
+});
+
+document.getElementById('bans-refresh-btn')?.addEventListener('click', loadBans);
+
+/* ── BATCH ACCESS ────────────────────────────────────────── */
+async function loadBatchAdmin() {
+  await Promise.all([loadBatchRequests(), loadBatchWhitelist()]);
+}
+
+async function loadBatchRequests() {
+  const tbody = document.getElementById('tbl-batch-req');
+  const empty = document.getElementById('batch-req-empty');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="5" style="color:var(--muted);font-family:var(--fm);font-size:10px;padding:12px">Loading…</td></tr>';
+
+  const data = await apiFetch('/api/batch-requests');
+  if (!data) return;
+
+  const cnt = data.length;
+  const el1 = document.getElementById('batch-req-count');
+  const el2 = document.getElementById('batch-req-count-aside');
+  if (el1) el1.textContent = cnt;
+  if (el2) el2.textContent = cnt;
+
+  if (!tbody) return;
+  if (!cnt) {
+    tbody.innerHTML = '';
+    if (empty) empty.style.display = '';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+
+  tbody.innerHTML = data.map(r => {
+    const name = r.username ? `@${r.username}` : '—';
+    const ts   = r.created_at ? new Date(r.created_at).toLocaleString('ru-RU', {
+      timeZone:'Europe/Moscow', day:'2-digit', month:'2-digit',
+      hour:'2-digit', minute:'2-digit'
+    }) : '—';
+    return `<tr>
+      <td style="font-family:var(--fm);font-size:10px;color:var(--dim)">${r.id}</td>
+      <td style="font-family:var(--fm);font-size:10px;color:var(--dim)">${r.user_id}</td>
+      <td style="font-family:var(--fm);font-size:11px">${name}</td>
+      <td style="font-size:10px;color:var(--muted)">${ts}</td>
+      <td style="text-align:center;display:flex;gap:6px;justify-content:center;padding:6px">
+        <button class="mod-action-btn ok" style="padding:4px 10px;font-size:8px"
+          onclick="resolveBatchReq(${r.id},'approve')">Approve</button>
+        <button class="mod-action-btn danger" style="padding:4px 10px;font-size:8px"
+          onclick="resolveBatchReq(${r.id},'reject')">Reject</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function resolveBatchReq(reqId, action) {
+  const label = action === 'approve' ? 'Approve' : 'Reject';
+  if (!confirm(`${label} request #${reqId}?`)) return;
+  const r = await fetch(`/api/batch-requests/${reqId}/${action}`, { method: 'POST' });
+  if (r.status === 401) { window.location.href = '/dashboard/login'; return; }
+  await loadBatchAdmin();
+}
+
+async function loadBatchWhitelist() {
+  const tbody = document.getElementById('tbl-batch-wl');
+  const empty = document.getElementById('batch-wl-empty');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="4" style="color:var(--muted);font-family:var(--fm);font-size:10px;padding:12px">Loading…</td></tr>';
+
+  const data = await apiFetch('/api/batch-whitelist');
+  if (!data) return;
+
+  const cnt = data.length;
+  const el1 = document.getElementById('batch-wl-count');
+  const el2 = document.getElementById('batch-wl-count-aside');
+  if (el1) el1.textContent = cnt;
+  if (el2) el2.textContent = cnt;
+
+  if (!tbody) return;
+  if (!cnt) {
+    tbody.innerHTML = '';
+    if (empty) empty.style.display = '';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+
+  tbody.innerHTML = data.map(u => {
+    const name = u.username ? `@${u.username}` : '—';
+    const ts   = u.added_at ? new Date(u.added_at).toLocaleString('ru-RU', {
+      timeZone:'Europe/Moscow', day:'2-digit', month:'2-digit',
+      hour:'2-digit', minute:'2-digit'
+    }) : '—';
+    return `<tr>
+      <td style="font-family:var(--fm);font-size:10px;color:var(--dim)">${u.user_id}</td>
+      <td style="font-family:var(--fm);font-size:11px">${name}</td>
+      <td style="font-size:10px;color:var(--muted)">${ts}</td>
+      <td style="text-align:right">
+        <button class="mod-action-btn danger" style="padding:4px 10px;font-size:8px"
+          onclick="removeBatchWl(${u.user_id})">Remove</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function removeBatchWl(userId) {
+  if (!confirm(`Remove user ID ${userId} from batch whitelist?`)) return;
+  const r = await fetch(`/api/batch-whitelist/${userId}`, { method: 'DELETE' });
+  if (r.status === 401) { window.location.href = '/dashboard/login'; return; }
+  await loadBatchWhitelist();
+}
+
+document.getElementById('batch-wl-add-btn')?.addEventListener('click', async () => {
+  const msg    = document.getElementById('batch-wl-add-msg');
+  const uidVal = document.getElementById('batch-uid-input')?.value.trim();
+  const uid    = parseInt(uidVal, 10);
+  if (!uid || uid <= 0) {
+    msg.style.color = 'var(--red)'; msg.textContent = 'Enter a valid user ID'; return;
+  }
+  const username = (document.getElementById('batch-uname-input')?.value || '').replace(/^@/, '').trim() || null;
+  const r = await fetch('/api/batch-whitelist', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ user_id: uid, username }),
+  });
+  if (r.status === 401) { window.location.href = '/dashboard/login'; return; }
+  if (r.ok) {
+    msg.style.color = 'var(--green)';
+    msg.textContent = `✓ User ${uid} added to whitelist`;
+    document.getElementById('batch-uid-input').value   = '';
+    document.getElementById('batch-uname-input').value = '';
+    await loadBatchWhitelist();
+  } else {
+    msg.style.color = 'var(--red)';
+    msg.textContent = 'Error: ' + (await r.text());
+  }
+});
+
+document.getElementById('batch-req-refresh-btn')?.addEventListener('click', loadBatchRequests);
+document.getElementById('batch-wl-refresh-btn')?.addEventListener('click', loadBatchWhitelist);
+
+/* ── SYSTEM ──────────────────────────────────────────────── */
+function _fmtBytes(b) {
+  if (b == null) return '—';
+  if (b < 1024)       return b + ' B';
+  if (b < 1048576)    return (b/1024).toFixed(1) + ' KB';
+  if (b < 1073741824) return (b/1048576).toFixed(1) + ' MB';
+  return (b/1073741824).toFixed(2) + ' GB';
+}
+function _fmtUptime(s) {
+  if (!s) return '—';
+  const d = Math.floor(s/86400), h = Math.floor((s%86400)/3600),
+        m = Math.floor((s%3600)/60);
+  if (d>0) return `${d}d ${h}h ${m}m`;
+  if (h>0) return `${h}h ${m}m`;
+  return `${m}m ${s%60}s`;
+}
+
+async function loadSystem() {
+  const data = await apiFetch('/api/system');
+  if (!data) return;
+
+  const up = document.getElementById('sys-uptime');
+  if (up) up.textContent = _fmtUptime(data.uptime_seconds);
+
+  const db  = data.db  || {};
+  const red = data.redis || {};
+
+  const dbSizeEl = document.getElementById('sys-db-size');
+  if (dbSizeEl) dbSizeEl.textContent = _fmtBytes(db.db_size_bytes);
+
+  const redMemEl = document.getElementById('sys-redis-mem');
+  if (redMemEl) redMemEl.textContent = red.used_memory_human || '—';
+
+  const cacheEl = document.getElementById('sys-cache');
+  if (cacheEl) countUp(cacheEl, db.cache_entries || 0);
+
+  // DB details card
+  const dbRows = document.getElementById('sys-db-rows');
+  if (dbRows) {
+    const rows = [
+      ['Total Events',     fmt(db.events_count)],
+      ['Cache Entries',    fmt(db.cache_entries)],
+      ['DB Size',          _fmtBytes(db.db_size_bytes)],
+    ];
+    dbRows.innerHTML = rows.map(([k,v]) =>
+      `<div class="sys-row"><span class="sys-key">${k}</span><span class="sys-val">${v}</span></div>`
+    ).join('');
+  }
+
+  // Redis card
+  const redRows = document.getElementById('sys-redis-rows');
+  if (redRows) {
+    if (red.error) {
+      redRows.innerHTML = `<div class="sys-row"><span class="sys-key">Status</span><span class="sys-val" style="color:var(--red)">Error: ${red.error}</span></div>`;
+    } else {
+      const hits   = red.keyspace_hits   || 0;
+      const misses = red.keyspace_misses || 0;
+      const total  = hits + misses;
+      const hitRate = total > 0 ? (hits/total*100).toFixed(1)+'%' : '—';
+      const rows = [
+        ['Version',       red.redis_version || '—'],
+        ['Uptime',        _fmtUptime(red.uptime_in_seconds)],
+        ['Memory Used',   red.used_memory_human || '—'],
+        ['Memory Peak',   red.used_memory_peak_human || '—'],
+        ['Total Keys',    fmt(red.total_keys)],
+        ['Cache Hit Rate', hitRate],
+      ];
+      redRows.innerHTML = rows.map(([k,v]) =>
+        `<div class="sys-row"><span class="sys-key">${k}</span><span class="sys-val">${v}</span></div>`
+      ).join('');
+    }
+  }
+
+  // Table sizes
+  const tableBody = document.getElementById('sys-tables-body');
+  if (tableBody && db.tables) {
+    tableBody.innerHTML = db.tables.map(t =>
+      `<tr>
+        <td>${t.name}</td>
+        <td style="text-align:right;color:var(--muted)">${fmt(t.rows)}</td>
+        <td style="text-align:right;color:var(--dim)">${_fmtBytes(t.size_bytes)}</td>
+      </tr>`
+    ).join('') || '<tr><td colspan="3" class="no-data">No tables found</td></tr>';
+  }
+
+  // Moderation card
+  const modRows = document.getElementById('sys-mod-rows');
+  if (modRows) {
+    const rows = [
+      ['Banned Users',     fmt(db.banned_users)],
+      ['Whitelisted',      fmt(db.whitelist_users)],
+      ['Pending Requests', fmt(db.pending_requests)],
+    ];
+    modRows.innerHTML = rows.map(([k,v]) =>
+      `<div class="sys-row"><span class="sys-key">${k}</span><span class="sys-val">${v}</span></div>`
+    ).join('');
+  }
+}
+
+document.getElementById('system-refresh-btn')?.addEventListener('click', loadSystem);
 
 /* ── INIT ────────────────────────────────────────────────── */
 function initDash() {
