@@ -5,7 +5,7 @@ import os
 import time
 from urllib.parse import urlparse
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from aiohttp import web as aiohttp_web
 from aiogram import Bot, Dispatcher
@@ -249,6 +249,13 @@ async def _api_batch_live(request: aiohttp_web.Request) -> aiohttp_web.Response:
         return aiohttp_web.Response(status=401)
     data = await db.get_batch_live_data()
     return aiohttp_web.Response(text=json.dumps(data), content_type="application/json")
+
+
+async def _api_users(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    if not _check_auth(request):
+        return aiohttp_web.Response(status=401)
+    data = await db.get_users_dashboard()
+    return aiohttp_web.Response(text=json.dumps(data, default=str), content_type="application/json")
 
 
 _SPOTIFY_CALLBACK_HTML_OK = """<!DOCTYPE html>
@@ -629,6 +636,43 @@ async def _api_proxies_test(request: aiohttp_web.Request) -> aiohttp_web.Respons
     )
 
 
+async def _daily_digest_task(bot: Bot) -> None:
+    """Send a daily stats digest to admin at 09:00 MSK."""
+    from zoneinfo import ZoneInfo
+    MSK = ZoneInfo("Europe/Moscow")
+    if not settings.ADMIN_ID:
+        return
+    while True:
+        now = datetime.now(MSK)
+        target = now.replace(hour=9, minute=0, second=0, microsecond=0)
+        if now >= target:
+            target = target + timedelta(days=1)
+        await asyncio.sleep((target - now).total_seconds())
+        try:
+            s = await db.get_daily_digest_stats()
+            if not s:
+                continue
+            date_str = datetime.now(MSK).strftime("%d.%m.%Y")
+            top_lines = ""
+            if s.get("top_users"):
+                top_lines = "\n\n<b>Топ пользователей:</b>\n"
+                for i, u in enumerate(s["top_users"], 1):
+                    uname = f"@{u['username']}" if u["username"] else "?"
+                    top_lines += f"  {i}. {uname} — {u['tracks']} треков\n"
+            text = (
+                f"📊 <b>Дайджест за {date_str}</b>\n\n"
+                f"👤 Пользователей: <b>{s['users']}</b>\n"
+                f"🎵 Скачано треков: <b>{s['tracks']}</b>\n"
+                f"📦 Батч-сессий: <b>{s['batches']}</b>\n"
+                f"📋 Экспортировано: <b>{s['exported']}</b>\n"
+                f"❌ Ошибок: <b>{s['errors']}</b>"
+                + top_lines
+            )
+            await bot.send_message(settings.ADMIN_ID, text, parse_mode="HTML")
+        except Exception as e:
+            log.warning("daily_digest_task failed: %s", e)
+
+
 def _build_storage():
     """Connect to Redis for FSM storage. Raises on failure — no silent fallback."""
     import redis as redis_sync
@@ -706,6 +750,7 @@ async def main() -> None:
             web_app.router.add_get("/api/events",       _api_events)
             web_app.router.add_get("/api/chart",        _api_chart)
             web_app.router.add_get("/api/batch_live",   _api_batch_live)
+            web_app.router.add_get("/api/users",        _api_users)
             web_app.router.add_get("/api/ws",           _ws_handler)
             web_app.router.add_get("/api/network-status",       _api_network_status)
             web_app.router.add_get("/api/proxies",              _api_proxies_get)
@@ -736,7 +781,10 @@ async def main() -> None:
         log.info("HTTP server started on port %d", settings.SPOTIFY_CALLBACK_PORT)
 
     await detect_and_store_server_ip()
+    if db._pool:
+        await db.cleanup_old_batch_live()
     asyncio.create_task(_check_sc_cookies_task(bot))
+    asyncio.create_task(_daily_digest_task(bot))
     log.info("Bot started")
     if settings.WEBHOOK_URL:
         await asyncio.Event().wait()
