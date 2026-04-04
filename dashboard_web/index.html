@@ -316,6 +316,7 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
 .dot-ym{background:#7c3aed;box-shadow:0 0 4px rgba(124,58,237,.6)}
 .dot-sp{background:#4ade80;box-shadow:0 0 4px rgba(74,222,128,.5)}
 .dot-sc{background:#fb923c;box-shadow:0 0 4px rgba(251,146,60,.5)}
+.dot-yt{background:#f87171;box-shadow:0 0 4px rgba(248,113,113,.5)}
 
 /* table row hover — left accent by platform */
 .dt tbody tr{border-left:2px solid transparent;transition:border-color .15s}
@@ -323,6 +324,7 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
 .dt tbody tr[data-plt="ym"]:hover     {border-left-color:#7c3aed}
 .dt tbody tr[data-plt="spotify"]:hover{border-left-color:#4ade80}
 .dt tbody tr[data-plt="sc"]:hover     {border-left-color:#fb923c}
+.dt tbody tr[data-plt="yt"]:hover     {border-left-color:#f87171}
 
 /* chart tooltip */
 #chart-tip{position:fixed;z-index:300;pointer-events:none;
@@ -1071,7 +1073,8 @@ const AL = {
 function getPlatform(action) {
   if (!action) return 'ym';
   if (action.startsWith('spotify')) return 'spotify';
-  if (['sc_search','yt_search','sc_batch','sc_track_fail'].includes(action)) return 'sc';
+  if (action === 'yt_search') return 'yt';
+  if (['sc_search','sc_batch','sc_track_fail'].includes(action)) return 'sc';
   return 'ym';
 }
 
@@ -1089,7 +1092,7 @@ function renderRows(tbodyId, events, append=false) {
   }
   const html = events.map(e => {
     const plt = getPlatform(e.action);
-    const dotCls = plt==='spotify'?'dot-sp':plt==='sc'?'dot-sc':'dot-ym';
+    const dotCls = plt==='spotify'?'dot-sp':plt==='sc'?'dot-sc':plt==='yt'?'dot-yt':'dot-ym';
     const det = isLog ? `<td style="color:var(--dim);font-size:10px">${e.detail||'—'}</td>` : '';
     return `<tr data-plt="${plt}">
       <td>${fmtTs(e.ts)}</td>
