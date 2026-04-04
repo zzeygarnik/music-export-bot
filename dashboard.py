@@ -44,6 +44,17 @@ def load_live() -> dict:
     return {r["user_hash"]: r for r in rows}
 
 
+def load_proxy_states() -> dict:
+    """Return {platform: active_url_or_none} for SC and YT."""
+    rows = _query("SELECT platform, active_url FROM proxy_state")
+    return {r["platform"]: r["active_url"] for r in rows}
+
+
+_ALL_PROXIES: list[str] = [
+    p.strip() for p in os.environ.get("SC_PROXIES", "").split(",") if p.strip()
+]
+
+
 def load_events() -> pd.DataFrame:
     rows = _query("SELECT * FROM events ORDER BY ts ASC")
     if not rows:
@@ -55,6 +66,7 @@ def load_events() -> pd.DataFrame:
 
 df = load_events()
 live_data = load_live()
+proxy_states = load_proxy_states()
 
 # ── Live batch progress ────────────────────────────────────────────────────────
 running_batches = {k: v for k, v in live_data.items() if v.get("status") == "running"}
@@ -137,7 +149,9 @@ sp_loads = pd.concat([sp_playlist, sp_liked])
 sp_loads_ok = sp_loads[sp_loads["result"] == "success"]
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
-tab_ym, tab_spotify, tab_sc, tab_log = st.tabs(["📊 Яндекс Музыка", "🟢 Spotify", "☁️ SC / YouTube", "📋 Лог событий"])
+tab_ym, tab_spotify, tab_sc, tab_log, tab_proxy = st.tabs([
+    "📊 Яндекс Музыка", "🟢 Spotify", "☁️ SC / YouTube", "📋 Лог событий", "🌐 Прокси"
+])
 
 # ── Tab 1: YM ─────────────────────────────────────────────────────────────────
 with tab_ym:
@@ -325,10 +339,10 @@ with tab_log:
         "auth_fail": "❌ YM: Авторизация (ошибка)",
         "export_error": "⚠️ YM: Ошибка экспорта",
         "yms_load": "🔗 YM: Плейлист/Альбом по ссылке",
-        "sc_search": "🔍 SC: Поиск",
-        "yt_search": "🔍 YT: Поиск",
-        "sc_batch": "📥 Батч-загрузка (SC/YT)",
-        "sc_track_fail": "❌ Трек не найден (батч)",
+        "sc_search": "🟠 SC: Поиск",
+        "yt_search": "🔴 YT: Поиск",
+        "sc_batch": "🟠 SC: Батч-загрузка",
+        "sc_track_fail": "🟠 SC: Трек не найден (батч)",
         "spotify_playlist_load": "🟢 Spotify: Плейлист/Альбом",
         "spotify_liked_load": "🟢 Spotify: Лайки",
         "spotify_export": "🟢 Spotify: Экспорт",
@@ -365,6 +379,47 @@ with tab_log:
         use_container_width=True,
         hide_index=True,
     )
+
+# ── Tab 5: Прокси ─────────────────────────────────────────────────────────────
+with tab_proxy:
+    sc_active = proxy_states.get("sc")   # None → main IP
+    yt_active = proxy_states.get("yt")   # None → main IP
+
+    col_sc, col_yt = st.columns(2)
+    with col_sc:
+        if sc_active:
+            st.error(f"🟠 SC: прокси активен\n`{sc_active}`")
+        else:
+            st.success("✅ SC: основной IP")
+    with col_yt:
+        if yt_active:
+            st.error(f"🔴 YT: прокси активен\n`{yt_active}`")
+        else:
+            st.success("✅ YT: основной IP")
+
+    st.divider()
+
+    if not _ALL_PROXIES:
+        st.info("Прокси не настроены (`SC_PROXIES` не задан).")
+    else:
+        proxy_rows = []
+        for url in _ALL_PROXIES:
+            used_by = []
+            if sc_active == url:
+                used_by.append("🟠 SC")
+            if yt_active == url:
+                used_by.append("🔴 YT")
+            proxy_rows.append({
+                "Прокси": url,
+                "IN USE?": " + ".join(used_by) if used_by else "—",
+            })
+        st.dataframe(pd.DataFrame(proxy_rows), use_container_width=True, hide_index=True)
+
+    if proxy_states:
+        st.caption(f"Данные из БД. Обновляется при ротации прокси.")
+    else:
+        st.caption("Нет данных в БД — прокси ещё ни разу не ротировались с момента старта бота.")
+
 
 # ── Auto-refresh ──────────────────────────────────────────────────────────────
 if auto:

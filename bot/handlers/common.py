@@ -363,6 +363,7 @@ async def _recovery_check_loop(bot) -> None:
             old_proxy = _sc_proxies[_sc_proxy_index] if 0 <= _sc_proxy_index < len(_sc_proxies) else "unknown"
             _sc_proxy_index = -1
             sc_downloader.set_active_proxy("")
+            asyncio.create_task(db.set_proxy_state("sc", None))
             log.info("SC main IP recovery: main IP unblocked, switched back from %s", old_proxy)
 
         if settings.ADMIN_ID:
@@ -434,6 +435,7 @@ async def rotate_sc_proxy(bot) -> bool:
             _sc_proxy_index = 0
             new_proxy = _sc_proxies[0]
             sc_downloader.set_active_proxy(new_proxy)
+            asyncio.create_task(db.set_proxy_state("sc", new_proxy))
             log.warning("SC proxy rotation: main IP → proxy[0] = %s", new_proxy)
             if settings.ADMIN_ID:
                 try:
@@ -456,6 +458,7 @@ async def rotate_sc_proxy(bot) -> bool:
             old_proxy = _sc_proxies[old_index]
             new_proxy = _sc_proxies[next_index]
             sc_downloader.set_active_proxy(new_proxy)
+            asyncio.create_task(db.set_proxy_state("sc", new_proxy))
             log.warning("SC proxy rotation: proxy[%d] → proxy[%d] = %s", old_index, next_index, new_proxy)
             if settings.ADMIN_ID:
                 try:
@@ -475,6 +478,7 @@ async def rotate_sc_proxy(bot) -> bool:
             _sc_proxy_index = -1
             old_proxy = _sc_proxies[old_index]
             sc_downloader.set_active_proxy("")
+            asyncio.create_task(db.set_proxy_state("sc", None))
             log.warning("SC proxy rotation: all proxies exhausted, reverting to main IP")
             if settings.ADMIN_ID:
                 try:
@@ -533,6 +537,7 @@ async def rotate_yt_proxy(bot) -> bool:
         if next_idx is None:
             _yt_proxy_index = -1
             sc_downloader.set_yt_active_proxy("")
+            asyncio.create_task(db.set_proxy_state("yt", None))
             log.warning("YT proxy rotation: all proxies exhausted, reverting to main IP")
             if settings.ADMIN_ID:
                 try:
@@ -549,6 +554,7 @@ async def rotate_yt_proxy(bot) -> bool:
         _yt_proxy_index = next_idx
         new_proxy = _sc_proxies[next_idx]
         sc_downloader.set_yt_active_proxy(new_proxy)
+        asyncio.create_task(db.set_proxy_state("yt", new_proxy))
 
         sc_same = (next_idx == _sc_proxy_index)
         sc_note = " (тот же прокси что и SC — свободных не осталось)" if sc_same else ""

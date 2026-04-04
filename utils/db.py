@@ -103,6 +103,13 @@ async def _create_tables() -> None:
             CREATE INDEX IF NOT EXISTS contact_messages_user_idx
             ON contact_messages (user_id, sent_at DESC)
         """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS proxy_state (
+                platform   VARCHAR(5) PRIMARY KEY,
+                active_url TEXT,
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """)
 
 
 async def get_cached_file_id(cache_key: str) -> str | None:
@@ -500,6 +507,32 @@ async def mark_contact_replied(user_id: int) -> None:
                 )
     except Exception as e:
         log.warning("mark_contact_replied failed: %s", e)
+
+
+async def set_proxy_state(platform: str, active_url: str | None) -> None:
+    """Upsert current active proxy URL for 'sc' or 'yt' platform (None = main IP)."""
+    try:
+        async with _pool.acquire() as conn:
+            await conn.execute("""
+                INSERT INTO proxy_state (platform, active_url, updated_at)
+                VALUES ($1, $2, NOW())
+                ON CONFLICT (platform) DO UPDATE SET
+                    active_url = EXCLUDED.active_url,
+                    updated_at = NOW()
+            """, platform, active_url)
+    except Exception as e:
+        log.warning("set_proxy_state failed: %s", e)
+
+
+async def get_proxy_states() -> dict:
+    """Return {platform: active_url_or_none} dict for all tracked platforms."""
+    try:
+        async with _pool.acquire() as conn:
+            rows = await conn.fetch("SELECT platform, active_url FROM proxy_state")
+            return {r[0]: r[1] for r in rows}
+    except Exception as e:
+        log.warning("get_proxy_states failed: %s", e)
+        return {}
 
 
 async def get_user_stats(user_id: int) -> dict:
