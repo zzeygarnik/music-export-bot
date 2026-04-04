@@ -730,3 +730,112 @@ async def get_recent_events(n: int = 20) -> list[dict]:
     except Exception as e:
         log.warning("get_recent_events failed: %s", e)
         return []
+
+
+async def get_users_dashboard() -> list[dict]:
+    """User activity stats for the dashboard Users tab."""
+    try:
+        async with _pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT
+                    username,
+                    COALESCE(SUM(CASE WHEN action IN ('sc_search','yt_search','sc_batch')
+                                          AND result IN ('success','stopped')
+                                     THEN COALESCE(track_count,1) ELSE 0 END), 0) AS tracks_total,
+                    COALESCE(SUM(CASE WHEN ts >= NOW() - INTERVAL '1 day'
+                                          AND action IN ('sc_search','yt_search','sc_batch')
+                                          AND result IN ('success','stopped')
+                                     THEN COALESCE(track_count,1) ELSE 0 END), 0) AS tracks_today,
+                    MAX(ts) AS last_seen,
+                    MIN(ts) AS first_seen
+                FROM events
+                WHERE username IS NOT NULL
+                GROUP BY username
+                ORDER BY last_seen DESC
+                LIMIT 100
+            """)
+            banned_rows = await conn.fetch(
+                "SELECT username FROM banned_users WHERE username IS NOT NULL"
+            )
+            wl_rows = await conn.fetch(
+                "SELECT username FROM batch_whitelist WHERE username IS NOT NULL"
+            )
+            banned_names = {r[0].lstrip("@").lower() for r in banned_rows}
+            wl_names     = {r[0].lstrip("@").lower() for r in wl_rows}
+
+            return [
+                {
+                    "username":     r[0],
+                    "tracks_total": int(r[1]),
+                    "tracks_today": int(r[2]),
+                    "last_seen":    r[3].isoformat() if r[3] else None,
+                    "first_seen":   r[4].isoformat() if r[4] else None,
+                    "is_banned":    (r[0] or "").lstrip("@").lower() in banned_names,
+                    "in_whitelist": (r[0] or "").lstrip("@").lower() in wl_names,
+                }
+                for r in rows
+            ]
+    except Exception as e:
+        log.warning("get_users_dashboard failed: %s", e)
+        return []
+
+
+async def get_daily_digest_stats() -> dict:
+    """Yesterday's stats for the daily admin digest."""
+    try:
+        async with _pool.acquire() as conn:
+            row = await conn.fetchrow("""
+                SELECT
+                    COUNT(DISTINCT user_hash) AS users,
+                    COALESCE(SUM(CASE WHEN action IN ('sc_search','yt_search','sc_batch')
+                                          AND result IN ('success','stopped')
+                                     THEN COALESCE(track_count,1) ELSE 0 END), 0) AS tracks,
+                    COUNT(CASE WHEN action='sc_batch' AND result IN ('success','stopped') THEN 1 END) AS batches,
+                    COALESCE(SUM(CASE WHEN action IN ('export_liked','export_playlist','export_by_link',
+                                                      'export_filtered','spotify_export')
+                                          AND result='success'
+                                     THEN COALESCE(track_count,0) ELSE 0 END), 0) AS exported,
+                    COUNT(CASE WHEN result='error' THEN 1 END) AS errors
+                FROM events
+                WHERE ts >= NOW() - INTERVAL '1 day'
+            """)
+            top_rows = await conn.fetch("""
+                SELECT username, SUM(COALESCE(track_count,1)) AS total
+                FROM events
+                WHERE ts >= NOW() - INTERVAL '1 day'
+                  AND action IN ('sc_search','yt_search','sc_batch')
+                  AND result IN ('success','stopped')
+                  AND username IS NOT NULL
+                GROUP BY username
+                ORDER BY total DESC
+                LIMIT 5
+            """)
+        return {
+            "users":     int(row[0]),
+            "tracks":    int(row[1]),
+            "batches":   int(row[2]),
+            "exported":  int(row[3]),
+            "errors":    int(row[4]),
+            "top_users": [{"username": r[0], "tracks": int(r[1])} for r in top_rows],
+        }
+    except Exception as e:
+        log.warning("get_daily_digest_stats failed: %s", e)
+        return {}
+
+
+async def cleanup_old_batch_live() -> int:
+    """Delete finished batch_live records older than 7 days. Returns count deleted."""
+    try:
+        async with _pool.acquire() as conn:
+            result = await conn.execute("""
+                DELETE FROM batch_live
+                WHERE status != 'running'
+                  AND finished_at < NOW() - INTERVAL '7 days'
+            """)
+            count = int(result.split()[-1]) if result else 0
+            if count:
+                log.info("cleanup_old_batch_live: deleted %d stale records", count)
+            return count
+    except Exception as e:
+        log.warning("cleanup_old_batch_live failed: %s", e)
+        return 0

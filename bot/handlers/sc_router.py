@@ -121,6 +121,21 @@ async def _try_start_or_queue(
     start_text: str | None = None,
 ) -> None:
     """Start batch download immediately, or add user to queue if all slots are taken."""
+    # Deduplicate tracks by (artist, title) keeping first occurrence
+    seen: set[tuple[str, str]] = set()
+    deduped: list[dict] = []
+    for t in tracks:
+        key = (t.get("artist", "").lower().strip(), t.get("title", "").lower().strip())
+        if key not in seen:
+            seen.add(key)
+            deduped.append(t)
+    dup_count = len(tracks) - len(deduped)
+    if dup_count > 0:
+        log.info("Deduplicated %d duplicate tracks for user=%s (%d→%d)", dup_count, user_id, len(tracks), len(deduped))
+        tracks = deduped
+        if start_text:
+            start_text = start_text.rstrip("…") + f"\n<i>Убрано дублей: {dup_count}.</i>"
+
     if _batch_semaphore.locked():
         if any(item.user_id == user_id for item in _batch_queue):
             await call.answer("⏳ Ты уже в очереди.", show_alert=True)

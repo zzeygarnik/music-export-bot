@@ -489,6 +489,16 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
         </a>
       </div>
       <div class="sb-section" style="margin-top:14px">
+        <div class="sb-section-lbl">Users</div>
+        <a class="nav-link" data-tab="users">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
+          Users
+        </a>
+      </div>
+      <div class="sb-section" style="margin-top:14px">
         <div class="sb-section-lbl">Config</div>
         <a class="nav-link" data-tab="proxies">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
@@ -839,6 +849,42 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
         </div>
       </div>
 
+      <!-- TAB: USERS -->
+      <div class="tab" id="tab-users">
+        <div class="pg-head">
+          <div class="pg-title">Users</div>
+          <div class="pg-sub">Activity overview — all users seen in event log</div>
+        </div>
+        <div class="metrics">
+          <div class="mc"><div class="mc-lbl">Total Users</div><div class="mc-val" id="usr-total">—</div></div>
+          <div class="mc"><div class="mc-lbl">Active Today</div><div class="mc-val" id="usr-today">—</div></div>
+          <div class="mc"><div class="mc-lbl">Whitelisted</div><div class="mc-val" id="usr-wl">—</div></div>
+          <div class="mc"><div class="mc-lbl">Banned</div><div class="mc-val" id="usr-banned">—</div></div>
+        </div>
+        <div class="card" style="margin-top:20px">
+          <div class="card-hdr" style="display:flex;align-items:center;justify-content:space-between">
+            <div class="card-title">All Users</div>
+            <button class="p-btn secondary" id="users-refresh-btn" style="padding:6px 14px">Refresh</button>
+          </div>
+          <div style="overflow-x:auto">
+            <table class="dt" id="tbl-users-wrap">
+              <thead>
+                <tr>
+                  <th>Username</th>
+                  <th>Tracks (all time)</th>
+                  <th>Tracks (today)</th>
+                  <th>Last seen (MSK)</th>
+                  <th>First seen (MSK)</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="tbl-users"></tbody>
+            </table>
+          </div>
+          <div id="users-empty" class="no-data" style="display:none">No users found</div>
+        </div>
+      </div>
+
     </div><!-- /inner -->
   </main>
 </div><!-- /dash -->
@@ -1164,7 +1210,7 @@ async function loadStats() {
 
 /* ── TABS ────────────────────────────────────────────────── */
 function switchTab(id) {
-  const valid = ['ym','spotify','sc','log','proxies','network'];
+  const valid = ['ym','spotify','sc','log','proxies','network','users'];
   if (!valid.includes(id)) id='ym';
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
   document.querySelectorAll('.nav-link').forEach(l=>l.classList.remove('active'));
@@ -1173,7 +1219,7 @@ function switchTab(id) {
   history.replaceState(null,'','#'+id);
   const tbl = document.getElementById('tbl-'+id);
   const isEmpty = tbl && tbl.children.length === 0;
-  if (!loaded[id] || isEmpty || id === 'proxies' || id === 'network') { loadTabData(id); loaded[id]=true; }
+  if (!loaded[id] || isEmpty || id === 'proxies' || id === 'network' || id === 'users') { loadTabData(id); loaded[id]=true; }
 }
 
 async function loadTabData(id) {
@@ -1187,6 +1233,8 @@ async function loadTabData(id) {
     await loadProxies();
   } else if (id === 'network') {
     await loadNetworkStatus();
+  } else if (id === 'users') {
+    await loadUsers();
   } else {
     offsets.log = 0;
     await loadTable(logSrc,'tbl-log',0,false);
@@ -1654,6 +1702,52 @@ async function testAllProxies() {
 document.getElementById('proxy-test-all-btn')?.addEventListener('click', testAllProxies);
 
 document.getElementById('proxy-refresh-btn')?.addEventListener('click', loadProxies);
+
+/* ── USERS ───────────────────────────────────────────────── */
+async function loadUsers() {
+  const tbody = document.getElementById('tbl-users');
+  const empty = document.getElementById('users-empty');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="color:var(--muted);font-family:var(--fm);font-size:10px;padding:12px">Loading…</td></tr>';
+
+  const data = await apiFetch('/api/users');
+  if (!data) return;
+
+  // Metrics
+  const total   = data.length;
+  const today   = data.filter(u => u.tracks_today > 0).length;
+  const wlCount = data.filter(u => u.in_whitelist).length;
+  const bnCount = data.filter(u => u.is_banned).length;
+  countUp(document.getElementById('usr-total'),  total);
+  countUp(document.getElementById('usr-today'),  today);
+  countUp(document.getElementById('usr-wl'),     wlCount);
+  countUp(document.getElementById('usr-banned'), bnCount);
+
+  if (!tbody) return;
+  if (!data.length) {
+    tbody.innerHTML = '';
+    if (empty) empty.style.display = '';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+
+  tbody.innerHTML = data.map(u => {
+    let statusBadge = '';
+    if (u.is_banned)    statusBadge += `<span class="bdg bdg-err" style="margin-right:4px"><span class="bdg-dot"></span>banned</span>`;
+    if (u.in_whitelist) statusBadge += `<span class="bdg bdg-ok"><span class="bdg-dot"></span>whitelist</span>`;
+    if (!u.is_banned && !u.in_whitelist) statusBadge = `<span style="color:var(--dim);font-size:10px;font-family:var(--fm)">—</span>`;
+    const uname = u.username ? `@${u.username}` : '—';
+    return `<tr>
+      <td style="font-family:var(--fm);font-size:11px">${uname}</td>
+      <td>${fmt(u.tracks_total)}</td>
+      <td>${u.tracks_today > 0 ? `<b style="color:var(--green)">${fmt(u.tracks_today)}</b>` : '—'}</td>
+      <td style="font-size:11px;color:var(--muted)">${fmtTs(u.last_seen)}</td>
+      <td style="font-size:11px;color:var(--dim)">${fmtTs(u.first_seen)}</td>
+      <td>${statusBadge}</td>
+    </tr>`;
+  }).join('');
+}
+
+document.getElementById('users-refresh-btn')?.addEventListener('click', loadUsers);
 
 /* ── INIT ────────────────────────────────────────────────── */
 function initDash() {
