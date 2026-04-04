@@ -687,8 +687,8 @@ async def get_chart_data(source: str, days: int = 7) -> list[dict]:
         return []
 
 
-async def get_events_dashboard(limit: int = 50, source: str = "", offset: int = 0) -> list[dict]:
-    """Events for the dashboard with source filtering and datetime serialization."""
+async def get_events_dashboard(limit: int = 50, source: str = "", offset: int = 0, username: str = "") -> list[dict]:
+    """Events for the dashboard with source/username filtering and datetime serialization."""
     _SOURCE_FILTERS = {
         "ym":      "('export_liked','export_playlist','export_by_link','export_filtered')",
         "spotify": "('spotify_export',)",
@@ -696,18 +696,22 @@ async def get_events_dashboard(limit: int = 50, source: str = "", offset: int = 
     }
     try:
         async with _pool.acquire() as conn:
+            conditions: list[str] = []
+            extra_params: list = []
+
             if source in _SOURCE_FILTERS:
-                rows = await conn.fetch(f"""
-                    SELECT ts, username, action, result, track_count, detail
-                    FROM events
-                    WHERE action IN {_SOURCE_FILTERS[source]}
-                    ORDER BY ts DESC LIMIT $1 OFFSET $2
-                """, limit, offset)
-            else:
-                rows = await conn.fetch("""
-                    SELECT ts, username, action, result, track_count, detail
-                    FROM events ORDER BY ts DESC LIMIT $1 OFFSET $2
-                """, limit, offset)
+                conditions.append(f"action IN {_SOURCE_FILTERS[source]}")
+
+            if username:
+                extra_params.append(f"%{username.strip()}%")
+                conditions.append(f"username ILIKE ${len(extra_params) + 2}")
+
+            where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+            rows = await conn.fetch(f"""
+                SELECT ts, username, action, result, track_count, detail
+                FROM events {where}
+                ORDER BY ts DESC LIMIT $1 OFFSET $2
+            """, limit, offset, *extra_params)
             return [
                 {
                     "ts":          r[0].isoformat() if r[0] else None,
@@ -853,6 +857,38 @@ async def get_daily_digest_stats() -> dict:
         }
     except Exception as e:
         log.warning("get_daily_digest_stats failed: %s", e)
+        return {}
+
+
+async def get_system_stats() -> dict:
+    """DB-level system stats for the System dashboard tab."""
+    try:
+        async with _pool.acquire() as conn:
+            db_size = await conn.fetchval("SELECT pg_database_size(current_database())")
+            tables = await conn.fetch("""
+                SELECT relname, n_live_tup, pg_total_relation_size(oid)
+                FROM pg_stat_user_tables
+                WHERE schemaname = 'public'
+                ORDER BY n_live_tup DESC
+            """)
+            events_count  = await conn.fetchval("SELECT COUNT(*) FROM events")
+            cache_count   = await conn.fetchval("SELECT COUNT(*) FROM track_cache")
+            banned_count  = await conn.fetchval("SELECT COUNT(*) FROM banned_users")
+            wl_count      = await conn.fetchval("SELECT COUNT(*) FROM batch_whitelist")
+            pending_count = await conn.fetchval(
+                "SELECT COUNT(*) FROM batch_access_requests WHERE status='pending'"
+            )
+        return {
+            "db_size_bytes":    int(db_size or 0),
+            "tables":           [{"name": r[0], "rows": int(r[1]), "size_bytes": int(r[2])} for r in tables],
+            "events_count":     int(events_count or 0),
+            "cache_entries":    int(cache_count or 0),
+            "banned_users":     int(banned_count or 0),
+            "whitelist_users":  int(wl_count or 0),
+            "pending_requests": int(pending_count or 0),
+        }
+    except Exception as e:
+        log.warning("get_system_stats failed: %s", e)
         return {}
 
 

@@ -105,6 +105,7 @@ _RATE_LIMIT_HTML = """\
 _login_attempts: dict[str, list[float]] = defaultdict(list)
 _RATE_LIMIT_MAX = 5
 _RATE_LIMIT_WINDOW = 600  # seconds
+_startup_time: float = 0.0
 
 
 def _get_client_ip(request: aiohttp_web.Request) -> str:
@@ -223,8 +224,9 @@ async def _api_events(request: aiohttp_web.Request) -> aiohttp_web.Response:
         offset = max(int(request.query.get("offset", 0)), 0)
     except ValueError:
         limit, offset = 50, 0
-    source = request.query.get("source", "")
-    data = await db.get_events_dashboard(limit, source, offset)
+    source   = request.query.get("source", "")
+    username = request.query.get("username", "").strip()
+    data = await db.get_events_dashboard(limit, source, offset, username)
     return aiohttp_web.Response(text=json.dumps(data), content_type="application/json")
 
 
@@ -636,6 +638,196 @@ async def _api_proxies_test(request: aiohttp_web.Request) -> aiohttp_web.Respons
     )
 
 
+# ── Moderation API — Bans ─────────────────────────────────────────────────
+
+async def _api_bans_get(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    if not _check_auth(request):
+        return aiohttp_web.Response(status=401)
+    data = await db.get_banned_users()
+    return aiohttp_web.Response(
+        text=json.dumps(data, default=str), content_type="application/json"
+    )
+
+
+async def _api_bans_add(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    if not _check_auth(request):
+        return aiohttp_web.Response(status=401)
+    try:
+        body = await request.json()
+        user_id = int(body.get("user_id", 0))
+        if user_id <= 0:
+            return aiohttp_web.Response(status=422, text="user_id must be a positive integer")
+        username = (body.get("username") or "").strip() or None
+        reason   = (body.get("reason") or "").strip() or None
+    except (ValueError, TypeError, Exception):
+        return aiohttp_web.Response(status=400, text="Invalid JSON")
+    await db.ban_user(user_id, username, reason)
+    log.info("Dashboard: banned user %d (@%s)", user_id, username)
+    return aiohttp_web.Response(
+        text=json.dumps({"user_id": user_id, "username": username, "reason": reason}),
+        content_type="application/json", status=201,
+    )
+
+
+async def _api_bans_delete(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    if not _check_auth(request):
+        return aiohttp_web.Response(status=401)
+    try:
+        user_id = int(request.match_info["user_id"])
+    except (KeyError, ValueError):
+        return aiohttp_web.Response(status=400, text="Invalid user_id")
+    await db.unban_user(user_id)
+    log.info("Dashboard: unbanned user %d", user_id)
+    return aiohttp_web.Response(
+        text=json.dumps({"unbanned": user_id}), content_type="application/json"
+    )
+
+
+# ── Moderation API — Batch Whitelist ──────────────────────────────────────
+
+async def _api_batch_wl_get(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    if not _check_auth(request):
+        return aiohttp_web.Response(status=401)
+    data = await db.get_batch_whitelist()
+    return aiohttp_web.Response(
+        text=json.dumps(data, default=str), content_type="application/json"
+    )
+
+
+async def _api_batch_wl_add(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    if not _check_auth(request):
+        return aiohttp_web.Response(status=401)
+    try:
+        body = await request.json()
+        user_id = int(body.get("user_id", 0))
+        if user_id <= 0:
+            return aiohttp_web.Response(status=422, text="user_id must be a positive integer")
+        username = (body.get("username") or "").strip() or None
+    except (ValueError, TypeError, Exception):
+        return aiohttp_web.Response(status=400, text="Invalid JSON")
+    await db.add_batch_whitelist(user_id, username)
+    log.info("Dashboard: added batch whitelist user %d (@%s)", user_id, username)
+    return aiohttp_web.Response(
+        text=json.dumps({"user_id": user_id, "username": username}),
+        content_type="application/json", status=201,
+    )
+
+
+async def _api_batch_wl_delete(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    if not _check_auth(request):
+        return aiohttp_web.Response(status=401)
+    try:
+        user_id = int(request.match_info["user_id"])
+    except (KeyError, ValueError):
+        return aiohttp_web.Response(status=400, text="Invalid user_id")
+    await db.remove_batch_whitelist(user_id)
+    log.info("Dashboard: removed batch whitelist user %d", user_id)
+    return aiohttp_web.Response(
+        text=json.dumps({"removed": user_id}), content_type="application/json"
+    )
+
+
+# ── Moderation API — Batch Access Requests ────────────────────────────────
+
+async def _api_batch_requests_get(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    if not _check_auth(request):
+        return aiohttp_web.Response(status=401)
+    data = await db.get_pending_requests()
+    return aiohttp_web.Response(
+        text=json.dumps(data, default=str), content_type="application/json"
+    )
+
+
+async def _api_batch_requests_resolve(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    if not _check_auth(request):
+        return aiohttp_web.Response(status=401)
+    action = request.match_info.get("action", "")
+    if action not in ("approve", "reject"):
+        return aiohttp_web.Response(status=400, text="action must be approve or reject")
+    try:
+        req_id = int(request.match_info["req_id"])
+    except (KeyError, ValueError):
+        return aiohttp_web.Response(status=400, text="Invalid req_id")
+
+    req = await db.get_request_by_id(req_id)
+    if not req:
+        return aiohttp_web.Response(status=404, text="Request not found")
+    if req["status"] != "pending":
+        return aiohttp_web.Response(status=409, text="Request already resolved")
+
+    status = "approved" if action == "approve" else "rejected"
+    await db.resolve_batch_request(req_id, status)
+
+    bot: Bot = request.app["bot"]
+    name = f"@{req['username']}" if req.get("username") else f"ID {req['user_id']}"
+
+    if action == "approve":
+        await db.add_batch_whitelist(req["user_id"], req.get("username"))
+        try:
+            await bot.send_message(
+                req["user_id"],
+                "✅ Твой запрос на batch-скачивание <b>одобрен</b>! Можешь начинать.",
+                parse_mode="HTML",
+            )
+        except Exception as e:
+            log.warning("Failed to notify user %d on approve: %s", req["user_id"], e)
+    else:
+        try:
+            await bot.send_message(
+                req["user_id"],
+                "❌ Твой запрос на batch-скачивание был <b>отклонён</b>.",
+                parse_mode="HTML",
+            )
+        except Exception as e:
+            log.warning("Failed to notify user %d on reject: %s", req["user_id"], e)
+
+    log.info("Dashboard: batch request %d %sd — user %s", req_id, action, name)
+    return aiohttp_web.Response(
+        text=json.dumps({"request_id": req_id, "status": status, "user": name}),
+        content_type="application/json",
+    )
+
+
+# ── System API ────────────────────────────────────────────────────────────
+
+async def _api_system(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    if not _check_auth(request):
+        return aiohttp_web.Response(status=401)
+
+    db_stats = await db.get_system_stats()
+
+    redis = request.app.get("redis")
+    redis_info: dict = {}
+    if redis:
+        try:
+            info = await redis.info("memory")
+            server_info = await redis.info("server")
+            stats_info  = await redis.info("stats")
+            keycount = await redis.dbsize()
+            redis_info = {
+                "used_memory_human": info.get("used_memory_human", "?"),
+                "used_memory_peak_human": info.get("used_memory_peak_human", "?"),
+                "uptime_in_seconds": server_info.get("uptime_in_seconds", 0),
+                "redis_version": server_info.get("redis_version", "?"),
+                "keyspace_hits":   stats_info.get("keyspace_hits", 0),
+                "keyspace_misses": stats_info.get("keyspace_misses", 0),
+                "total_keys": keycount,
+            }
+        except Exception as e:
+            redis_info = {"error": str(e)[:120]}
+
+    uptime_seconds = int(time.time() - _startup_time) if _startup_time else 0
+
+    return aiohttp_web.Response(
+        text=json.dumps({
+            "db":     db_stats,
+            "redis":  redis_info,
+            "uptime_seconds": uptime_seconds,
+        }, default=str),
+        content_type="application/json",
+    )
+
+
 async def _daily_digest_task(bot: Bot) -> None:
     """Send a daily stats digest to admin at 09:00 MSK."""
     from zoneinfo import ZoneInfo
@@ -685,6 +877,8 @@ def _build_storage():
 
 
 async def main() -> None:
+    global _startup_time
+    _startup_time = time.time()
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -757,6 +951,19 @@ async def main() -> None:
             web_app.router.add_post("/api/proxies",             _api_proxies_add)
             web_app.router.add_delete("/api/proxies/{idx}",     _api_proxies_delete)
             web_app.router.add_post("/api/proxies/{idx}/test",  _api_proxies_test)
+            # Moderation — bans
+            web_app.router.add_get("/api/bans",                 _api_bans_get)
+            web_app.router.add_post("/api/bans",                _api_bans_add)
+            web_app.router.add_delete("/api/bans/{user_id}",    _api_bans_delete)
+            # Moderation — batch whitelist
+            web_app.router.add_get("/api/batch-whitelist",              _api_batch_wl_get)
+            web_app.router.add_post("/api/batch-whitelist",             _api_batch_wl_add)
+            web_app.router.add_delete("/api/batch-whitelist/{user_id}", _api_batch_wl_delete)
+            # Moderation — batch access requests
+            web_app.router.add_get("/api/batch-requests",                          _api_batch_requests_get)
+            web_app.router.add_post("/api/batch-requests/{req_id}/{action}",       _api_batch_requests_resolve)
+            # System stats
+            web_app.router.add_get("/api/system",               _api_system)
             log.info("Dashboard registered at /dashboard")
 
         if settings.WEBHOOK_URL:
