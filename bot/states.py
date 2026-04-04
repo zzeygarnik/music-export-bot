@@ -61,3 +61,9 @@ class AdminFlow(StatesGroup):
 
 class FAQFlow(StatesGroup):
     contact_waiting = State()  # waiting for user's message to admin
+
+
+class AudioTagFlow(StatesGroup):
+    waiting_for_audio  = State()  # user clicked button, waiting for file
+    waiting_for_title  = State()  # waiting for track title input
+    waiting_for_artist = State()  # waiting for artist name input

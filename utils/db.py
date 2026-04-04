@@ -110,6 +110,19 @@ async def _create_tables() -> None:
                 updated_at TIMESTAMPTZ DEFAULT NOW()
             )
         """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS track_renames (
+                id               SERIAL PRIMARY KEY,
+                ts               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                user_hash        VARCHAR(8)  NOT NULL,
+                username         TEXT,
+                original_title   TEXT,
+                original_artist  TEXT,
+                new_title        TEXT,
+                new_artist       TEXT
+            )
+        """)
+        await conn.execute("CREATE INDEX IF NOT EXISTS track_renames_ts_idx ON track_renames (ts DESC)")
 
 
 async def get_cached_file_id(cache_key: str) -> str | None:
@@ -920,6 +933,44 @@ async def get_system_stats() -> dict:
     except Exception as e:
         log.warning("get_system_stats pool acquire failed: %s", e)
     return result
+
+
+async def log_rename(
+    user_id: int,
+    username: str | None,
+    original_title: str,
+    original_artist: str,
+    new_title: str,
+    new_artist: str,
+) -> None:
+    """Insert one row into track_renames."""
+    import hashlib
+    user_hash = hashlib.sha256(str(user_id).encode()).hexdigest()[:8]
+    try:
+        async with _pool.acquire() as conn:
+            await conn.execute("""
+                INSERT INTO track_renames
+                    (user_hash, username, original_title, original_artist, new_title, new_artist)
+                VALUES ($1, $2, $3, $4, $5, $6)
+            """, user_hash, username, original_title, original_artist, new_title, new_artist)
+    except Exception as e:
+        log.warning("log_rename failed: %s", e)
+
+
+async def get_renames_dashboard(limit: int = 30, offset: int = 0) -> list[dict]:
+    """Return recent track renames for the dashboard."""
+    try:
+        async with _pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT ts, username, original_title, original_artist, new_title, new_artist
+                FROM track_renames
+                ORDER BY ts DESC
+                LIMIT $1 OFFSET $2
+            """, limit, offset)
+            return [dict(r) for r in rows]
+    except Exception as e:
+        log.warning("get_renames_dashboard failed: %s", e)
+        return []
 
 
 async def cleanup_old_batch_live() -> int:

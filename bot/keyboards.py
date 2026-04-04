@@ -24,6 +24,10 @@ def service_keyboard() -> InlineKeyboardMarkup:
             callback_data="service:share_pick",
             icon_custom_emoji_id="6042011682497106307",
         )],
+        [InlineKeyboardButton(
+            text="Исправить теги трека",
+            callback_data="service:audio_tag",
+        )],
     ])
 
 
@@ -580,6 +584,22 @@ def tsel_selected_keyboard(selected: list, page: int = 0, page_size: int = 8) ->
         rows.append(nav)
     rows.append([InlineKeyboardButton(text="← К поиску", callback_data="tsel:back_panel")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+# ── AudioTagFlow keyboards ─────────────────────────────────────────────────────
+
+def audio_tag_cancel_keyboard() -> InlineKeyboardMarkup:
+    """Shown while waiting for track title — Назад cancels the whole flow."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="← Назад", callback_data="audio_tag:cancel")],
+    ])
+
+
+def audio_tag_back_keyboard() -> InlineKeyboardMarkup:
+    """Shown while waiting for artist — Назад returns to title prompt."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="← Назад", callback_data="audio_tag:back_to_title")],
+    ])
 
 
 def spotify_filter_result_keyboard() -> InlineKeyboardMarkup:

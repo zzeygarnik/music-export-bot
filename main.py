@@ -260,6 +260,18 @@ async def _api_users(request: aiohttp_web.Request) -> aiohttp_web.Response:
     return aiohttp_web.Response(text=json.dumps(data, default=str), content_type="application/json")
 
 
+async def _api_renames(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    if not _check_auth(request):
+        return aiohttp_web.Response(status=401)
+    try:
+        limit  = min(int(request.query.get("limit", 30)), 100)
+        offset = max(int(request.query.get("offset", 0)), 0)
+    except ValueError:
+        limit, offset = 30, 0
+    data = await db.get_renames_dashboard(limit, offset)
+    return aiohttp_web.Response(text=json.dumps(data, default=str), content_type="application/json")
+
+
 _SPOTIFY_CALLBACK_HTML_OK = """<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Spotify</title></head>
 <body style="font-family:sans-serif;text-align:center;padding:60px">
@@ -971,6 +983,7 @@ async def main() -> None:
             web_app.router.add_get("/api/chart",        _api_chart)
             web_app.router.add_get("/api/batch_live",   _api_batch_live)
             web_app.router.add_get("/api/users",        _api_users)
+            web_app.router.add_get("/api/renames",      _api_renames)
             web_app.router.add_get("/api/ws",           _ws_handler)
             web_app.router.add_get("/api/network-status",       _api_network_status)
             web_app.router.add_get("/api/proxies",              _api_proxies_get)
