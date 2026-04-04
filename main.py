@@ -653,14 +653,27 @@ async def _api_bans_add(request: aiohttp_web.Request) -> aiohttp_web.Response:
     if not _check_auth(request):
         return aiohttp_web.Response(status=401)
     try:
-        body = await request.json()
-        user_id = int(body.get("user_id", 0))
-        if user_id <= 0:
-            return aiohttp_web.Response(status=422, text="user_id must be a positive integer")
-        username = (body.get("username") or "").strip() or None
+        body     = await request.json()
+        username = (body.get("username") or "").strip().lstrip("@") or None
         reason   = (body.get("reason") or "").strip() or None
-    except (ValueError, TypeError, Exception):
+        try:
+            user_id = int(body.get("user_id") or 0)
+        except (ValueError, TypeError):
+            user_id = 0
+    except Exception:
         return aiohttp_web.Response(status=400, text="Invalid JSON")
+
+    if user_id <= 0:
+        if not username:
+            return aiohttp_web.Response(status=422, text="Укажите user_id или username")
+        resolved = await db.resolve_user_id_by_username(username)
+        if not resolved:
+            return aiohttp_web.Response(
+                status=404,
+                text=f"Пользователь @{username} не найден в базе. Используйте числовой ID.",
+            )
+        user_id = resolved
+
     await db.ban_user(user_id, username, reason)
     log.info("Dashboard: banned user %d (@%s)", user_id, username)
     return aiohttp_web.Response(
@@ -698,13 +711,26 @@ async def _api_batch_wl_add(request: aiohttp_web.Request) -> aiohttp_web.Respons
     if not _check_auth(request):
         return aiohttp_web.Response(status=401)
     try:
-        body = await request.json()
-        user_id = int(body.get("user_id", 0))
-        if user_id <= 0:
-            return aiohttp_web.Response(status=422, text="user_id must be a positive integer")
-        username = (body.get("username") or "").strip() or None
-    except (ValueError, TypeError, Exception):
+        body     = await request.json()
+        username = (body.get("username") or "").strip().lstrip("@") or None
+        try:
+            user_id = int(body.get("user_id") or 0)
+        except (ValueError, TypeError):
+            user_id = 0
+    except Exception:
         return aiohttp_web.Response(status=400, text="Invalid JSON")
+
+    if user_id <= 0:
+        if not username:
+            return aiohttp_web.Response(status=422, text="Укажите username")
+        resolved = await db.resolve_user_id_by_username(username)
+        if not resolved:
+            return aiohttp_web.Response(
+                status=404,
+                text=f"Пользователь @{username} не найден в базе. Сначала пользователь должен написать боту.",
+            )
+        user_id = resolved
+
     await db.add_batch_whitelist(user_id, username)
     log.info("Dashboard: added batch whitelist user %d (@%s)", user_id, username)
     return aiohttp_web.Response(

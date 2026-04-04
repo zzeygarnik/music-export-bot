@@ -860,36 +860,66 @@ async def get_daily_digest_stats() -> dict:
         return {}
 
 
-async def get_system_stats() -> dict:
-    """DB-level system stats for the System dashboard tab."""
+async def resolve_user_id_by_username(username: str) -> int | None:
+    """Try to find a user_id for a given username by searching known tables."""
+    username_clean = username.lstrip("@").lower()
     try:
         async with _pool.acquire() as conn:
-            db_size = await conn.fetchval("SELECT pg_database_size(current_database())")
-            tables = await conn.fetch("""
-                SELECT relname, n_live_tup, pg_total_relation_size(oid)
-                FROM pg_stat_user_tables
-                WHERE schemaname = 'public'
-                ORDER BY n_live_tup DESC
-            """)
-            events_count  = await conn.fetchval("SELECT COUNT(*) FROM events")
-            cache_count   = await conn.fetchval("SELECT COUNT(*) FROM track_cache")
-            banned_count  = await conn.fetchval("SELECT COUNT(*) FROM banned_users")
-            wl_count      = await conn.fetchval("SELECT COUNT(*) FROM batch_whitelist")
-            pending_count = await conn.fetchval(
-                "SELECT COUNT(*) FROM batch_access_requests WHERE status='pending'"
-            )
-        return {
-            "db_size_bytes":    int(db_size or 0),
-            "tables":           [{"name": r[0], "rows": int(r[1]), "size_bytes": int(r[2])} for r in tables],
-            "events_count":     int(events_count or 0),
-            "cache_entries":    int(cache_count or 0),
-            "banned_users":     int(banned_count or 0),
-            "whitelist_users":  int(wl_count or 0),
-            "pending_requests": int(pending_count or 0),
-        }
+            for table in ("batch_whitelist", "banned_users", "batch_access_requests", "contact_messages"):
+                row = await conn.fetchrow(
+                    f"SELECT user_id FROM {table} WHERE lower(username) = $1 LIMIT 1",
+                    username_clean,
+                )
+                if row:
+                    return row[0]
     except Exception as e:
-        log.warning("get_system_stats failed: %s", e)
-        return {}
+        log.warning("resolve_user_id_by_username failed: %s", e)
+    return None
+
+
+async def get_system_stats() -> dict:
+    """DB-level system stats for the System dashboard tab."""
+    result: dict = {
+        "db_size_bytes":    None,
+        "tables":           [],
+        "events_count":     0,
+        "cache_entries":    0,
+        "banned_users":     0,
+        "whitelist_users":  0,
+        "pending_requests": 0,
+    }
+    try:
+        async with _pool.acquire() as conn:
+            try:
+                db_size = await conn.fetchval("SELECT pg_database_size(current_database())")
+                result["db_size_bytes"] = int(db_size or 0)
+            except Exception as e:
+                log.warning("get_system_stats db_size failed: %s", e)
+
+            try:
+                tables = await conn.fetch("""
+                    SELECT relname, n_live_tup, pg_total_relation_size(oid)
+                    FROM pg_stat_user_tables
+                    WHERE schemaname = 'public'
+                    ORDER BY n_live_tup DESC
+                """)
+                result["tables"] = [{"name": r[0], "rows": int(r[1]), "size_bytes": int(r[2])} for r in tables]
+            except Exception as e:
+                log.warning("get_system_stats tables failed: %s", e)
+
+            try:
+                result["events_count"]     = int(await conn.fetchval("SELECT COUNT(*) FROM events") or 0)
+                result["cache_entries"]    = int(await conn.fetchval("SELECT COUNT(*) FROM track_cache") or 0)
+                result["banned_users"]     = int(await conn.fetchval("SELECT COUNT(*) FROM banned_users") or 0)
+                result["whitelist_users"]  = int(await conn.fetchval("SELECT COUNT(*) FROM batch_whitelist") or 0)
+                result["pending_requests"] = int(await conn.fetchval(
+                    "SELECT COUNT(*) FROM batch_access_requests WHERE status='pending'"
+                ) or 0)
+            except Exception as e:
+                log.warning("get_system_stats counts failed: %s", e)
+    except Exception as e:
+        log.warning("get_system_stats pool acquire failed: %s", e)
+    return result
 
 
 async def cleanup_old_batch_live() -> int:
