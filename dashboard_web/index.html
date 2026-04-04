@@ -351,6 +351,7 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
   transition:border-color .2s}
 .proxy-input:focus{border-color:var(--accent)}
 .proxy-input::placeholder{color:var(--dim)}
+.proxy-textarea{resize:vertical;min-height:62px;line-height:1.6}
 .p-btn{padding:9px 18px;background:var(--accent);color:#fff;border:none;
   border-radius:6px;font-family:var(--fu);font-size:10px;font-weight:700;
   letter-spacing:.1em;text-transform:uppercase;cursor:pointer;
@@ -782,11 +783,11 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
             <div class="card-title">Add Proxy</div>
           </div>
           <div class="card-body">
-            <div class="proxy-add-row">
-              <input class="proxy-input" id="proxy-url-input"
-                placeholder="host:port · user:pass@host:port · socks5://host:port"
-                spellcheck="false" autocomplete="off">
-              <button class="p-btn" id="proxy-add-btn">Add</button>
+            <div class="proxy-add-row" style="align-items:flex-start">
+              <textarea class="proxy-input proxy-textarea" id="proxy-url-input"
+                placeholder="host:port&#10;user:pass@host:port&#10;socks5://host:port&#10;&#10;One per line — paste multiple at once"
+                spellcheck="false" autocomplete="off" rows="3"></textarea>
+              <button class="p-btn" id="proxy-add-btn" style="margin-top:1px">Add</button>
             </div>
             <div id="proxy-add-msg" style="font-family:var(--fm);font-size:9px;color:var(--muted);min-height:14px"></div>
           </div>
@@ -795,7 +796,10 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
         <div class="card">
           <div class="card-hdr">
             <div class="card-title">Proxy List</div>
-            <button class="p-btn secondary" id="proxy-refresh-btn" style="padding:6px 14px">Refresh</button>
+            <div style="display:flex;gap:8px">
+              <button class="p-btn secondary" id="proxy-test-all-btn" style="padding:6px 14px">Test All</button>
+              <button class="p-btn secondary" id="proxy-refresh-btn" style="padding:6px 14px">Refresh</button>
+            </div>
           </div>
           <div style="overflow-x:auto">
             <table class="dt" id="proxy-table">
@@ -1575,38 +1579,79 @@ async function deleteProxy(idx) {
   if (r.ok) await loadProxies();
 }
 
+/* update button label dynamically as user types */
+document.getElementById('proxy-url-input')?.addEventListener('input', () => {
+  const btn = document.getElementById('proxy-add-btn');
+  if (!btn) return;
+  const lines = (document.getElementById('proxy-url-input').value || '')
+    .split('\n').filter(l => l.trim()).length;
+  btn.textContent = lines > 1 ? `Add ${lines}` : 'Add';
+});
+
+/* Ctrl+Enter submits */
+document.getElementById('proxy-url-input')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.ctrlKey) document.getElementById('proxy-add-btn')?.click();
+});
+
 document.getElementById('proxy-add-btn')?.addEventListener('click', async () => {
   const input = document.getElementById('proxy-url-input');
   const msg   = document.getElementById('proxy-add-msg');
   const btn   = document.getElementById('proxy-add-btn');
-  const url = (input?.value || '').trim();
-  if (!url) { msg.style.color = 'var(--red)'; msg.textContent = 'Enter proxy URL'; return; }
+  const lines = (input?.value || '').split('\n').map(l => l.trim()).filter(Boolean);
+  if (!lines.length) { msg.style.color = 'var(--red)'; msg.textContent = 'Enter at least one proxy URL'; return; }
   btn.disabled = true;
-  msg.style.color = 'var(--muted)'; msg.textContent = 'Adding…';
-  try {
-    const r = await fetch('/api/proxies', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url }),
-    });
-    if (r.status === 401) { window.location.href = '/dashboard/login'; return; }
-    if (r.ok) {
-      msg.style.color = 'var(--green)';
-      msg.textContent = `Added: ${_proxyShortLabel(url)}. Admin notified via Telegram.`;
-      input.value = '';
-      await loadProxies();
-    } else if (r.status === 409) {
-      msg.style.color = 'var(--orange)'; msg.textContent = 'Proxy already exists';
-    } else if (r.status === 422) {
-      msg.style.color = 'var(--red)'; msg.textContent = 'Invalid URL format';
+  let added = 0, dupes = 0, invalid = 0, errors = 0;
+  for (let li = 0; li < lines.length; li++) {
+    const url = lines[li];
+    if (lines.length > 1) {
+      msg.style.color = 'var(--muted)';
+      msg.textContent = `Adding ${li + 1} / ${lines.length}…`;
     } else {
-      msg.style.color = 'var(--red)'; msg.textContent = `Error ${r.status}`;
+      msg.style.color = 'var(--muted)'; msg.textContent = 'Adding…';
     }
-  } catch (e) {
-    msg.style.color = 'var(--red)'; msg.textContent = 'Connection error';
+    try {
+      const r = await fetch('/api/proxies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+      if (r.status === 401) { window.location.href = '/dashboard/login'; return; }
+      if (r.ok) added++;
+      else if (r.status === 409) dupes++;
+      else if (r.status === 422) invalid++;
+      else errors++;
+    } catch (_) { errors++; }
   }
+  const parts = [];
+  if (added)   parts.push(`${added} added`);
+  if (dupes)   parts.push(`${dupes} duplicate${dupes > 1 ? 's' : ''}`);
+  if (invalid) parts.push(`${invalid} invalid`);
+  if (errors)  parts.push(`${errors} error${errors > 1 ? 's' : ''}`);
+  msg.style.color = added > 0 ? 'var(--green)' : 'var(--red)';
+  msg.textContent = parts.join(' · ');
+  if (added > 0) { input.value = ''; btn.textContent = 'Add'; }
   btn.disabled = false;
+  await loadProxies();
 });
+
+async function testAllProxies() {
+  if (!_proxies.length) return;
+  const btn = document.getElementById('proxy-test-all-btn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="p-spin"></span>&nbsp;Testing…'; }
+  _proxies.forEach((_, i) => {
+    const b = document.getElementById(`proxy-test-btn-${i}`);
+    const d = document.getElementById(`proxy-detail-${i}`);
+    if (b) { b.disabled = true; b.innerHTML = '<span class="p-spin"></span>'; }
+    if (d) d.textContent = 'Testing…';
+  });
+  await Promise.allSettled(_proxies.map((_, i) =>
+    fetch(`/api/proxies/${i}/test`, { method: 'POST' })
+  ));
+  await loadProxies();
+  if (btn) { btn.disabled = false; btn.textContent = 'Test All'; }
+}
+
+document.getElementById('proxy-test-all-btn')?.addEventListener('click', testAllProxies);
 
 document.getElementById('proxy-refresh-btn')?.addEventListener('click', loadProxies);
 
