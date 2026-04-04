@@ -24,15 +24,20 @@ log = logging.getLogger(__name__)
 _AUDIO_MIME = {"audio/mpeg", "audio/flac", "audio/ogg", "audio/x-wav", "audio/mp4", "audio/aac"}
 
 
-def _apply_tags(path: str, title: str, artist: str) -> None:
-    """Write title/artist tags using mutagen (MP3, FLAC, OGG, M4A…)."""
-    from mutagen import File  # noqa: PLC0415
-    audio = File(path, easy=True)
-    if audio is None:
-        return
-    audio["title"] = title
-    audio["artist"] = artist
-    audio.save()
+def _apply_tags(path: str, title: str, artist: str) -> bool:
+    """Write title/artist tags using mutagen. Returns True on success."""
+    try:
+        from mutagen import File  # noqa: PLC0415
+        audio = File(path, easy=True)
+        if audio is None:
+            return False
+        audio["title"] = title
+        audio["artist"] = artist
+        audio.save()
+        return True
+    except Exception as exc:
+        log.warning("mutagen could not tag %s: %s", path, exc)
+        return False
 
 
 def _extract_audio_meta(message: Message) -> tuple[str, str, str, str]:
@@ -187,7 +192,9 @@ async def audio_tag_got_artist(message: Message, state: FSMContext) -> None:
     set_active_msg(message.chat.id, progress.message_id)
 
     suffix = os.path.splitext(original_filename)[1] or ".mp3"
+    filename = f"{artist} - {title}{suffix}"
     tmp_in = tmp_out = None
+    sent = None
     try:
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
             tmp_in = f.name
@@ -198,21 +205,41 @@ async def audio_tag_got_artist(message: Message, state: FSMContext) -> None:
 
         import shutil
         shutil.copy(tmp_in, tmp_out)
-        _apply_tags(tmp_out, title, artist)
+        _apply_tags(tmp_out, title, artist)  # non-fatal — logs warning on failure
 
-        filename = f"{artist} - {title}{suffix}"
         sent = await message.answer_audio(
             audio=FSInputFile(tmp_out, filename=filename),
             title=title,
             performer=artist,
         )
+
+    except Exception as e:
+        log.exception("AudioTagFlow download/upload failed user=%s: %s", message.from_user.id, e)
+        # Fallback: resend via file_id — Telegram metadata will be correct
+        try:
+            sent = await message.answer_audio(
+                audio=file_id,
+                title=title,
+                performer=artist,
+            )
+            log.info("AudioTagFlow fallback (file_id resend) succeeded user=%s", message.from_user.id)
+        except Exception as e2:
+            log.exception("AudioTagFlow fallback also failed user=%s: %s", message.from_user.id, e2)
+
+    finally:
+        for p in (tmp_in, tmp_out):
+            if p:
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
+
+    if sent:
         set_active_msg(message.chat.id, sent.message_id)
         try:
             await progress.delete()
         except Exception:
             pass
-
-        # Log to DB
         await db.log_rename(
             user_id=message.from_user.id,
             username=message.from_user.username,
@@ -221,22 +248,15 @@ async def audio_tag_got_artist(message: Message, state: FSMContext) -> None:
             new_title=title,
             new_artist=artist,
         )
-
-    except Exception as e:
-        log.exception("AudioTagFlow failed user=%s: %s", message.from_user.id, e)
+    else:
+        # Both paths failed — show error with back button
+        err_text = "❌ Не удалось обработать файл. Попробуй ещё раз или вернись в меню."
+        edited = False
         try:
-            await progress.edit_text("❌ Не удалось обработать файл.", reply_markup=None)
+            await progress.edit_text(err_text, reply_markup=service_keyboard())
+            edited = True
         except Exception:
             pass
-        err = await message.answer(
-            "❌ Не удалось обработать файл. Попробуй ещё раз или вернись в меню.",
-            reply_markup=service_keyboard(),
-        )
-        set_active_msg(message.chat.id, err.message_id)
-    finally:
-        for p in (tmp_in, tmp_out):
-            if p:
-                try:
-                    os.remove(p)
-                except OSError:
-                    pass
+        if not edited:
+            err = await message.answer(err_text, reply_markup=service_keyboard())
+            set_active_msg(message.chat.id, err.message_id)
