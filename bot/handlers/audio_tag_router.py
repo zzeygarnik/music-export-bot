@@ -1,4 +1,5 @@
 """AudioTagFlow — user sends an audio file, bot re-tags it and returns."""
+import html as _html
 import logging
 import os
 import tempfile
@@ -180,7 +181,7 @@ async def audio_tag_got_artist(message: Message, state: FSMContext) -> None:
     await state.clear()
 
     progress = await message.answer(
-        f"⏳ Теггирую: <b>{artist} — {title}</b>…",
+        f"⏳ Теггирую: <b>{_html.escape(artist)} — {_html.escape(title)}</b>…",
         parse_mode="HTML",
     )
     set_active_msg(message.chat.id, progress.message_id)
@@ -224,9 +225,14 @@ async def audio_tag_got_artist(message: Message, state: FSMContext) -> None:
     except Exception as e:
         log.exception("AudioTagFlow failed user=%s: %s", message.from_user.id, e)
         try:
-            await progress.edit_text("❌ Не удалось обработать файл.")
+            await progress.edit_text("❌ Не удалось обработать файл.", reply_markup=None)
         except Exception:
             pass
+        err = await message.answer(
+            "❌ Не удалось обработать файл. Попробуй ещё раз или вернись в меню.",
+            reply_markup=service_keyboard(),
+        )
+        set_active_msg(message.chat.id, err.message_id)
     finally:
         for p in (tmp_in, tmp_out):
             if p:

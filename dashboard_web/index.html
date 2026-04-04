@@ -1502,7 +1502,7 @@ async function loadStats() {
 
 /* ── TABS ────────────────────────────────────────────────── */
 function switchTab(id) {
-  const valid = ['ym','spotify','sc','log','proxies','network','users','bans','batch','system'];
+  const valid = ['ym','spotify','sc','log','proxies','network','users','bans','batch','system','renames'];
   if (!valid.includes(id)) id='ym';
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
   document.querySelectorAll('.nav-link').forEach(l=>l.classList.remove('active'));
