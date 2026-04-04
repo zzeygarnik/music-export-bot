@@ -1,5 +1,6 @@
 """SCSearchFlow + SCBatchFlow handlers, plus SC delivery helpers."""
 import asyncio
+import dataclasses
 import logging
 import os
 from collections import Counter
@@ -65,6 +66,125 @@ from bot.states import ExportFlow
 
 router = Router()
 log = logging.getLogger(__name__)
+
+# ── Parallel batch download ───────────────────────────────────────────────────
+# How many tracks to download simultaneously within a single batch session.
+_BATCH_INNER_CONCURRENCY = 2
+
+
+@dataclasses.dataclass
+class _TrackFetchResult:
+    track: dict
+    artist: str
+    title: str
+    cache_key: str | None
+    # Download result — exactly one of the following is set:
+    path: str | None              # local file path (needs os.remove after send)
+    meta: dict                    # yt-dlp/sc metadata; empty for cache hits
+    cached_file_id: str | None    # Telegram file_id (from cache, no download needed)
+    # Error flags
+    not_found: bool = False
+    sc_errors: int = 0
+    yt_errors: int = 0
+
+
+async def _fetch_track(
+    track: dict,
+    user_id: int,
+    bot,
+    *,
+    dl_sem: asyncio.Semaphore,
+) -> _TrackFetchResult:
+    """Resolve one track: cache hit → instant return; otherwise acquire dl_sem and download."""
+    artist    = (track.get("artist") or "").strip()
+    title     = (track.get("title")  or "").strip()
+    cache_key = _make_cache_key(artist, title) if (artist or title) else None
+    direct_url = track.get("url")
+
+    # ── Cache lookup (outside semaphore — cheap DB query) ─────────────────────
+    if cache_key:
+        try:
+            fid = await get_cached_file_id(cache_key)
+            if fid:
+                return _TrackFetchResult(
+                    track=track, artist=artist, title=title, cache_key=cache_key,
+                    path=None, meta={}, cached_file_id=fid,
+                )
+        except Exception:
+            pass
+
+    # ── Download (inside semaphore — limits real concurrency) ─────────────────
+    async with dl_sem:
+        sc_errors = 0
+        yt_errors = 0
+
+        if direct_url:
+            if sc_downloader._is_youtube_url(direct_url):
+                try:
+                    path, meta = await download_yt_with_proxy_rotation(direct_url, user_id, bot)
+                    return _TrackFetchResult(
+                        track=track, artist=artist, title=title, cache_key=cache_key,
+                        path=path, meta=meta, cached_file_id=None,
+                    )
+                except Exception as e:
+                    log.warning("YT batch direct download failed '%s — %s': %s", artist, title, e)
+                    return _TrackFetchResult(
+                        track=track, artist=artist, title=title, cache_key=cache_key,
+                        path=None, meta={}, cached_file_id=None, not_found=True, yt_errors=1,
+                    )
+            else:
+                try:
+                    path, meta = await download_with_proxy_rotation(direct_url, user_id, bot)
+                    return _TrackFetchResult(
+                        track=track, artist=artist, title=title, cache_key=cache_key,
+                        path=path, meta=meta, cached_file_id=None,
+                    )
+                except Exception as e:
+                    log.warning("SC batch URL download failed '%s — %s': %s", artist, title, e)
+                    return _TrackFetchResult(
+                        track=track, artist=artist, title=title, cache_key=cache_key,
+                        path=None, meta={}, cached_file_id=None, not_found=True,
+                    )
+
+        # No direct URL → SC search + download, with YT fallback
+        sc_ok = False
+        path: str | None = None
+        meta: dict = {}
+        query = f"{artist} {title}"
+
+        try:
+            sc_results = await search_with_proxy_rotation(query, max_results=1, bot=bot)
+            if sc_results:
+                try:
+                    path, meta = await download_with_proxy_rotation(sc_results[0].url, user_id, bot)
+                    sc_ok = True
+                except Exception as e:
+                    log.warning("SC batch download failed '%s': %s", query, e)
+                    sc_errors += 1
+        except Exception as e:
+            log.warning("SC batch search failed '%s': %s", query, e)
+            sc_errors += 1
+
+        if not sc_ok:
+            try:
+                yt_results = await sc_downloader.search_youtube(query, max_results=1)
+                if not yt_results:
+                    return _TrackFetchResult(
+                        track=track, artist=artist, title=title, cache_key=cache_key,
+                        path=None, meta={}, cached_file_id=None, not_found=True, sc_errors=sc_errors,
+                    )
+                path, meta = await sc_downloader.download(yt_results[0].url, user_id)
+            except Exception as e:
+                log.warning("YT batch fallback failed '%s': %s", query, e)
+                return _TrackFetchResult(
+                    track=track, artist=artist, title=title, cache_key=cache_key,
+                    path=None, meta={}, cached_file_id=None, not_found=True, sc_errors=sc_errors,
+                )
+
+        return _TrackFetchResult(
+            track=track, artist=artist, title=title, cache_key=cache_key,
+            path=path, meta=meta, cached_file_id=None, sc_errors=sc_errors, yt_errors=yt_errors,
+        )
 
 
 # ── Queue helpers ─────────────────────────────────────────────────────────────
@@ -1658,13 +1778,32 @@ async def _run_batch_download(
         "status": "running",
     })
 
+    # Per-batch semaphore: limits concurrent real downloads within this session.
+    # Cache hits bypass it (just a DB lookup), so the pipeline keeps flowing:
+    # while we send track N to Telegram, track N+2 is already downloading.
+    dl_sem = asyncio.Semaphore(_BATCH_INNER_CONCURRENCY)
+    track_slice = tracks[start_idx:]
+
+    # Launch all fetch tasks upfront; tasks that can't acquire dl_sem wait in
+    # the background.  We await them below in original playlist order, so sends
+    # are always in order even though downloads overlap.
+    all_tasks = [
+        asyncio.create_task(_fetch_track(t, user_id, progress_msg.bot, dl_sem=dl_sem))
+        for t in track_slice
+    ]
+
     try:
-        for i, track in enumerate(tracks[start_idx:], start=start_idx + 1):
+        for task_idx, (track, task) in enumerate(zip(track_slice, all_tasks)):
+            i = start_idx + task_idx + 1  # 1-based position in full track list
+
             if cancel_event.is_set():
+                for remaining in all_tasks[task_idx:]:
+                    remaining.cancel()
+                await asyncio.gather(*all_tasks[task_idx:], return_exceptions=True)
                 break
 
-            artist = track.get("artist", "")
-            title = track.get("title", "")
+            artist = (track.get("artist") or "").strip()
+            title  = (track.get("title")  or "").strip()
 
             await update_batch_live(user_id, username, {
                 "started_at": started_at,
@@ -1675,110 +1814,94 @@ async def _run_batch_download(
                 "failed": not_found,
                 "status": "running",
             })
-            query = f"{artist} {title}"
-            direct_url = track.get("url")
-            cache_key = _make_cache_key(artist, title) if (artist or title) else None
 
-            # ── Cache lookup ───────────────────────────────────────────────────
-            if cache_key:
-                cached_file_id = await get_cached_file_id(cache_key)
-                if cached_file_id:
-                    try:
-                        await progress_msg.answer_audio(
-                            audio=cached_file_id,
-                            title=title,
-                            performer=artist,
-                        )
-                        downloaded_count += 1
-                        cache_hits_count += 1
-                        try:
-                            await progress_msg.edit_text(
-                                f"⚡ {_progress_bar(i, total)} — {artist} — {title}",
-                                reply_markup=sc_stop_keyboard(),
-                            )
-                        except Exception:
-                            pass
-                        continue
-                    except Exception as e:
-                        log.warning("SC batch send_audio (cache) failed '%s': %s", query, e)
-                        await delete_cached_file_id(cache_key)
-                        # fall through to normal download
+            # Await the result of this track's fetch task
+            try:
+                r: _TrackFetchResult = await task
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                log.warning("SC batch _fetch_track exception '%s — %s': %s", artist, title, e)
+                not_found.append(f"{artist} — {title}")
+                failed_tracks.append(track)
+                continue
 
-            if direct_url:
-                if sc_downloader._is_youtube_url(direct_url):
-                    # YT direct URL — independent proxy rotation from SC
-                    try:
-                        path, meta = await download_yt_with_proxy_rotation(direct_url, user_id, progress_msg.bot)
-                    except Exception as e:
-                        log.warning("YT batch direct download failed '%s': %s", direct_url, e)
-                        yt_error_count += 1
-                        not_found.append(f"{artist} — {title}")
-                        failed_tracks.append(track)
-                        continue
-                else:
-                    try:
-                        path, meta = await download_with_proxy_rotation(direct_url, user_id, progress_msg.bot)
-                    except Exception as e:
-                        log.warning("SC batch URL download failed '%s': %s", direct_url, e)
-                        not_found.append(f"{artist} — {title}")
-                        failed_tracks.append(track)
-                        continue
-            else:
-                path, meta = None, {}
-                sc_ok = False
+            sc_error_count += r.sc_errors
+            yt_error_count += r.yt_errors
+
+            if r.not_found:
+                not_found.append(f"{r.artist} — {r.title}")
+                failed_tracks.append(track)
+                continue
+
+            # ── Send phase (always sequential, always in playlist order) ──────
+
+            if r.cached_file_id:
                 try:
-                    sc_results = await search_with_proxy_rotation(query, max_results=1, bot=progress_msg.bot)
-                    if sc_results:
-                        try:
-                            path, meta = await download_with_proxy_rotation(sc_results[0].url, user_id, progress_msg.bot)
-                            sc_ok = True
-                        except Exception as e:
-                            log.warning("SC batch download failed '%s': %s", query, e)
-                            sc_error_count += 1
-                except Exception as e:
-                    log.warning("SC batch search failed '%s': %s", query, e)
-                    sc_error_count += 1
-
-                if not sc_ok:
+                    await progress_msg.answer_audio(
+                        audio=r.cached_file_id,
+                        title=r.title,
+                        performer=r.artist,
+                    )
+                    downloaded_count += 1
+                    cache_hits_count += 1
                     try:
-                        yt_results = await sc_downloader.search_youtube(query, max_results=1)
-                        if not yt_results:
+                        await progress_msg.edit_text(
+                            f"⚡ {_progress_bar(i, total)} — {r.artist} — {r.title}",
+                            reply_markup=sc_stop_keyboard(),
+                        )
+                    except Exception:
+                        pass
+                    continue
+                except Exception as e:
+                    log.warning("SC batch send_audio (cache) failed '%s': %s", r.cache_key, e)
+                    if r.cache_key:
+                        await delete_cached_file_id(r.cache_key)
+                    # Stale file_id — re-download synchronously (rare)
+                    try:
+                        r = await _fetch_track(
+                            track, user_id, progress_msg.bot,
+                            dl_sem=asyncio.Semaphore(1),
+                        )
+                        if r.not_found or not r.path:
                             not_found.append(f"{artist} — {title}")
                             failed_tracks.append(track)
                             continue
-                        path, meta = await sc_downloader.download(yt_results[0].url, user_id)
-                    except Exception as e:
-                        log.warning("YT batch fallback failed '%s': %s", query, e)
+                    except Exception:
                         not_found.append(f"{artist} — {title}")
                         failed_tracks.append(track)
                         continue
 
+            # r.path is set — send downloaded file
             sent = False
             try:
                 sent_msg = await progress_msg.answer_audio(
-                    audio=FSInputFile(path, filename=f"{artist} - {title}.mp3"),
-                    title=meta.get("title") or title,
-                    performer=meta.get("artist") or artist,
+                    audio=FSInputFile(r.path, filename=f"{r.artist} - {r.title}.mp3"),
+                    title=r.meta.get("title") or r.title,
+                    performer=r.meta.get("artist") or r.artist,
                 )
                 sent = True
                 downloaded_count += 1
-                if sent_msg and sent_msg.audio and cache_key:
-                    await save_cached_file_id(cache_key, sent_msg.audio.file_id, "batch",
-                                        artist=artist, title=title)
+                if sent_msg and sent_msg.audio and r.cache_key:
+                    await save_cached_file_id(
+                        r.cache_key, sent_msg.audio.file_id, "batch",
+                        artist=r.artist, title=r.title,
+                    )
             except Exception as e:
-                log.warning("SC batch send_audio failed '%s': %s", query, e)
-                not_found.append(f"{artist} — {title}")
+                log.warning("SC batch send_audio failed '%s — %s': %s", r.artist, r.title, e)
+                not_found.append(f"{r.artist} — {r.title}")
                 failed_tracks.append(track)
             finally:
-                try:
-                    os.remove(path)
-                except OSError:
-                    pass
+                if r.path:
+                    try:
+                        os.remove(r.path)
+                    except OSError:
+                        pass
 
             if sent:
                 try:
                     await progress_msg.edit_text(
-                        f"⏳ {_progress_bar(i, total)} — {artist} — {title}",
+                        f"⏳ {_progress_bar(i, total)} — {r.artist} — {r.title}",
                         reply_markup=sc_stop_keyboard(),
                     )
                 except Exception:
