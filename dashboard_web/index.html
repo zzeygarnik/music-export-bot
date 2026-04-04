@@ -536,6 +536,13 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
           </svg>
           Event Log
         </a>
+        <a class="nav-link" data-tab="renames">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+          </svg>
+          Tag Editor
+        </a>
       </div>
       <div class="sb-section" style="margin-top:14px">
         <div class="sb-section-lbl">Users</div>
@@ -857,6 +864,26 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
             </table>
           </div>
           <div class="lm-wrap"><button class="lm-btn" id="more-log">Load More</button></div>
+        </div>
+      </div>
+
+      <!-- TAB: TAG EDITOR -->
+      <div class="tab" id="tab-renames">
+        <div class="pg-head">
+          <div class="pg-title">Tag Editor</div>
+          <div class="pg-sub">История переименований треков через редактор тегов</div>
+        </div>
+        <div class="card">
+          <div class="card-hdr">
+            <div class="card-title">Переименования</div>
+          </div>
+          <div style="overflow-x:auto">
+            <table class="dt">
+              <thead><tr><th>Время (МСК)</th><th>Пользователь</th><th>Было</th><th>Стало</th></tr></thead>
+              <tbody id="tbl-renames"></tbody>
+            </table>
+          </div>
+          <div class="lm-wrap"><button class="lm-btn" id="more-renames">Load More</button></div>
         </div>
       </div>
 
@@ -1484,7 +1511,7 @@ function switchTab(id) {
   history.replaceState(null,'','#'+id);
   const tbl = document.getElementById('tbl-'+id);
   const isEmpty = tbl && tbl.children.length === 0;
-  const alwaysReload = ['proxies','network','users','bans','batch','system'];
+  const alwaysReload = ['proxies','network','users','bans','batch','system','renames'];
   if (!loaded[id] || isEmpty || alwaysReload.includes(id)) { loadTabData(id); loaded[id]=true; }
 }
 
@@ -1507,6 +1534,8 @@ async function loadTabData(id) {
     await loadBatchAdmin();
   } else if (id === 'system') {
     await loadSystem();
+  } else if (id === 'renames') {
+    await loadRenames();
   } else {
     offsets.log = 0;
     await loadTable(logSrc, 'tbl-log', 0, false, logUsernameFilter);
@@ -2366,6 +2395,40 @@ async function loadSystem() {
 }
 
 document.getElementById('system-refresh-btn')?.addEventListener('click', loadSystem);
+
+/* ── TAG EDITOR (RENAMES) ────────────────────────────────── */
+let renamesOffset = 0;
+
+function _fmtMsk(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleString('ru-RU', { timeZone: 'Europe/Moscow', hour12: false });
+}
+
+async function loadRenames(append = false) {
+  if (!append) renamesOffset = 0;
+  const data = await apiFetch(`/api/renames?limit=30&offset=${renamesOffset}`);
+  if (!data) return;
+  const tbody = document.getElementById('tbl-renames');
+  if (!append) tbody.innerHTML = '';
+  data.forEach(r => {
+    const origLabel = [r.original_artist, r.original_title].filter(Boolean).join(' — ') || '—';
+    const newLabel  = [r.new_artist, r.new_title].filter(Boolean).join(' — ') || '—';
+    const user = r.username ? `@${r.username}` : '—';
+    tbody.insertAdjacentHTML('beforeend', `
+      <tr>
+        <td style="white-space:nowrap">${_fmtMsk(r.ts)}</td>
+        <td>${user}</td>
+        <td style="color:var(--muted)">${origLabel}</td>
+        <td><b>${newLabel}</b></td>
+      </tr>`);
+  });
+  renamesOffset += data.length;
+  const btn = document.getElementById('more-renames');
+  if (btn) btn.style.display = data.length < 30 ? 'none' : '';
+}
+
+document.getElementById('more-renames')?.addEventListener('click', () => loadRenames(true));
 
 /* ── INIT ────────────────────────────────────────────────── */
 function initDash() {
