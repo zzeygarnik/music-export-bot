@@ -978,7 +978,7 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
                 <div class="mod-form">
                   <div class="mod-form-field">
                     <label class="mod-form-label">User ID</label>
-                    <input class="mod-form-input" id="ban-uid-input" placeholder="123456789" type="number" min="1">
+                    <input class="mod-form-input" id="ban-uid-input" placeholder="123456789" type="text">
                   </div>
                   <div class="mod-form-field">
                     <label class="mod-form-label">Username (optional)</label>
@@ -1056,11 +1056,7 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
               <div class="card-body">
                 <div class="mod-form">
                   <div class="mod-form-field">
-                    <label class="mod-form-label">User ID</label>
-                    <input class="mod-form-input" id="batch-uid-input" placeholder="123456789" type="number" min="1">
-                  </div>
-                  <div class="mod-form-field">
-                    <label class="mod-form-label">Username (optional)</label>
+                    <label class="mod-form-label">Username</label>
                     <input class="mod-form-input" id="batch-uname-input" placeholder="@username">
                   </div>
                   <button class="mod-action-btn" id="batch-wl-add-btn">Add</button>
@@ -2109,22 +2105,26 @@ async function unbanUser(userId) {
 }
 
 document.getElementById('ban-add-btn')?.addEventListener('click', async () => {
-  const msg    = document.getElementById('ban-add-msg');
-  const uidVal = document.getElementById('ban-uid-input')?.value.trim();
-  const uid    = parseInt(uidVal, 10);
-  if (!uid || uid <= 0) {
-    msg.style.color = 'var(--red)'; msg.textContent = 'Enter a valid user ID'; return;
-  }
+  const msg      = document.getElementById('ban-add-msg');
+  const uidVal   = (document.getElementById('ban-uid-input')?.value || '').trim();
+  const uid      = parseInt(uidVal, 10);
   const username = (document.getElementById('ban-uname-input')?.value || '').replace(/^@/, '').trim() || null;
   const reason   = (document.getElementById('ban-reason-input')?.value || '').trim() || null;
+  if (!(uid > 0) && !username) {
+    msg.style.color = 'var(--red)'; msg.textContent = 'Укажите User ID или username'; return;
+  }
+  const payload = { reason };
+  if (uid > 0) payload.user_id = uid;
+  if (username) payload.username = username;
   const r = await fetch('/api/bans', {
     method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ user_id: uid, username, reason }),
+    body: JSON.stringify(payload),
   });
   if (r.status === 401) { window.location.href = '/dashboard/login'; return; }
   if (r.ok) {
+    const result = await r.json();
     msg.style.color = 'var(--green)';
-    msg.textContent = `✓ User ${uid} banned`;
+    msg.textContent = `✓ User ${result.user_id}${result.username ? ' (@'+result.username+')' : ''} забанен`;
     document.getElementById('ban-uid-input').value   = '';
     document.getElementById('ban-uname-input').value = '';
     document.getElementById('ban-reason-input').value = '';
@@ -2241,22 +2241,20 @@ async function removeBatchWl(userId) {
 }
 
 document.getElementById('batch-wl-add-btn')?.addEventListener('click', async () => {
-  const msg    = document.getElementById('batch-wl-add-msg');
-  const uidVal = document.getElementById('batch-uid-input')?.value.trim();
-  const uid    = parseInt(uidVal, 10);
-  if (!uid || uid <= 0) {
-    msg.style.color = 'var(--red)'; msg.textContent = 'Enter a valid user ID'; return;
+  const msg      = document.getElementById('batch-wl-add-msg');
+  const username = (document.getElementById('batch-uname-input')?.value || '').replace(/^@/, '').trim();
+  if (!username) {
+    msg.style.color = 'var(--red)'; msg.textContent = 'Введите username'; return;
   }
-  const username = (document.getElementById('batch-uname-input')?.value || '').replace(/^@/, '').trim() || null;
   const r = await fetch('/api/batch-whitelist', {
     method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ user_id: uid, username }),
+    body: JSON.stringify({ username }),
   });
   if (r.status === 401) { window.location.href = '/dashboard/login'; return; }
   if (r.ok) {
+    const result = await r.json();
     msg.style.color = 'var(--green)';
-    msg.textContent = `✓ User ${uid} added to whitelist`;
-    document.getElementById('batch-uid-input').value   = '';
+    msg.textContent = `✓ @${username} (ID: ${result.user_id}) добавлен в whitelist`;
     document.getElementById('batch-uname-input').value = '';
     await loadBatchWhitelist();
   } else {
