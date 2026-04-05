@@ -13,6 +13,7 @@ from bot.states import AudioTagFlow
 from bot.keyboards import (
     audio_tag_cancel_keyboard,
     audio_tag_back_keyboard,
+    audio_tag_cover_keyboard,
     service_keyboard,
 )
 from bot.tracker import set_active_msg
@@ -40,6 +41,42 @@ def _apply_tags(path: str, title: str, artist: str) -> bool:
         return False
 
 
+def _apply_cover(path: str, cover_bytes: bytes) -> bool:
+    """Embed cover art into audio file. Supports MP3 and FLAC."""
+    try:
+        suffix = os.path.splitext(path)[1].lower()
+        if suffix == ".mp3":
+            from mutagen.id3 import ID3, APIC  # noqa: PLC0415
+            audio = ID3(path)
+            audio.delall("APIC")
+            audio["APIC"] = APIC(
+                encoding=3,
+                mime="image/jpeg",
+                type=3,
+                desc="Cover",
+                data=cover_bytes,
+            )
+            audio.save()
+            return True
+        if suffix in (".flac", ".ogg"):
+            import base64  # noqa: PLC0415
+            from mutagen.flac import FLAC, Picture  # noqa: PLC0415
+            audio = FLAC(path)
+            pic = Picture()
+            pic.type = 3
+            pic.mime = "image/jpeg"
+            pic.data = cover_bytes
+            audio.clear_pictures()
+            audio.add_picture(pic)
+            audio.save()
+            return True
+        log.info("Cover embedding not supported for %s", suffix)
+        return False
+    except Exception as exc:
+        log.warning("mutagen could not embed cover in %s: %s", path, exc)
+        return False
+
+
 def _extract_audio_meta(message: Message) -> tuple[str, str, str, str]:
     """Return (file_id, filename, original_title, original_artist) from a message."""
     audio = message.audio
@@ -57,6 +94,94 @@ def _extract_audio_meta(message: Message) -> tuple[str, str, str, str]:
         "",
         "",
     )
+
+
+async def _process_and_send(message: Message, state: FSMContext, cover_bytes: bytes | None) -> None:
+    """Download, retag (+ optional cover), and send the audio file."""
+    data = await state.get_data()
+    title             = data["title"]
+    artist            = data["artist"]
+    file_id           = data["file_id"]
+    original_filename = data.get("original_filename", "track.mp3")
+    original_title    = data.get("original_title", "")
+    original_artist   = data.get("original_artist", "")
+    await state.clear()
+
+    progress = await message.answer(
+        f"⏳ Теггирую: <b>{_html.escape(artist)} — {_html.escape(title)}</b>…",
+        parse_mode="HTML",
+    )
+    set_active_msg(message.chat.id, progress.message_id)
+
+    suffix = os.path.splitext(original_filename)[1] or ".mp3"
+    filename = f"{artist} - {title}{suffix}"
+    tmp_in = tmp_out = None
+    sent = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
+            tmp_in = f.name
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
+            tmp_out = f.name
+
+        await message.bot.download(file_id, destination=tmp_in)
+
+        import shutil
+        shutil.copy(tmp_in, tmp_out)
+        _apply_tags(tmp_out, title, artist)
+        if cover_bytes:
+            _apply_cover(tmp_out, cover_bytes)
+
+        sent = await message.answer_audio(
+            audio=FSInputFile(tmp_out, filename=filename),
+            title=title,
+            performer=artist,
+        )
+
+    except Exception as e:
+        log.exception("AudioTagFlow download/upload failed user=%s: %s", message.from_user.id, e)
+        try:
+            sent = await message.answer_audio(
+                audio=file_id,
+                title=title,
+                performer=artist,
+            )
+            log.info("AudioTagFlow fallback (file_id resend) succeeded user=%s", message.from_user.id)
+        except Exception as e2:
+            log.exception("AudioTagFlow fallback also failed user=%s: %s", message.from_user.id, e2)
+
+    finally:
+        for p in (tmp_in, tmp_out):
+            if p:
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
+
+    if sent:
+        set_active_msg(message.chat.id, sent.message_id)
+        try:
+            await progress.delete()
+        except Exception:
+            pass
+        await db.log_rename(
+            user_id=message.from_user.id,
+            username=message.from_user.username,
+            original_title=original_title,
+            original_artist=original_artist,
+            new_title=title,
+            new_artist=artist,
+        )
+    else:
+        err_text = "❌ Не удалось обработать файл. Попробуй ещё раз или вернись в меню."
+        edited = False
+        try:
+            await progress.edit_text(err_text, reply_markup=service_keyboard())
+            edited = True
+        except Exception:
+            pass
+        if not edited:
+            err = await message.answer(err_text, reply_markup=service_keyboard())
+            set_active_msg(message.chat.id, err.message_id)
 
 
 # ── Entry via button ──────────────────────────────────────────────────────────
@@ -178,85 +303,44 @@ async def audio_tag_cancel_from_artist(call: CallbackQuery, state: FSMContext) -
 async def audio_tag_got_artist(message: Message, state: FSMContext) -> None:
     artist = message.text.strip()
     data = await state.get_data()
-    title           = data["title"]
-    file_id         = data["file_id"]
-    original_filename = data.get("original_filename", "track.mp3")
-    original_title  = data.get("original_title", "")
-    original_artist = data.get("original_artist", "")
-    await state.clear()
-
-    progress = await message.answer(
-        f"⏳ Теггирую: <b>{_html.escape(artist)} — {_html.escape(title)}</b>…",
+    title = data["title"]
+    await state.update_data(artist=artist)
+    await state.set_state(AudioTagFlow.waiting_for_cover)
+    sent = await message.answer(
+        f"Трек: <b>{_html.escape(artist)} — {_html.escape(title)}</b>\n\n"
+        "🖼 Пришли обложку (фото), или нажми «Пропустить»:",
         parse_mode="HTML",
+        reply_markup=audio_tag_cover_keyboard(),
     )
-    set_active_msg(message.chat.id, progress.message_id)
+    set_active_msg(message.chat.id, sent.message_id)
 
-    suffix = os.path.splitext(original_filename)[1] or ".mp3"
-    filename = f"{artist} - {title}{suffix}"
-    tmp_in = tmp_out = None
-    sent = None
-    try:
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
-            tmp_in = f.name
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
-            tmp_out = f.name
 
-        await message.bot.download(file_id, destination=tmp_in)
+# ── Step 4: cover ─────────────────────────────────────────────────────────────
 
-        import shutil
-        shutil.copy(tmp_in, tmp_out)
-        _apply_tags(tmp_out, title, artist)  # non-fatal — logs warning on failure
+@router.callback_query(StateFilter(AudioTagFlow.waiting_for_cover), F.data == "audio_tag:back_to_artist")
+async def audio_tag_back_to_artist(call: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    title = data.get("title", "")
+    await state.set_state(AudioTagFlow.waiting_for_artist)
+    await call.message.edit_text(
+        f"Трек: <b>{_html.escape(title)}</b>\n\nВведи имя исполнителя:",
+        parse_mode="HTML",
+        reply_markup=audio_tag_back_keyboard(),
+    )
+    set_active_msg(call.message.chat.id, call.message.message_id)
+    await call.answer()
 
-        sent = await message.answer_audio(
-            audio=FSInputFile(tmp_out, filename=filename),
-            title=title,
-            performer=artist,
-        )
 
-    except Exception as e:
-        log.exception("AudioTagFlow download/upload failed user=%s: %s", message.from_user.id, e)
-        # Fallback: resend via file_id — Telegram metadata will be correct
-        try:
-            sent = await message.answer_audio(
-                audio=file_id,
-                title=title,
-                performer=artist,
-            )
-            log.info("AudioTagFlow fallback (file_id resend) succeeded user=%s", message.from_user.id)
-        except Exception as e2:
-            log.exception("AudioTagFlow fallback also failed user=%s: %s", message.from_user.id, e2)
+@router.callback_query(StateFilter(AudioTagFlow.waiting_for_cover), F.data == "audio_tag:skip_cover")
+async def audio_tag_skip_cover(call: CallbackQuery, state: FSMContext) -> None:
+    await call.answer()
+    await call.message.edit_reply_markup(reply_markup=None)
+    await _process_and_send(call.message, state, cover_bytes=None)
 
-    finally:
-        for p in (tmp_in, tmp_out):
-            if p:
-                try:
-                    os.remove(p)
-                except OSError:
-                    pass
 
-    if sent:
-        set_active_msg(message.chat.id, sent.message_id)
-        try:
-            await progress.delete()
-        except Exception:
-            pass
-        await db.log_rename(
-            user_id=message.from_user.id,
-            username=message.from_user.username,
-            original_title=original_title,
-            original_artist=original_artist,
-            new_title=title,
-            new_artist=artist,
-        )
-    else:
-        # Both paths failed — show error with back button
-        err_text = "❌ Не удалось обработать файл. Попробуй ещё раз или вернись в меню."
-        edited = False
-        try:
-            await progress.edit_text(err_text, reply_markup=service_keyboard())
-            edited = True
-        except Exception:
-            pass
-        if not edited:
-            err = await message.answer(err_text, reply_markup=service_keyboard())
-            set_active_msg(message.chat.id, err.message_id)
+@router.message(StateFilter(AudioTagFlow.waiting_for_cover), F.photo)
+async def audio_tag_got_cover(message: Message, state: FSMContext) -> None:
+    photo = message.photo[-1]  # highest resolution
+    cover_bytes_io = await message.bot.download(photo.file_id)
+    cover_bytes = cover_bytes_io.read()
+    await _process_and_send(message, state, cover_bytes=cover_bytes)

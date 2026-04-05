@@ -602,6 +602,14 @@ def audio_tag_back_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
+def audio_tag_cover_keyboard() -> InlineKeyboardMarkup:
+    """Shown while waiting for cover image — skip or back to artist."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Пропустить", callback_data="audio_tag:skip_cover")],
+        [InlineKeyboardButton(text="← Назад", callback_data="audio_tag:back_to_artist")],
+    ])
+
+
 def spotify_filter_result_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📥 Скачать треки исполнителя", callback_data="spotify:download_filtered")],
