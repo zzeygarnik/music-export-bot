@@ -14,6 +14,7 @@ from bot.keyboards import (
     audio_tag_cancel_keyboard,
     audio_tag_back_keyboard,
     audio_tag_cover_keyboard,
+    audio_tag_done_keyboard,
     service_keyboard,
 )
 from bot.tracker import set_active_msg
@@ -166,6 +167,8 @@ async def _process_and_send(message: Message, state: FSMContext, cover_bytes: by
             await progress.delete()
         except Exception:
             pass
+        done = await message.answer("Готово! Что дальше?", reply_markup=audio_tag_done_keyboard())
+        set_active_msg(message.chat.id, done.message_id)
         await db.log_rename(
             user_id=message.from_user.id,
             username=message.from_user.username,
@@ -347,3 +350,24 @@ async def audio_tag_got_cover(message: Message, state: FSMContext) -> None:
     cover_bytes_io = await message.bot.download(photo.file_id)
     cover_bytes = cover_bytes_io.read()
     await _process_and_send(message, state, cover_bytes=cover_bytes)
+
+
+# ── Post-send actions ─────────────────────────────────────────────────────────
+
+@router.callback_query(F.data == "audio_tag:tag_another")
+async def audio_tag_another(call: CallbackQuery, state: FSMContext) -> None:
+    await state.set_state(AudioTagFlow.waiting_for_audio)
+    await call.message.edit_text(
+        "Пришли следующий аудио-файл — прямое прикрепление или пересылка:",
+        reply_markup=audio_tag_cancel_keyboard(),
+    )
+    set_active_msg(call.message.chat.id, call.message.message_id)
+    await call.answer()
+
+
+@router.callback_query(F.data == "audio_tag:to_menu")
+async def audio_tag_to_menu(call: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    await call.message.edit_text("Выбери действие:", reply_markup=service_keyboard())
+    set_active_msg(call.message.chat.id, call.message.message_id)
+    await call.answer()
