@@ -67,3 +67,4 @@ class AudioTagFlow(StatesGroup):
     waiting_for_audio  = State()  # user clicked button, waiting for file
     waiting_for_title  = State()  # waiting for track title input
     waiting_for_artist = State()  # waiting for artist name input
+    waiting_for_cover  = State()  # waiting for cover image (or skip)
