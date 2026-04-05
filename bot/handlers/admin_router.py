@@ -15,6 +15,7 @@ from bot.states import AdminFlow
 from config import settings
 from utils import db
 from bot.keyboards import admin_batch_request_keyboard, batch_access_pending_keyboard
+from bot.tracker import set_active_msg
 from . import common as _hcommon
 
 router = Router()
@@ -82,7 +83,8 @@ async def cmd_admin(message: Message, state: FSMContext) -> None:
     if not _is_admin(message.from_user.id):
         return
     await state.set_state(AdminFlow.menu)
-    await message.answer("🔧 Админ-панель", reply_markup=_menu_kb())
+    sent = await message.answer("🔧 Админ-панель", reply_markup=_menu_kb())
+    set_active_msg(message.from_user.id, sent.message_id)
 
 
 # ── Menu navigation ───────────────────────────────────────────────────────
