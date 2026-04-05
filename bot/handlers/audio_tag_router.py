@@ -46,17 +46,20 @@ def _apply_cover(path: str, cover_bytes: bytes) -> bool:
     try:
         suffix = os.path.splitext(path)[1].lower()
         if suffix == ".mp3":
-            from mutagen.id3 import ID3, APIC  # noqa: PLC0415
-            audio = ID3(path)
-            audio.delall("APIC")
-            audio["APIC"] = APIC(
+            from mutagen.id3 import ID3, APIC, ID3NoHeaderError  # noqa: PLC0415
+            try:
+                tags = ID3(path)
+            except ID3NoHeaderError:
+                tags = ID3()
+            tags.delall("APIC")
+            tags["APIC"] = APIC(
                 encoding=3,
                 mime="image/jpeg",
                 type=3,
                 desc="Cover",
                 data=cover_bytes,
             )
-            audio.save()
+            tags.save(path, v2_version=3)
             return True
         if suffix in (".flac", ".ogg"):
             import base64  # noqa: PLC0415
