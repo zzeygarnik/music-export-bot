@@ -610,6 +610,14 @@ def audio_tag_cover_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
+def audio_tag_done_keyboard() -> InlineKeyboardMarkup:
+    """Shown after successfully retagging a track."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Исправить ещё трек", callback_data="audio_tag:tag_another")],
+        [InlineKeyboardButton(text="← В меню", callback_data="audio_tag:to_menu")],
+    ])
+
+
 def spotify_filter_result_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📥 Скачать треки исполнителя", callback_data="spotify:download_filtered")],
