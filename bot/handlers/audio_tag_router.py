@@ -26,9 +26,46 @@ log = logging.getLogger(__name__)
 _AUDIO_MIME = {"audio/mpeg", "audio/flac", "audio/ogg", "audio/x-wav", "audio/mp4", "audio/aac"}
 
 
-def _apply_tags(path: str, title: str, artist: str) -> bool:
-    """Write title/artist tags using mutagen. Returns True on success."""
+def _apply_metadata(path: str, title: str, artist: str, cover_bytes: bytes | None = None) -> bool:
+    """Write title/artist tags and optional cover art in a single save. Returns True on success."""
     try:
+        suffix = os.path.splitext(path)[1].lower()
+        if suffix == ".mp3":
+            from mutagen.mp3 import MP3  # noqa: PLC0415
+            from mutagen.id3 import ID3, TIT2, TPE1, APIC, ID3NoHeaderError  # noqa: PLC0415
+            audio = MP3(path)
+            if audio.tags is None:
+                audio.add_tags()
+            audio.tags.delall("TIT2")
+            audio.tags.delall("TPE1")
+            audio.tags["TIT2"] = TIT2(encoding=3, text=title)
+            audio.tags["TPE1"] = TPE1(encoding=3, text=artist)
+            if cover_bytes:
+                audio.tags.delall("APIC")
+                audio.tags["APIC"] = APIC(
+                    encoding=3,
+                    mime="image/jpeg",
+                    type=3,
+                    desc="Cover",
+                    data=cover_bytes,
+                )
+            audio.save()
+            return True
+        if suffix in (".flac", ".ogg"):
+            from mutagen.flac import FLAC, Picture  # noqa: PLC0415
+            audio = FLAC(path)
+            audio["title"] = [title]
+            audio["artist"] = [artist]
+            if cover_bytes:
+                pic = Picture()
+                pic.type = 3
+                pic.mime = "image/jpeg"
+                pic.data = cover_bytes
+                audio.clear_pictures()
+                audio.add_picture(pic)
+            audio.save()
+            return True
+        # fallback: easy tags only, no cover
         from mutagen import File  # noqa: PLC0415
         audio = File(path, easy=True)
         if audio is None:
@@ -39,45 +76,6 @@ def _apply_tags(path: str, title: str, artist: str) -> bool:
         return True
     except Exception as exc:
         log.warning("mutagen could not tag %s: %s", path, exc)
-        return False
-
-
-def _apply_cover(path: str, cover_bytes: bytes) -> bool:
-    """Embed cover art into audio file. Supports MP3 and FLAC."""
-    try:
-        suffix = os.path.splitext(path)[1].lower()
-        if suffix == ".mp3":
-            from mutagen.id3 import ID3, APIC, ID3NoHeaderError  # noqa: PLC0415
-            try:
-                tags = ID3(path)
-            except ID3NoHeaderError:
-                tags = ID3()
-            tags.delall("APIC")
-            tags["APIC"] = APIC(
-                encoding=3,
-                mime="image/jpeg",
-                type=3,
-                desc="Cover",
-                data=cover_bytes,
-            )
-            tags.save(path, v2_version=3)
-            return True
-        if suffix in (".flac", ".ogg"):
-            import base64  # noqa: PLC0415
-            from mutagen.flac import FLAC, Picture  # noqa: PLC0415
-            audio = FLAC(path)
-            pic = Picture()
-            pic.type = 3
-            pic.mime = "image/jpeg"
-            pic.data = cover_bytes
-            audio.clear_pictures()
-            audio.add_picture(pic)
-            audio.save()
-            return True
-        log.info("Cover embedding not supported for %s", suffix)
-        return False
-    except Exception as exc:
-        log.warning("mutagen could not embed cover in %s: %s", path, exc)
         return False
 
 
@@ -131,9 +129,7 @@ async def _process_and_send(message: Message, state: FSMContext, cover_bytes: by
 
         import shutil
         shutil.copy(tmp_in, tmp_out)
-        _apply_tags(tmp_out, title, artist)
-        if cover_bytes:
-            _apply_cover(tmp_out, cover_bytes)
+        _apply_metadata(tmp_out, title, artist, cover_bytes)
 
         sent = await message.answer_audio(
             audio=FSInputFile(tmp_out, filename=filename),
