@@ -27,30 +27,54 @@ _AUDIO_MIME = {"audio/mpeg", "audio/flac", "audio/ogg", "audio/x-wav", "audio/mp
 
 
 def _apply_metadata(path: str, title: str, artist: str, cover_bytes: bytes | None = None) -> bool:
-    """Write title/artist tags and optional cover art in a single save. Returns True on success."""
-    try:
-        suffix = os.path.splitext(path)[1].lower()
-        if suffix == ".mp3":
-            from mutagen.id3 import ID3, TIT2, TPE1, APIC, ID3NoHeaderError  # noqa: PLC0415
-            try:
-                tags = ID3(path)
-            except ID3NoHeaderError:
-                tags = ID3()
-            tags.delall("TIT2")
-            tags.delall("TPE1")
-            tags["TIT2"] = TIT2(encoding=3, text=title)
-            tags["TPE1"] = TPE1(encoding=3, text=artist)
+    """Write title/artist/cover via ffmpeg (MP3) or mutagen (FLAC/OGG). Returns True on success."""
+    import subprocess  # noqa: PLC0415
+    import shutil as _shutil  # noqa: PLC0415
+
+    suffix = os.path.splitext(path)[1].lower()
+
+    if suffix == ".mp3":
+        cover_tmp = None
+        out_tmp = None
+        try:
+            out_tmp = path + ".out.mp3"
+            cmd = ["ffmpeg", "-y", "-i", path]
             if cover_bytes:
-                tags.delall("APIC")
-                tags["APIC"] = APIC(
-                    encoding=3,
-                    mime="image/jpeg",
-                    type=3,
-                    desc="Cover",
-                    data=cover_bytes,
-                )
-            tags.save(path)  # default v2_version=4, не конвертируем в v2.3
+                cover_tmp = path + ".cover.jpg"
+                with open(cover_tmp, "wb") as f:
+                    f.write(cover_bytes)
+                cmd += ["-i", cover_tmp,
+                        "-map", "0:a", "-map", "1:v",
+                        "-c:a", "copy", "-c:v", "copy",
+                        "-metadata:s:v", "title=Album cover",
+                        "-metadata:s:v", "comment=Cover (front)"]
+            else:
+                cmd += ["-map", "0:a", "-c:a", "copy"]
+            cmd += [
+                "-id3v2_version", "3",
+                "-metadata", f"title={title}",
+                "-metadata", f"artist={artist}",
+                out_tmp,
+            ]
+            result = subprocess.run(cmd, capture_output=True)
+            if result.returncode != 0:
+                log.warning("ffmpeg failed: %s", result.stderr.decode(errors="replace"))
+                return False
+            _shutil.move(out_tmp, path)
+            out_tmp = None
             return True
+        except Exception as exc:
+            log.warning("ffmpeg metadata write failed %s: %s", path, exc)
+            return False
+        finally:
+            for p in (cover_tmp, out_tmp):
+                if p:
+                    try:
+                        os.remove(p)
+                    except OSError:
+                        pass
+
+    try:
         if suffix in (".flac", ".ogg"):
             from mutagen.flac import FLAC, Picture  # noqa: PLC0415
             audio = FLAC(path)
@@ -65,7 +89,7 @@ def _apply_metadata(path: str, title: str, artist: str, cover_bytes: bytes | Non
                 audio.add_picture(pic)
             audio.save()
             return True
-        # fallback: easy tags only, no cover
+        # fallback: easy tags only
         from mutagen import File  # noqa: PLC0415
         audio = File(path, easy=True)
         if audio is None:
