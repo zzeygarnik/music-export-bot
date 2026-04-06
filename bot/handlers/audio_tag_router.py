@@ -28,33 +28,28 @@ _AUDIO_MIME = {"audio/mpeg", "audio/flac", "audio/ogg", "audio/x-wav", "audio/mp
 
 def _apply_metadata(path: str, title: str, artist: str, cover_bytes: bytes | None = None) -> bool:
     """Write title/artist tags and optional cover art in a single save. Returns True on success."""
-    log.info("_apply_metadata: path=%s suffix=%s cover_bytes_len=%s",
-             path, os.path.splitext(path)[1].lower(), len(cover_bytes) if cover_bytes else 0)
     try:
         suffix = os.path.splitext(path)[1].lower()
         if suffix == ".mp3":
-            from mutagen.mp3 import MP3  # noqa: PLC0415
             from mutagen.id3 import ID3, TIT2, TPE1, APIC, ID3NoHeaderError  # noqa: PLC0415
-            audio = MP3(path)
-            log.info("_apply_metadata MP3 loaded, tags=%s", type(audio.tags).__name__)
-            if audio.tags is None:
-                audio.add_tags()
-            audio.tags.delall("TIT2")
-            audio.tags.delall("TPE1")
-            audio.tags["TIT2"] = TIT2(encoding=3, text=title)
-            audio.tags["TPE1"] = TPE1(encoding=3, text=artist)
+            try:
+                tags = ID3(path)
+            except ID3NoHeaderError:
+                tags = ID3()
+            tags.delall("TIT2")
+            tags.delall("TPE1")
+            tags["TIT2"] = TIT2(encoding=3, text=title)
+            tags["TPE1"] = TPE1(encoding=3, text=artist)
             if cover_bytes:
-                audio.tags.delall("APIC")
-                audio.tags["APIC"] = APIC(
+                tags.delall("APIC")
+                tags["APIC"] = APIC(
                     encoding=3,
                     mime="image/jpeg",
                     type=3,
                     desc="Cover",
                     data=cover_bytes,
                 )
-                log.info("_apply_metadata APIC set, len=%d", len(cover_bytes))
-            audio.save()
-            log.info("_apply_metadata MP3 save() done")
+            tags.save(path)  # default v2_version=4, не конвертируем в v2.3
             return True
         if suffix in (".flac", ".ogg"):
             from mutagen.flac import FLAC, Picture  # noqa: PLC0415
@@ -80,7 +75,7 @@ def _apply_metadata(path: str, title: str, artist: str, cover_bytes: bytes | Non
         audio.save()
         return True
     except Exception as exc:
-        log.exception("mutagen could not tag %s: %s", path, exc)
+        log.warning("mutagen could not tag %s: %s", path, exc)
         return False
 
 
