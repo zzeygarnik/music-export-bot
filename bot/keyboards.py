@@ -145,7 +145,9 @@ def cancel_keyboard() -> InlineKeyboardMarkup:
 # ── SoundCloud keyboards ───────────────────────────────────────────────────────
 
 def sc_menu_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
+    from core.vk_source import is_configured as _vk_configured
+    vk_enabled = _vk_configured()
+    rows = [
         [InlineKeyboardButton(
             text="Найти на SoundCloud",
             callback_data="sc:search",
@@ -156,13 +158,21 @@ def sc_menu_keyboard() -> InlineKeyboardMarkup:
             callback_data="sc:yt_search",
             icon_custom_emoji_id="6037397706505195857",
         )],
+    ]
+    if vk_enabled:
+        rows.append([InlineKeyboardButton(
+            text="Найти на VK Музыке",
+            callback_data="sc:vk_search",
+        )])
+    rows += [
         [InlineKeyboardButton(
             text="По ссылке  (SC / YouTube)",
             callback_data="sc:url",
             icon_custom_emoji_id="6042011682497106307",
         )],
         [InlineKeyboardButton(text="Назад", callback_data="sc:back")],
-    ])
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def _cache_display_name(r: dict) -> str:
@@ -623,3 +633,15 @@ def spotify_filter_result_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="📥 Скачать треки исполнителя", callback_data="spotify:download_filtered")],
         [InlineKeyboardButton(text="← Назад", callback_data="spotify:back_to_actions")],
     ])
+
+def vk_results_keyboard(results: list) -> "InlineKeyboardMarkup":
+    """Top-5 VK search results as numbered buttons."""
+    rows = []
+    for i, t in enumerate(results[:5]):
+        label = f"{i+1}. {t.artist} — {t.title}"
+        if len(label) > 60:
+            label = label[:57] + "…"
+        rows.append([InlineKeyboardButton(text=label, callback_data=f"vk_pick:{i}")])
+    rows.append([InlineKeyboardButton(text="Назад", callback_data="vk:cancel")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
