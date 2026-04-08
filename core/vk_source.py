@@ -1,4 +1,4 @@
-"""VK Music source via vkpymusic (Kate Mobile token).
+"""VK Music source via vkpymusic (VK Android/iPhone token).
 
 Usage:
     results = await search("Playboi Carti - Sky", count=5)
@@ -30,7 +30,10 @@ def _get_service():
         return None
     try:
         from vkpymusic import Service
-        return Service(user_token=token)
+        return Service(
+            user_agent="VKAndroidApp/5.52-4543 (Android 5.1.1; SDK 22; x86_64; unknown Android SDK built for x86_64; en; 320x240)",
+            token=token,
+        )
     except Exception as e:
         log.warning("VK Service init failed: %s", e)
         return None
@@ -48,7 +51,7 @@ def _search_sync(query: str, count: int) -> list[VKTrack]:
             if not url:
                 continue
             results.append(VKTrack(
-                track_id=f"{song.owner_id}_{song.id}",
+                track_id=f"{song.owner_id}_{song.track_id}",
                 artist=getattr(song, "artist", "") or "",
                 title=getattr(song, "title", "") or "",
                 duration=int(getattr(song, "duration", 0) or 0),
