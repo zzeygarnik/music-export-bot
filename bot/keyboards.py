@@ -145,8 +145,6 @@ def cancel_keyboard() -> InlineKeyboardMarkup:
 # ── SoundCloud keyboards ───────────────────────────────────────────────────────
 
 def sc_menu_keyboard() -> InlineKeyboardMarkup:
-    from core.vk_source import is_configured as _vk_configured
-    vk_enabled = _vk_configured()
     rows = [
         [InlineKeyboardButton(
             text="Найти на SoundCloud",
@@ -158,12 +156,11 @@ def sc_menu_keyboard() -> InlineKeyboardMarkup:
             callback_data="sc:yt_search",
             icon_custom_emoji_id="6037397706505195857",
         )],
-    ]
-    if vk_enabled:
-        rows.append([InlineKeyboardButton(
+        [InlineKeyboardButton(
             text="Найти на VK Музыке",
             callback_data="sc:vk_search",
-        )])
+        )],
+    ]
     rows += [
         [InlineKeyboardButton(
             text="По ссылке  (SC / YouTube)",
