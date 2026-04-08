@@ -8,6 +8,7 @@ from .yms_router import router as yms_router
 from .spotify_router import router as spotify_router
 from .inline_router import router as inline_router
 from .audio_tag_router import router as audio_tag_router
+from .vk_router import router as vk_router
 from .fallback import router as fallback_router  # must be last
 
 router = Router()
@@ -18,6 +19,7 @@ router.include_router(yms_router)
 router.include_router(spotify_router)
 router.include_router(inline_router)
 router.include_router(audio_tag_router)
+router.include_router(vk_router)
 router.include_router(fallback_router)
 
 __all__ = ["router"]

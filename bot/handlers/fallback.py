@@ -5,7 +5,7 @@ from aiogram import Router
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
-from bot.states import ExportFlow, SCSearchFlow, SCBatchFlow, YMShareFlow, AudioTagFlow
+from bot.states import ExportFlow, SCSearchFlow, SCBatchFlow, YMShareFlow, AudioTagFlow, VKSearchFlow
 
 router = Router()
 log = logging.getLogger(__name__)
@@ -25,6 +25,8 @@ _STATE_HINTS = {
     SCSearchFlow.sc_url_input: "Отправь ссылку на трек или плейлист (SoundCloud или YouTube).",
     SCSearchFlow.yt_search_query: "Введи название трека для поиска на YouTube.",
     SCSearchFlow.yt_search_results: "Выбери трек из результатов или нажми «Назад».",
+    VKSearchFlow.vk_search_query:   "Введи название трека для поиска на VK Музыке.",
+    VKSearchFlow.vk_search_results: "Выбери трек из результатов или нажми «Назад».",
     SCBatchFlow.sc_ym_token: "Отправь токен Яндекс Музыки.",
     SCBatchFlow.sc_ym_playlist: "Выбери плейлист из списка выше.",
     SCBatchFlow.sc_resume_choice: "Выбери, с какого трека начать скачивание.",

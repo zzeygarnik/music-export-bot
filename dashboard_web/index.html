@@ -585,6 +585,13 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
           </svg>
           Network
         </a>
+        <a class="nav-link" data-tab="cache">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+            <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
+            <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+          </svg>
+          Cache
+        </a>
         <a class="nav-link" data-tab="system">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
             <rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>
@@ -1122,6 +1129,29 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
         </div>
       </div>
 
+      <!-- TAB: CACHE -->
+      <div class="tab" id="tab-cache">
+        <div class="pg-head">
+          <div class="pg-title">Track Cache</div>
+          <div class="pg-sub">Telegram file_id cache — avoids re-downloading known tracks</div>
+        </div>
+        <div class="metrics">
+          <div class="mc"><div class="mc-lbl">Total Entries</div><div class="mc-val" id="cache-total">—</div></div>
+          <div class="mc"><div class="mc-lbl">SoundCloud</div><div class="mc-val" id="cache-sc-cnt">—</div></div>
+          <div class="mc"><div class="mc-lbl">YouTube</div><div class="mc-val" id="cache-yt-cnt">—</div></div>
+          <div class="mc"><div class="mc-lbl">Other</div><div class="mc-val" id="cache-other-cnt">—</div></div>
+        </div>
+        <div class="card" style="margin-top:20px">
+          <div class="card-hdr"><div class="card-title">Recent Entries</div></div>
+          <div class="card-body" style="padding:0">
+            <table class="dt">
+              <thead><tr><th>Artist</th><th>Title</th><th>Source</th><th>Cached At</th></tr></thead>
+              <tbody id="tbl-cache"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
       <!-- TAB: SYSTEM -->
       <div class="tab" id="tab-system">
         <div class="pg-head" style="display:flex;align-items:center;justify-content:space-between">
@@ -1502,7 +1532,7 @@ async function loadStats() {
 
 /* ── TABS ────────────────────────────────────────────────── */
 function switchTab(id) {
-  const valid = ['ym','spotify','sc','log','proxies','network','users','bans','batch','system','renames'];
+  const valid = ['ym','spotify','sc','log','proxies','network','users','bans','batch','system','renames','cache'];
   if (!valid.includes(id)) id='ym';
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
   document.querySelectorAll('.nav-link').forEach(l=>l.classList.remove('active'));
@@ -1511,7 +1541,7 @@ function switchTab(id) {
   history.replaceState(null,'','#'+id);
   const tbl = document.getElementById('tbl-'+id);
   const isEmpty = tbl && tbl.children.length === 0;
-  const alwaysReload = ['proxies','network','users','bans','batch','system','renames'];
+  const alwaysReload = ['proxies','network','users','bans','batch','system','renames','cache'];
   if (!loaded[id] || isEmpty || alwaysReload.includes(id)) { loadTabData(id); loaded[id]=true; }
 }
 
@@ -1536,6 +1566,8 @@ async function loadTabData(id) {
     await loadSystem();
   } else if (id === 'renames') {
     await loadRenames();
+  } else if (id === 'cache') {
+    await loadCache();
   } else {
     offsets.log = 0;
     await loadTable(logSrc, 'tbl-log', 0, false, logUsernameFilter);
@@ -2403,6 +2435,33 @@ function _fmtMsk(iso) {
   if (!iso) return '—';
   const d = new Date(iso);
   return d.toLocaleString('ru-RU', { timeZone: 'Europe/Moscow', hour12: false });
+}
+
+async function loadCache() {
+  const data = await apiFetch('/api/cache');
+  if (!data) return;
+  const g = id => document.getElementById(id);
+  countUp(g('cache-total'), data.total || 0);
+  const bySource = {};
+  (data.by_source || []).forEach(r => { bySource[r.source] = r.count; });
+  countUp(g('cache-sc-cnt'),    bySource['sc']  || 0);
+  countUp(g('cache-yt-cnt'),    bySource['yt']  || 0);
+  const other = Object.entries(bySource)
+    .filter(([k]) => k !== 'sc' && k !== 'yt')
+    .reduce((s, [, v]) => s + v, 0);
+  countUp(g('cache-other-cnt'), other);
+  const tbody = g('tbl-cache');
+  if (!tbody) return;
+  const rows = (data.recent || []).slice(0, 50);
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="4" class="no-data">No cached tracks yet</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(r => {
+    const dt = r.cached_at ? new Date(r.cached_at).toLocaleString('ru-RU') : '—';
+    const srcLabel = r.source === 'sc' ? 'SC' : r.source === 'yt' ? 'YT' : r.source || '?';
+    return `<tr><td>${r.artist||'—'}</td><td>${r.title||'—'}</td><td style="color:var(--muted)">${srcLabel}</td><td style="color:var(--dim);font-size:9px">${dt}</td></tr>`;
+  }).join('');
 }
 
 async function loadRenames(append = false) {

@@ -113,6 +113,18 @@ async def _fetch_track(
         except Exception:
             pass
 
+    # ── Fuzzy cache fallback (no semaphore — cheap DB query) ──────────────────
+    if cache_key and (artist or title):
+        try:
+            fuzzy_hits = await search_cache_fuzzy(f"{artist} {title}", threshold=82)
+            if fuzzy_hits:
+                return _TrackFetchResult(
+                    track=track, artist=artist, title=title, cache_key=cache_key,
+                    path=None, meta={}, cached_file_id=fuzzy_hits[0]["file_id"],
+                )
+        except Exception:
+            pass
+
     # ── Download (inside semaphore — limits real concurrency) ─────────────────
     async with dl_sem:
         sc_errors = 0
@@ -206,11 +218,20 @@ async def _process_queue() -> None:
     # Notify remaining users of their new positions
     for i, queued in enumerate(_batch_queue):
         try:
-            await queued.bot.send_message(
-                queued.chat_id,
-                f"⏳ Ты теперь <b>#{i + 1}</b> в очереди.",
-                parse_mode="HTML",
-            )
+            if queued.message_id:
+                await queued.bot.edit_message_text(
+                    chat_id=queued.chat_id,
+                    message_id=queued.message_id,
+                    text=f"⏳ Ты теперь <b>#{i + 1}</b> в очереди — начнём автоматически.",
+                    parse_mode="HTML",
+                    reply_markup=sc_cancel_queue_keyboard(),
+                )
+            else:
+                await queued.bot.send_message(
+                    queued.chat_id,
+                    f"⏳ Ты теперь <b>#{i + 1}</b> в очереди.",
+                    parse_mode="HTML",
+                )
         except Exception:
             pass
 
@@ -269,6 +290,7 @@ async def _try_start_or_queue(
             state=state,
             tracks=tracks,
             start_idx=start_idx,
+            message_id=call.message.message_id,
         ))
         await state.update_data(in_batch_queue=True)
         await call.message.edit_text(

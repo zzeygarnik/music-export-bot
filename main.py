@@ -216,6 +216,13 @@ async def _api_stats(request: aiohttp_web.Request) -> aiohttp_web.Response:
     return aiohttp_web.Response(text=json.dumps(data), content_type="application/json")
 
 
+async def _api_cache(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    if not _check_auth(request):
+        return aiohttp_web.Response(status=401)
+    data = await db.get_cache_stats()
+    return aiohttp_web.Response(text=json.dumps(data, default=str), content_type="application/json")
+
+
 async def _api_events(request: aiohttp_web.Request) -> aiohttp_web.Response:
     if not _check_auth(request):
         return aiohttp_web.Response(status=401)
@@ -979,6 +986,7 @@ async def main() -> None:
             web_app.router.add_post("/dashboard/login",  _dashboard_login_post)
             web_app.router.add_get("/dashboard/logout",  _dashboard_logout)
             web_app.router.add_get("/api/stats",        _api_stats)
+            web_app.router.add_get("/api/cache",        _api_cache)
             web_app.router.add_get("/api/events",       _api_events)
             web_app.router.add_get("/api/chart",        _api_chart)
             web_app.router.add_get("/api/batch_live",   _api_batch_live)

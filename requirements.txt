@@ -12,3 +12,4 @@ rapidfuzz>=3.0.0
 asyncpg>=0.29.0
 spotipy>=2.24.0
 mutagen>=1.47.0
+vkpymusic>=2.0.0

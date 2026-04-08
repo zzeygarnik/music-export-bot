@@ -664,6 +664,38 @@ async def get_dashboard_stats() -> dict:
         return {}
 
 
+async def get_cache_stats() -> dict:
+    """Stats for the Cache dashboard tab."""
+    try:
+        async with _pool.acquire() as conn:
+            total = int(await conn.fetchval("SELECT COUNT(*) FROM track_cache") or 0)
+            source_rows = await conn.fetch("""
+                SELECT COALESCE(source, 'unknown') as source, COUNT(*) as cnt
+                FROM track_cache GROUP BY source ORDER BY cnt DESC
+            """)
+            recent = await conn.fetch("""
+                SELECT artist, title, source, cached_at
+                FROM track_cache
+                ORDER BY cached_at DESC LIMIT 50
+            """)
+        return {
+            "total": total,
+            "by_source": [{"source": r["source"], "count": int(r["cnt"])} for r in source_rows],
+            "recent": [
+                {
+                    "artist": r["artist"] or "",
+                    "title":  r["title"]  or "",
+                    "source": r["source"] or "?",
+                    "cached_at": r["cached_at"].isoformat() if r["cached_at"] else "",
+                }
+                for r in recent
+            ],
+        }
+    except Exception as e:
+        log.warning("get_cache_stats failed: %s", e)
+        return {"total": 0, "by_source": [], "recent": []}
+
+
 async def get_chart_data(source: str, days: int = 7) -> list[dict]:
     """Per-day track counts for the given source over the last N days (MSK timezone)."""
     _FILTERS = {

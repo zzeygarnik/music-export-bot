@@ -68,3 +68,8 @@ class AudioTagFlow(StatesGroup):
     waiting_for_title  = State()  # waiting for track title input
     waiting_for_artist = State()  # waiting for artist name input
     waiting_for_cover  = State()  # waiting for cover image (or skip)
+
+class VKSearchFlow(StatesGroup):
+    vk_search_query   = State()   # waiting for search query
+    vk_search_results = State()   # showing top-5 results, waiting for pick
+

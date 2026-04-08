@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     WEBHOOK_URL: str = ""                             # e.g. https://mus111cbot.duckdns.org — enables webhook mode
     WEBHOOK_SECRET: str = ""                          # secret token for Telegram webhook verification
     DASHBOARD_TOKEN: str = ""                         # secret token for web dashboard access (set to enable)
+    VK_TOKEN: str = ""                               # VK Kate Mobile token (vkpymusic) for VK music search/download
 
     def is_batch_allowed(self, user_id: int, username: str | None) -> bool:
         val = self.BATCH_ALLOWED_USERS.strip()
