@@ -653,6 +653,26 @@ async def download_yt_with_proxy_rotation(url: str, user_id: int, bot) -> tuple[
     return await sc_downloader.download(url, user_id)
 
 
+async def extract_yt_url_info_with_proxy_rotation(url: str, bot) -> dict:
+    """Extract URL info from YouTube with proxy rotation on geo/ban errors."""
+    from core import sc_downloader
+    from core.sc_downloader import SCBanError
+
+    max_attempts = len(_sc_proxies) + 2
+    rotated = False
+    for attempt in range(max_attempts):
+        try:
+            return await sc_downloader.extract_url_info(url)
+        except SCBanError:
+            rotated = True
+            had_more = await rotate_yt_proxy(bot)
+            if not had_more:
+                raise
+        except Exception:
+            raise
+    return await sc_downloader.extract_url_info(url)
+
+
 async def _notify_proxy_result(bot, proxy_label: str, success: bool, detail: str = "") -> None:
     """Send admin notification about proxy connection result after rotation."""
     if not settings.ADMIN_ID:
