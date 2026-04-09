@@ -76,6 +76,12 @@ def _cookie_opts() -> dict:
     return {"cookiefile": settings.SC_COOKIE_FILE} if settings.SC_COOKIE_FILE else {}
 
 
+def _yt_cookie_opts() -> dict:
+    """Return yt-dlp cookiefile option for YouTube (prefers YT_COOKIE_FILE, falls back to SC_COOKIE_FILE)."""
+    f = settings.YT_COOKIE_FILE or settings.SC_COOKIE_FILE
+    return {"cookiefile": f} if f else {}
+
+
 @dataclass
 class SCResult:
     url: str
@@ -178,7 +184,7 @@ def _download_sync(url: str, output_template: str) -> tuple[str, dict]:
         "format": yt_audio_format,
         "outtmpl": output_template + ".%(ext)s",
         **_url_proxy_opts(url),
-        **_cookie_opts(),
+        **(_yt_cookie_opts() if _is_youtube_url(url) else _cookie_opts()),
     }
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
@@ -206,7 +212,7 @@ def _extract_url_info_sync(url: str) -> dict:
         "no_warnings": True,
         "extract_flat": "in_playlist",
         **_url_proxy_opts(url),
-        **_cookie_opts(),
+        **(_yt_cookie_opts() if _is_youtube_url(url) else _cookie_opts()),
     }
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
