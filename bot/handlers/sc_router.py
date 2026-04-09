@@ -829,7 +829,7 @@ async def on_sc_url_input(message: Message, state: FSMContext) -> None:
 
     try:
         if sc_downloader._is_youtube_url(url):
-            info = await extract_yt_url_info_with_proxy_rotation(url, bot)
+            info = await extract_yt_url_info_with_proxy_rotation(url, message.bot)
         else:
             info = await sc_downloader.extract_url_info(url)
     except Exception as e:
