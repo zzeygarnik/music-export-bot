@@ -14,6 +14,10 @@ class SCBanError(Exception):
     """Raised when the error indicates an IP ban or rate-limit (not a per-track access error)."""
 
 
+class GeoBlockError(SCBanError):
+    """Raised when a YouTube video is geo-blocked in the server's country."""
+
+
 # Active proxy for SC downloads; empty string = use server's main IP.
 # Managed externally by bot/handlers/common.py proxy rotation logic.
 _active_proxy: str = ""
@@ -56,8 +60,19 @@ def _url_proxy_opts(url: str = "") -> dict:
     return _proxy_opts()
 
 
+def _is_geo_error(msg: str) -> bool:
+    """Return True if the error is a geo-restriction (video not available in server's country)."""
+    msg_low = msg.lower()
+    return (
+        "not available in your country" in msg_low
+        or "not made this video available in your country" in msg_low
+        or "this video is not available in your country" in msg_low
+        or "blocked it in your country" in msg_low
+    )
+
+
 def _is_ban_error(msg: str) -> bool:
-    """Return True if the yt-dlp error looks like an IP ban or rate-limit."""
+    """Return True if the yt-dlp error looks like an IP ban, rate-limit, or geo-block."""
     msg_low = msg.lower()
     # 429 = rate limiting, almost certainly IP-based
     if "http error 429" in msg_low or "too many requests" in msg_low:
@@ -65,10 +80,17 @@ def _is_ban_error(msg: str) -> bool:
     # 403 on the *webpage* (not on the track audio itself) = likely IP ban
     if "unable to download webpage" in msg_low and "403" in msg_low:
         return True
-    # Geo-restriction: video not available in server's country → try proxy
-    if "not available in your country" in msg_low or "not made this video available in your country" in msg_low:
+    # Geo-restriction → try proxy
+    if _is_geo_error(msg):
         return True
     return False
+
+
+def _raise_ban_or_geo(err_str: str, original: Exception) -> None:
+    """Raise GeoBlockError for geo-blocks, SCBanError for other bans."""
+    if _is_geo_error(err_str):
+        raise GeoBlockError(err_str) from original
+    raise SCBanError(err_str) from original
 
 
 def _cookie_opts() -> dict:
@@ -80,6 +102,11 @@ def _yt_cookie_opts() -> dict:
     """Return yt-dlp cookiefile option for YouTube (prefers YT_COOKIE_FILE, falls back to SC_COOKIE_FILE)."""
     f = settings.YT_COOKIE_FILE or settings.SC_COOKIE_FILE
     return {"cookiefile": f} if f else {}
+
+
+def _yt_js_opts() -> dict:
+    """Return js_runtimes option for YouTube to enable node-based JS challenge solving."""
+    return {"js_runtimes": {"node": {}}}
 
 
 @dataclass
@@ -135,7 +162,7 @@ def _search_sync(query: str, max_results: int = 5, platform: str = "sc") -> list
             info = ydl.extract_info(f"{platform}search{max_results}:{query}", download=False)
     except yt_dlp.utils.DownloadError as e:
         if _is_ban_error(str(e)):
-            raise SCBanError(str(e)) from e
+            _raise_ban_or_geo(str(e), e)
         raise
 
     # With ignoreerrors=True yt-dlp swallows 403/429 and returns None — detect via logger
@@ -185,13 +212,14 @@ def _download_sync(url: str, output_template: str) -> tuple[str, dict]:
         "outtmpl": output_template + ".%(ext)s",
         **_url_proxy_opts(url),
         **(_yt_cookie_opts() if _is_youtube_url(url) else _cookie_opts()),
+        **(_yt_js_opts() if _is_youtube_url(url) else {}),
     }
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
     except yt_dlp.utils.DownloadError as e:
         if _is_ban_error(str(e)):
-            raise SCBanError(str(e)) from e
+            _raise_ban_or_geo(str(e), e)
         raise
 
     ext = (info.get("ext") or "mp3") if info else "mp3"
@@ -213,13 +241,14 @@ def _extract_url_info_sync(url: str) -> dict:
         "extract_flat": "in_playlist",
         **_url_proxy_opts(url),
         **(_yt_cookie_opts() if _is_youtube_url(url) else _cookie_opts()),
+        **(_yt_js_opts() if _is_youtube_url(url) else {}),
     }
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
     except yt_dlp.utils.DownloadError as e:
         if _is_ban_error(str(e)):
-            raise SCBanError(str(e)) from e
+            _raise_ban_or_geo(str(e), e)
         raise
     return info or {}
 
