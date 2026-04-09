@@ -9,6 +9,7 @@ class Settings(BaseSettings):
                               # e.g. "socks5://u:p@h:1080,http://h2:8080"
     SC_SERVER_IP: str = ""    # server's public IP shown in admin proxy-rotation alerts (optional)
     SC_COOKIE_FILE: str = ""  # path to Netscape cookie file for SoundCloud auth (e.g. /app/sc_cookies.txt)
+    YT_COOKIE_FILE: str = ""  # path to Netscape cookie file for YouTube auth (e.g. /app/yt_cookies.txt)
     SC_MAX_BATCH_DOWNLOADS: int = 2  # max concurrent SC batch downloads across all users
     YM_BOT_TOKEN: str = ""          # optional bot-level YM token for reading public playlists without user auth
     POSTGRES_URL: str = ""          # postgresql://user:pass@host:5432/music_bot
