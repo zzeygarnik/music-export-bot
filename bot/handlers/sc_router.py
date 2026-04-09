@@ -59,6 +59,7 @@ from .common import (
     notify_admin_sc_error,
     download_with_proxy_rotation,
     download_yt_with_proxy_rotation,
+    extract_yt_url_info_with_proxy_rotation,
     search_with_proxy_rotation,
 )
 from bot.tracker import set_active_msg
@@ -826,7 +827,10 @@ async def on_sc_url_input(message: Message, state: FSMContext) -> None:
     set_active_msg(user_id, status_msg.message_id)
 
     try:
-        info = await sc_downloader.extract_url_info(url)
+        if sc_downloader._is_youtube_url(url):
+            info = await extract_yt_url_info_with_proxy_rotation(url, bot)
+        else:
+            info = await sc_downloader.extract_url_info(url)
     except Exception as e:
         log.warning("SC URL extract failed user=%s url=%s: %s", user_id, url, e)
         await status_msg.edit_text(

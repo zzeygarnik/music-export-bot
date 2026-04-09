@@ -65,6 +65,9 @@ def _is_ban_error(msg: str) -> bool:
     # 403 on the *webpage* (not on the track audio itself) = likely IP ban
     if "unable to download webpage" in msg_low and "403" in msg_low:
         return True
+    # Geo-restriction: video not available in server's country → try proxy
+    if "not available in your country" in msg_low or "not made this video available in your country" in msg_low:
+        return True
     return False
 
 
@@ -118,7 +121,7 @@ def _search_sync(query: str, max_results: int = 5, platform: str = "sc") -> list
         "noplaylist": False,
         "ignoreerrors": True,
         "logger": ban_logger,
-        **(_proxy_opts() if platform == "sc" else {}),
+        **(_proxy_opts() if platform == "sc" else ({"proxy": _yt_active_proxy} if _yt_active_proxy else {})),
         **_cookie_opts(),
     }
     try:
@@ -205,8 +208,13 @@ def _extract_url_info_sync(url: str) -> dict:
         **_url_proxy_opts(url),
         **_cookie_opts(),
     }
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(url, download=False)
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+    except yt_dlp.utils.DownloadError as e:
+        if _is_ban_error(str(e)):
+            raise SCBanError(str(e)) from e
+        raise
     return info or {}
 
 
