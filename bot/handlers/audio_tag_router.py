@@ -238,9 +238,8 @@ async def audio_tag_entry(call: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(StateFilter(AudioTagFlow.waiting_for_audio), F.data == "audio_tag:cancel")
 async def audio_tag_cancel_waiting(call: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
-    await call.message.edit_text("Отменено.", reply_markup=None)
-    sent = await call.message.answer("Выбери действие:", reply_markup=service_keyboard())
-    set_active_msg(call.message.chat.id, sent.message_id)
+    await call.message.edit_text("Выбери действие:", reply_markup=service_keyboard())
+    set_active_msg(call.message.chat.id, call.message.message_id)
     await call.answer()
 
 
@@ -293,9 +292,8 @@ async def handle_audio_received(message: Message, state: FSMContext) -> None:
 @router.callback_query(StateFilter(AudioTagFlow.waiting_for_title), F.data == "audio_tag:cancel")
 async def audio_tag_cancel(call: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
-    await call.message.edit_text("Отменено.", reply_markup=None)
-    sent = await call.message.answer("Выбери действие:", reply_markup=service_keyboard())
-    set_active_msg(call.message.chat.id, sent.message_id)
+    await call.message.edit_text("Выбери действие:", reply_markup=service_keyboard())
+    set_active_msg(call.message.chat.id, call.message.message_id)
     await call.answer()
 
 
@@ -329,9 +327,8 @@ async def audio_tag_back_to_title(call: CallbackQuery, state: FSMContext) -> Non
 async def audio_tag_cancel_from_artist(call: CallbackQuery, state: FSMContext) -> None:
     """Handle stale 'cancel' button from the title step while in artist state."""
     await state.clear()
-    await call.message.edit_text("Отменено.", reply_markup=None)
-    sent = await call.message.answer("Выбери действие:", reply_markup=service_keyboard())
-    set_active_msg(call.message.chat.id, sent.message_id)
+    await call.message.edit_text("Выбери действие:", reply_markup=service_keyboard())
+    set_active_msg(call.message.chat.id, call.message.message_id)
     await call.answer()
 
 
