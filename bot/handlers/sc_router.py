@@ -827,9 +827,15 @@ async def on_sc_url_input(message: Message, state: FSMContext) -> None:
     status_msg = await message.answer("⏳ Получаю информацию по ссылке…")
     set_active_msg(user_id, status_msg.message_id)
 
+    async def _on_yt_geo_block():
+        await status_msg.edit_text(
+            "⚠️ Видео заблокировано в регионе сервера. Скачиваю через прокси, ожидайте…",
+            parse_mode="HTML",
+        )
+
     try:
         if sc_downloader._is_youtube_url(url):
-            info = await extract_yt_url_info_with_proxy_rotation(url, message.bot)
+            info = await extract_yt_url_info_with_proxy_rotation(url, message.bot, on_geo_block=_on_yt_geo_block)
         else:
             info = await sc_downloader.extract_url_info(url)
     except Exception as e:

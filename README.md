@@ -6,7 +6,7 @@
 ![Dashboard](https://img.shields.io/badge/Dashboard-Web%20UI-7c3aed?logo=aiohttp&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Database-336791?logo=postgresql&logoColor=white)
 
-Telegram bot with three main sections: **export your music library to `.txt` / `.csv`** (Yandex Music and Spotify), **download tracks from SoundCloud / YouTube as `.mp3`**, and **load any shared playlist or album by link** (YM, Spotify). Self-hosted, containerized, ready for any Linux VPS or TrueNAS.
+Telegram bot with four main sections: **export your music library to `.txt` / `.csv`** (Yandex Music and Spotify), **download tracks from SoundCloud / YouTube / VK as `.mp3`**, **load any shared playlist or album by link** (YM, Spotify, SoundCloud, YouTube), and **fix audio file tags** (title, artist, cover). Self-hosted, containerized, ready for any Linux VPS or TrueNAS.
 
 [ 🇬🇧 English](#-english) | [ 🇷🇺 Русский](#-русский)
 
@@ -24,10 +24,13 @@ Telegram bot with three main sections: **export your music library to `.txt` / `
 - After export — inline buttons to **Download from SoundCloud** or **Filter by artist**
 
 **Playlist / Album by link**
-- Choose source: **Yandex Music** or **Spotify**
-- **Yandex Music:** send an iframe embed code from the YM app ("Share → HTML code"), a direct playlist link, `lk.UUID` share link, or an **album link** (`music.yandex.ru/album/ID`)
+- Choose source: **Yandex Music**, **Spotify**, **SoundCloud / YouTube by URL**, or **YouTube playlist**
+- **Yandex Music — by link or embed:** send an iframe embed code from the YM app ("Share → HTML code"), a direct playlist link, `lk.UUID` share link, or an **album link** (`music.yandex.ru/album/ID`)
+- **Yandex Music — my playlists:** pick any YM playlist (including ❤️ Liked tracks) — same as the batch flow inside "Download MP3"
 - **Spotify:** send any `open.spotify.com/playlist/...` or **album link** (`open.spotify.com/album/ID`)
-- Two actions after loading:
+- **SoundCloud / YouTube by URL:** paste any SC or YT track/playlist/album link — starts batch download immediately
+- **YouTube playlist by URL:** paste a YT playlist URL — batch download with the full pre-download menu (requires batch access)
+- Two actions after loading (YM / Spotify):
   - **Download all** — opens a pre-download menu: choose order (oldest-first / newest-first), continue from a specific track, **select specific tracks** (search within playlist, toggle individually, add all by artist), or **filter by artist** (narrow the playlist to one artist before starting); then batch-downloads via SoundCloud (with YouTube fallback)
   - **Filter by artist** — enter an artist name, get a `.txt` with matching tracks, then optionally batch-download that filtered list
 - If `YM_BOT_TOKEN` is set, users don't need to authenticate — bot reads public playlists with the bot-level token
@@ -62,6 +65,13 @@ Telegram bot with three main sections: **export your music library to `.txt` / `
 - **Stale cache auto-cleanup**: if Telegram rejects a cached `file_id`, the entry is deleted automatically and a fresh download starts transparently ("⏳ Cache expired, searching again…")
 - **SC proxy rotation**: configure `SC_PROXIES` with a comma-separated list of fallback proxies — on IP ban the bot switches to the next proxy automatically and notifies the admin; all rotation attempts are transparent to the user
 - **YouTube fallback on SC ban**: when SoundCloud is unreachable (IP ban / all proxies exhausted), an inline **"🔍 Find on YouTube"** button appears for single-track searches — one tap searches YouTube with the same query, no re-entry needed
+
+**VK Music search (WIP)**
+- **"🎵 Find on VK Music"** button is visible in the Download MP3 menu but is currently guarded behind an admin-only check (`🚧 Section in development` for regular users)
+- Requires `VK_TOKEN` (VK Kate Mobile token via vkpymusic) in `.env`
+- Same cache-first flow: hits PostgreSQL file_id cache before attempting download
+- Same fuzzy auto-pick logic (threshold 80%) + top-5 fallback for manual selection
+- Downloads direct MP3 URLs served by VK; metadata written via mutagen
 
 **Spotify integration (automatic OAuth)**
 - Spotify is available inside the **Export** and **Playlist/Album by link** sections — not a separate top-level button
@@ -98,11 +108,19 @@ Telegram bot with three main sections: **export your music library to `.txt` / `
 - Uses the same fuzzy matching as the regular cache (rapidfuzz, threshold 70)
 - Only previously downloaded and cached tracks are available inline; new downloads require opening the bot
 
+**Fix track tags**
+- Triggered via the **"Fix track tags"** button in the main menu, or automatically when an audio file is sent at any time (outside any active flow)
+- **Step-by-step editor**: send audio → enter title → enter artist → optionally attach a cover photo → bot returns the retagged file
+- Supports MP3 (via ffmpeg), FLAC, MP4/AAC and other audio formats (via mutagen); cover embed supported for all formats
+- Works with direct file attachments and forwarded audio messages
+- After tagging: **"Fix another track"** button or return to main menu
+- Reuses the existing `file_id` if download/re-upload fails (best-effort fallback)
+
 **General**
-- **Web dashboard** — **4 tabs**: Yandex Music / Spotify / SC+YouTube / Event log; served by the bot at `/dashboard` (password-protected via `DASHBOARD_TOKEN`)
+- **Web dashboard** — **12 tabs** (Sources: YM / Spotify / SC+YouTube; Logs: Event log / Tag Editor; Users; Moderation: Bans / Batch Access; Config: Proxies / Network / Cache / System); served by the bot at `/dashboard` (password-protected via `DASHBOARD_TOKEN`)
 - PostgreSQL stores events, live batch state, track file_id cache, banned users, batch whitelist, access requests
 - Redis FSM storage (required — bot won't start if Redis is unavailable)
-- Middleware: **Ban check** → Throttling → Stale-button guard (eternal callbacks exempted) → Callback auto-answer
+- Middleware: **Ban check** → Throttling → Stale-button guard (eternal callbacks exempted) → **Deduplication** (update_id stored in Redis, 24 h TTL — prevents double-processing on polling↔webhook switches) → Callback auto-answer
 - **Batch access control**: `BATCH_ALLOWED_USERS` env var (`*` / `""` / static list) + DB whitelist via admin panel + in-bot request flow
 - **Bot commands** registered on startup: `/start`, `/faq`, `/mystats` (`/admin` is intentionally omitted from the command list)
 - **Webhook mode**: set `WEBHOOK_URL` in `.env` to switch from polling to webhook — bot receives updates instantly via HTTPS; falls back to long polling if not set
@@ -130,21 +148,30 @@ Telegram bot with three main sections: **export your music library to `.txt` / `
      ├─ 🎵 Download MP3
      │    ├─ 🔍 Find on SoundCloud      → cache check → (⚡ instant) or search → mp3  [+ Download more]
      │    ├─ 🔍 Find on YouTube         → cache check → (⚡ instant) or search → mp3  [+ Download more]
+     │    ├─ 🎵 Find on VK Music (WIP)  → admin-only guard; cache check → auto-pick or top-5 → mp3
      │    ├─ 🔗 By URL                  → paste SC/YT link → mp3, album or batch
      │    └─ 📥 Playlist from YM        → enter OAuth token → pick playlist (incl. ❤️ Liked) → pre-download menu → batch mp3
      │
+     ├─ 🏷 Fix track tags
+     │    → send audio (attachment or forward) → enter title → enter artist
+     │    → optionally attach cover photo → retagged file returned
+     │    (also triggered automatically when audio is sent outside any active flow)
+     │
      └─ 🔗 Playlist / Album by link
-          → Choose source: Yandex Music | Spotify
+          → Choose source:
           │
-          ├─ Yandex Music → send iframe / URL / album link → bot loads tracks
-          └─ Spotify      → send playlist / album URL     → bot loads tracks
-               → Choose action:
-                    ├─ Download all     → oldest-first | newest-first
-                    │                     | Continue from track…
-                    │                     | Select specific tracks  → search / toggle / add by artist
-                    │                     | Filter by artist        → enter name → filtered list → same menu
-                    │                     → batch mp3  [🔄 Retry failed on finish]
-                    └─ Filter by artist → enter name → .txt  [+ Download filtered → same pre-download menu]
+          ├─ 🎵 YM — by link or embed   → send iframe / URL / album link → bot loads tracks
+          │                               → Choose action:
+          │                                    ├─ Download all     → oldest-first | newest-first
+          │                                    │                     | Continue from track…
+          │                                    │                     | Select specific tracks  → search / toggle / add by artist
+          │                                    │                     | Filter by artist        → enter name → filtered list → same menu
+          │                                    │                     → batch mp3  [🔄 Retry failed on finish]
+          │                                    └─ Filter by artist → enter name → .txt  [+ Download filtered]
+          ├─ 🎵 YM — my playlists        → pick playlist → same pre-download menu → batch mp3
+          ├─ 🟢 Spotify                  → send playlist / album URL → same action menu as YM above
+          ├─ ☁️ SC / YouTube — by URL    → paste SC or YT link → batch mp3
+          └─ 🎬 YouTube playlist by URL  → paste YT playlist URL → batch mp3  (requires batch access)
 
 /faq     → capabilities + privacy policy  [+ Contact admin → write message → forwarded to admin]
 /admin   → admin panel (ADMIN_ID only)
@@ -164,16 +191,19 @@ music-export-bot/
 │   │   ├── inline_router.py  # Inline query handler: fuzzy cache search → InlineQueryResultCachedAudio; deep link on miss
 │   │   ├── sc_router.py      # SCSearchFlow + SCBatchFlow + download helpers + retry
 │   │   ├── spotify_router.py # SpotifyFlow: playlists + liked tracks OAuth + auto callback
+│   │   ├── audio_tag_router.py # AudioTagFlow: retag audio files (title/artist/cover) via mutagen + ffmpeg
+│   │   ├── vk_router.py      # VKSearchFlow: VK Music search + download (WIP, admin-only guard)
 │   │   ├── ym_router.py      # ExportFlow: YM export, delivery, filter; /faq + contact flow
 │   │   └── yms_router.py     # YMShareFlow: shared playlist/album by link/embed
-│   ├── states.py          # ExportFlow + SCSearchFlow + SCBatchFlow + YMShareFlow + SpotifyFlow + AdminFlow + FAQFlow
+│   ├── states.py          # ExportFlow + SCSearchFlow + SCBatchFlow + YMShareFlow + SpotifyFlow + AdminFlow + FAQFlow + AudioTagFlow + VKSearchFlow
 │   ├── keyboards.py       # Inline keyboards
-│   └── middleware.py      # BanMiddleware + Throttling + StaleButton + CallbackAnswer
+│   └── middleware.py      # BanMiddleware + Throttling + StaleButton + DeduplicateUpdate + CallbackAnswer
 ├── core/
 │   ├── base_source.py     # AbstractMusicSource (extensible)
 │   ├── spotify_source.py  # Spotify source: public playlists + albums (client creds) + liked tracks (OAuth)
 │   ├── ym_source.py       # Yandex Music source + batch fetch + share/album link parsing
-│   └── sc_downloader.py   # yt-dlp wrapper: search() + search_youtube() + download() + extract_url_info(); post-download metadata fix via mutagen
+│   ├── sc_downloader.py   # yt-dlp wrapper: search() + search_youtube() + download() + extract_url_info(); post-download metadata fix via mutagen
+│   └── vk_source.py       # VK Music source: search + direct MP3 download via vkpymusic (WIP)
 ├── utils/
 │   ├── export.py          # Async .txt / .csv writer
 │   ├── db.py              # PostgreSQL connection pool + schema creation
@@ -218,6 +248,10 @@ SC_SERVER_IP=
 # Helps avoid rate-limiting; mount the file into the container: -v /path/to/sc_cookies.txt:/app/sc_cookies.txt
 SC_COOKIE_FILE=
 
+# Path to Netscape cookie file for YouTube authentication (optional)
+# Helps bypass age-gates and rate-limiting on YouTube
+YT_COOKIE_FILE=
+
 # Max concurrent SC batch downloads across all users (default: 2)
 SC_MAX_BATCH_DOWNLOADS=2
 
@@ -227,6 +261,10 @@ POSTGRES_URL=postgresql://user:password@host:5432/music_bot
 # Optional — bot-level YM token for reading public playlists without user auth
 # If set, users can share playlists without logging into Yandex Music
 YM_BOT_TOKEN=
+
+# VK Kate Mobile token (vkpymusic) — required for VK Music search/download (WIP feature)
+# Leave empty to disable VK Music entirely
+VK_TOKEN=
 
 # Batch playlist download access control (default: * = everyone)
 #   ""                     — disabled for all users (DB whitelist still applies)
@@ -363,16 +401,34 @@ This script creates the `music_bot` database, sets up tables, and migrates any e
 
 ### 📊 Dashboard
 
-The web dashboard is served by the bot itself at `/dashboard` (no separate process needed). It reads from PostgreSQL and is organized into **4 tabs**:
-- **📊 Yandex Music** — all-time/daily stats for track list exports (titles to .txt/.csv, not audio files)
-- **🟢 Spotify** — playlist/album load counts, liked tracks loads, export stats by format
-- **☁️ SC / YouTube** — separate metrics for SoundCloud and YouTube searches, batch stats
-- **📋 Event log** — filterable recent events table
+The web dashboard is served by the bot itself at `/dashboard` (no separate process needed). It reads from PostgreSQL and is organized into **12 tabs** across 5 sidebar sections:
+
+**Sources**
+- **Yandex Music** — all-time/daily stats for YM track list exports (.txt/.csv)
+- **Spotify** — playlist/album load counts, liked-tracks loads, export stats by format
+- **SC / YouTube** — separate metrics for SoundCloud and YouTube searches, batch stats; live batch progress indicator in the sidebar
+
+**Logs**
+- **Event Log** — filterable recent events table (user, action, result, timestamp)
+- **Tag Editor** — history of track renames via the Fix track tags feature
+
+**Users**
+- **Users** — per-user activity table: downloads, exports, first seen date
+
+**Moderation**
+- **Bans** — view and manage banned users
+- **Batch Access** — view and manage the batch download whitelist
+
+**Config**
+- **Proxies** — proxy rotation history and current active proxy
+- **Network** — outbound request stats, error rates
+- **Cache** — track file_id cache stats (size, hit rate, stale evictions)
+- **System** — bot uptime, process stats
 
 **Real-time updates via WebSocket** — all numbers, charts, and batch progress update automatically every 5 seconds without page refresh. Charts refresh only when underlying data changes. Auto-reconnects on disconnect with exponential backoff; the status indicator in the sidebar turns orange (reconnecting) or red (disconnected) on connection loss.
 
 **UX features:**
-- Active tab is saved in the URL hash (`#ym`, `#sc`, `#log`) — survives page refresh
+- Active tab is saved in the URL hash (`#ym`, `#spotify`, `#sc`, `#log`, `#renames`, `#users`, `#bans`, `#batch`, `#proxies`, `#network`, `#cache`, `#system`) — survives page refresh
 - Logout button in the sidebar — clears auth cookie
 
 **Access:**
@@ -385,7 +441,8 @@ Set `DASHBOARD_TOKEN` in `.env` (generate with `openssl rand -hex 20`), then ope
 | Bot framework | [aiogram 3](https://docs.aiogram.dev/) (async FSM) |
 | Yandex Music API | [yandex-music](https://github.com/MarshalX/yandex-music-api) 2.x |
 | Spotify API | [spotipy](https://github.com/spotipy-dev/spotipy) 2.x |
-| SoundCloud downloader | [yt-dlp](https://github.com/yt-dlp/yt-dlp) |
+| VK Music API | [vkpymusic](https://github.com/lordralinc/vkpymusic) 2.x (WIP) |
+| SoundCloud / YouTube downloader | [yt-dlp](https://github.com/yt-dlp/yt-dlp) |
 | Fuzzy matching | [rapidfuzz](https://github.com/rapidfuzz/RapidFuzz) |
 | OAuth callback + webhook | aiohttp (built into bot process) |
 | Audio metadata | [mutagen](https://github.com/quodlibet/mutagen) |
@@ -419,10 +476,13 @@ Set `DASHBOARD_TOKEN` in `.env` (generate with `openssl rand -hex 20`), then ope
 - После экспорта — кнопки «Скачать с SoundCloud» и «Фильтр по исполнителю»
 
 **Плейлист / Альбом по ссылке**
-- Выбор источника: **Яндекс Музыка** или **Spotify**
-- **Яндекс Музыка:** iframe-код из приложения, прямая ссылка, `lk.UUID` или **ссылка на альбом** (`music.yandex.ru/album/ID`)
+- Выбор источника: **Яндекс Музыка**, **Spotify**, **SoundCloud / YouTube по ссылке** или **плейлист YouTube**
+- **ЯМ — по ссылке или embed:** iframe-код из приложения, прямая ссылка, `lk.UUID` или **ссылка на альбом** (`music.yandex.ru/album/ID`)
+- **ЯМ — мои плейлисты:** выбор любого YM-плейлиста (включая ❤️ Лайки) — аналог батчевого флоу из раздела «Скачать MP3»
 - **Spotify:** ссылка на плейлист (`open.spotify.com/playlist/...`) или **альбом** (`open.spotify.com/album/ID`)
-- Два действия после загрузки:
+- **SoundCloud / YouTube по ссылке:** вставь SC или YT ссылку — батч стартует сразу
+- **YouTube — плейлист по ссылке:** вставь ссылку на YT плейлист — полное предстартовое меню → батч mp3 (нужен batch-доступ)
+- Два действия после загрузки (ЯМ / Spotify):
   - **Скачать все** — открывает предстартовое меню: выбор порядка (с первого / с последнего), продолжить с конкретного трека, **выбрать конкретные треки** (поиск по плейлисту, переключение по одному, добавить всех от исполнителя) или **фильтр по исполнителю** (сузить плейлист до одного артиста перед стартом); затем батчевое скачивание через SoundCloud (с YouTube-фолбэком)
   - **Фильтр по исполнителю** — введи имя, получи `.txt` с треками, можно скачать отфильтрованный список через то же предстартовое меню
 - Если задан `YM_BOT_TOKEN`, пользователям не нужно авторизоваться — бот читает публичные плейлисты через бот-токен
@@ -456,6 +516,13 @@ Set `DASHBOARD_TOKEN` in `.env` (generate with `openssl rand -hex 20`), then ope
 - **Авто-очистка устаревшего кэша**: если Telegram отклоняет закэшированный `file_id`, запись автоматически удаляется из кэша и запускается свежий поиск («⏳ Кэш устарел, ищу заново…»)
 - **Ротация прокси SC**: задай `SC_PROXIES` со списком fallback-прокси через запятую — при IP-бане бот переключается на следующий прокси автоматически и уведомляет администратора; все попытки ротации прозрачны для пользователя
 - **YouTube-фолбэк при бане SC**: если SoundCloud недоступен (IP-бан / все прокси исчерпаны), при одиночном поиске появляется кнопка **«🔍 Найти на YouTube»** — один тап запускает поиск на YouTube с тем же запросом, повторный ввод не нужен
+
+**VK Музыка (WIP)**
+- Кнопка **«🎵 Найти на VK Музыке»** есть в меню «Скачать MP3», но на данный момент закрыта для обычных пользователей (`🚧 Раздел в разработке`; для администратора — полнофункционально)
+- Требует `VK_TOKEN` (Kate Mobile токен через vkpymusic) в `.env`
+- Тот же cache-first флоу: сначала ищет в PostgreSQL file_id кэше, при промахе — скачивает с VK
+- Та же логика fuzzy auto-pick (порог 80%) + ручной выбор из топ-5
+- Скачивает прямые MP3 URL от VK; метаданные пишет через mutagen
 
 **Интеграция со Spotify (автоматический OAuth)**
 - Spotify встроен в разделы **Экспорт** и **Плейлист/Альбом по ссылке** — не отдельная кнопка на главном экране
@@ -492,11 +559,19 @@ Set `DASHBOARD_TOKEN` in `.env` (generate with `openssl rand -hex 20`), then ope
 - Те же fuzzy-метрики что и в обычном кэше (rapidfuzz, порог 70)
 - Inline-ответы — только ранее скачанные и закэшированные треки; новые треки нужно искать в боте
 
+**Исправление тегов трека**
+- Запускается кнопкой **«Исправить теги трека»** в главном меню или автоматически при отправке аудио-файла в любой момент (вне активного флоу)
+- **Пошаговый редактор**: аудио → название → исполнитель → необязательная обложка (фото) → бот возвращает файл с исправленными метаданными
+- Поддерживает MP3 (через ffmpeg), FLAC, MP4/AAC, другие форматы (через mutagen); обложка встраивается для всех форматов
+- Работает с прямыми вложениями и пересланными аудио-сообщениями
+- После теггирования: кнопка «Исправить ещё трек» или возврат в меню
+- Если загрузка/перезапись не удалась — повторно отправляет оригинальный `file_id` с новыми метаданными (best-effort фолбэк)
+
 **Общее**
-- **Веб-дашборд** — **4 вкладки**: Яндекс Музыка / Spotify / SC+YouTube / Лог событий; раздаётся ботом по `/dashboard`; **real-time обновления через WebSocket** (каждые 5 сек); hash-навигация по вкладкам; кнопка выхода; защита через `DASHBOARD_TOKEN`
+- **Веб-дашборд** — **12 вкладок** (Источники: ЯМ / Spotify / SC+YouTube; Логи: Лог событий / Tag Editor; Пользователи; Модерация: Баны / Batch Access; Конфиг: Прокси / Сеть / Кэш / Система); раздаётся ботом по `/dashboard`; **real-time обновления через WebSocket** (каждые 5 сек); hash-навигация по вкладкам; кнопка выхода; защита через `DASHBOARD_TOKEN`
 - PostgreSQL хранит события, состояние батча, кэш file_id, банлист, вайтлист, запросы
 - Redis FSM (обязателен — бот не стартует если Redis недоступен)
-- Стек middleware: **проверка бана** → throttling → защита от устаревших кнопок → авто-ответ на callback
+- Стек middleware: **проверка бана** → throttling → защита от устаревших кнопок → **дедупликация** (update_id в Redis, TTL 24 ч — защита от двойной обработки при смене polling↔webhook) → авто-ответ на callback
 - **Управление доступом к батчу**: env `BATCH_ALLOWED_USERS` + DB-вайтлист + система запросов в боте
 - **Bot commands** регистрируются при старте: `/start`, `/faq`, `/mystats` (`/admin` намеренно не добавлен в список подсказок)
 - **Webhook-режим**: задай `WEBHOOK_URL` в `.env` для переключения с polling на webhook — бот получает апдейты мгновенно через HTTPS; без этой переменной используется long polling
@@ -522,23 +597,32 @@ Set `DASHBOARD_TOKEN` in `.env` (generate with `openssl rand -hex 20`), then ope
      │         └─ Мои лайки           → OAuth (браузер, авто) → .txt / .csv  [+ Скачать | Фильтр]
      │
      ├─ 🎵 Скачать MP3
-     │    ├─ 🔍 Найти на SoundCloud  → кэш → (⚡ мгновенно) или поиск → mp3  [+ Скачать ещё]
-     │    ├─ 🔍 Найти на YouTube     → кэш → (⚡ мгновенно) или поиск → mp3  [+ Скачать ещё]
-     │    ├─ 🔗 По ссылке            → ссылка SC/YT → mp3, альбом или батч
-     │    └─ 📥 Плейлист из ЯМ       → OAuth-токен → выбор плейлиста (включая ❤️ Лайки) → предстартовое меню → батч mp3
+     │    ├─ 🔍 Найти на SoundCloud      → кэш → (⚡ мгновенно) или поиск → mp3  [+ Скачать ещё]
+     │    ├─ 🔍 Найти на YouTube         → кэш → (⚡ мгновенно) или поиск → mp3  [+ Скачать ещё]
+     │    ├─ 🎵 Найти на VK Музыке (WIP) → только для администратора; кэш → авто-выбор или топ-5 → mp3
+     │    ├─ 🔗 По ссылке                → ссылка SC/YT → mp3, альбом или батч
+     │    └─ 📥 Плейлист из ЯМ           → OAuth-токен → выбор плейлиста (включая ❤️ Лайки) → предстартовое меню → батч mp3
+     │
+     ├─ 🏷 Исправить теги трека
+     │    → отправить аудио (вложение или пересылка) → название → исполнитель
+     │    → необязательная обложка → файл с исправленными тегами
+     │    (также запускается автоматически при отправке аудио вне активного флоу)
      │
      └─ 🔗 Плейлист / Альбом по ссылке
-          → Выбор источника: Яндекс Музыка | Spotify
+          → Выбор источника:
           │
-          ├─ Яндекс Музыка → iframe / URL / ссылка на альбом → бот загружает треки
-          └─ Spotify        → ссылка на плейлист / альбом    → бот загружает треки
-               → Выбор действия:
-                    ├─ Скачать все        → с первого | с последнего
-                    │                        | Продолжить с трека…
-                    │                        | Выбрать треки  → поиск / переключение / добавить по исполнителю
-                    │                        | Фильтр по исполнителю → имя → отфильтрованный список → то же меню
-                    │                        → батч mp3  [🔄 Retry при ошибках]
-                    └─ Фильтр по исполнителю → имя → .txt  [+ Скачать отфильтрованное → то же меню]
+          ├─ 🎵 ЯМ — по ссылке или embed   → iframe / URL / альбом → бот загружает треки
+          │                                   → Выбор действия:
+          │                                        ├─ Скачать все        → с первого | с последнего
+          │                                        │                        | Продолжить с трека…
+          │                                        │                        | Выбрать треки  → поиск / переключение / по исполнителю
+          │                                        │                        | Фильтр по исполнителю → имя → список → то же меню
+          │                                        │                        → батч mp3  [🔄 Retry при ошибках]
+          │                                        └─ Фильтр по исполнителю → имя → .txt  [+ Скачать]
+          ├─ 🎵 ЯМ — мои плейлисты          → выбор плейлиста → то же предстартовое меню → батч mp3
+          ├─ 🟢 Spotify                      → ссылка на плейлист / альбом → то же меню действий
+          ├─ ☁️ SC / YouTube — по ссылке    → ссылка SC или YT → батч mp3
+          └─ 🎬 YouTube — плейлист по ссылке → ссылка YT → батч mp3  (нужен batch-доступ)
 
 /faq     → возможности + политика конфиденциальности  [+ Написать администратору]
 /admin   → панель администратора (только ADMIN_ID)
@@ -558,16 +642,19 @@ music-export-bot/
 │   │   ├── inline_router.py  # Inline-запросы: fuzzy-поиск по кэшу → InlineQueryResultCachedAudio; диплинк при промахе
 │   │   ├── sc_router.py      # SCSearchFlow + SCBatchFlow + хелперы скачивания + retry
 │   │   ├── spotify_router.py # SpotifyFlow: плейлисты + лайки OAuth + авто callback
+│   │   ├── audio_tag_router.py # AudioTagFlow: теггирование аудио-файлов (название/исполнитель/обложка) через mutagen + ffmpeg
+│   │   ├── vk_router.py      # VKSearchFlow: поиск и скачивание VK Музыки (WIP, guard только для администратора)
 │   │   ├── ym_router.py      # ExportFlow: экспорт YM, доставка, фильтр; /faq + контакт
 │   │   └── yms_router.py     # YMShareFlow: плейлист/альбом по ссылке/embed
-│   ├── states.py          # ExportFlow + SCSearchFlow + SCBatchFlow + YMShareFlow + SpotifyFlow + AdminFlow + FAQFlow
+│   ├── states.py          # ExportFlow + SCSearchFlow + SCBatchFlow + YMShareFlow + SpotifyFlow + AdminFlow + FAQFlow + AudioTagFlow + VKSearchFlow
 │   ├── keyboards.py       # Inline-клавиатуры
-│   └── middleware.py      # BanMiddleware + Throttling + StaleButton + CallbackAnswer
+│   └── middleware.py      # BanMiddleware + Throttling + StaleButton + DeduplicateUpdate + CallbackAnswer
 ├── core/
 │   ├── base_source.py     # AbstractMusicSource (расширяемо)
 │   ├── spotify_source.py  # Spotify: публичные плейлисты + альбомы + лайки OAuth
 │   ├── ym_source.py       # YM: batch fetch + парсинг ссылок плейлистов и альбомов
-│   └── sc_downloader.py   # yt-dlp: search() + search_youtube() + download() + extract_url_info(); исправление метаданных через mutagen
+│   ├── sc_downloader.py   # yt-dlp: search() + search_youtube() + download() + extract_url_info(); исправление метаданных через mutagen
+│   └── vk_source.py       # VK Музыка: поиск + прямое скачивание MP3 через vkpymusic (WIP)
 ├── utils/
 │   ├── export.py          # Асинхронная запись .txt / .csv
 │   ├── db.py              # Пул соединений PostgreSQL + создание схемы
@@ -612,6 +699,10 @@ SC_SERVER_IP=
 # Помогает обходить rate-limiting; монтируй в контейнер: -v /path/to/sc_cookies.txt:/app/sc_cookies.txt
 SC_COOKIE_FILE=
 
+# Путь к Netscape cookie-файлу для авторизации на YouTube (опционально)
+# Помогает обходить возрастные блокировки и rate-limiting на YouTube
+YT_COOKIE_FILE=
+
 # Макс. одновременных батч-загрузок SC (по умолчанию: 2)
 SC_MAX_BATCH_DOWNLOADS=2
 
@@ -620,6 +711,10 @@ POSTGRES_URL=postgresql://user:password@host:5432/music_bot
 
 # Опционально — бот-уровневый токен YM для чтения публичных плейлистов без авторизации
 YM_BOT_TOKEN=
+
+# Kate Mobile токен VK (vkpymusic) — нужен для VK Музыки (WIP-функция)
+# Оставь пустым чтобы полностью отключить VK Музыку
+VK_TOKEN=
 
 # Управление доступом к батчевому скачиванию (дефолт: * = все)
 #   ""                     — отключено для всех (DB-вайтлист всё ещё работает)
@@ -751,15 +846,33 @@ docker run --rm \
 
 ### 📊 Дашборд
 
-Веб-дашборд раздаётся самим ботом по адресу `/dashboard` (отдельный процесс не нужен). Читает из PostgreSQL, разбит на **4 вкладки**:
-- **📊 Яндекс Музыка** — статистика экспортов названий треков в .txt/.csv (не аудиофайлов)
-- **🟢 Spotify** — загрузки плейлистов/альбомов, лайков, экспорты по формату
-- **☁️ SC / YouTube** — раздельные метрики для SoundCloud и YouTube, статистика батча
-- **📋 Лог событий** — таблица последних событий с фильтрацией
+Веб-дашборд раздаётся самим ботом по адресу `/dashboard` (отдельный процесс не нужен). Читает из PostgreSQL, разбит на **12 вкладок** в 5 сайдбар-секциях:
+
+**Источники**
+- **Яндекс Музыка** — статистика экспортов треков YM (.txt/.csv), суточная и общая
+- **Spotify** — загрузки плейлистов/альбомов, лайки, статистика по форматам
+- **SC / YouTube** — раздельные метрики SC и YouTube, статистика батча; live-индикатор активного батча в сайдбаре
+
+**Логи**
+- **Лог событий** — таблица последних событий с фильтрацией (пользователь, действие, результат, время)
+- **Tag Editor** — история переименований треков через функцию «Исправить теги»
+
+**Пользователи**
+- **Пользователи** — таблица активности: загрузки, экспорты, дата первой активности
+
+**Модерация**
+- **Баны** — просмотр и управление банлистом
+- **Batch Access** — просмотр и управление вайтлистом батч-загрузок
+
+**Конфиг**
+- **Прокси** — история ротации прокси, текущий активный прокси
+- **Сеть** — статистика исходящих запросов, частота ошибок
+- **Кэш** — статистика file_id кэша (размер, hit rate, вытеснение устаревших записей)
+- **Система** — аптайм бота, статистика процесса
 
 **Real-time обновления через WebSocket** — все числа, графики и прогресс батча обновляются автоматически каждые 5 секунд без обновления страницы. Графики перезапрашиваются только при изменении данных. Автопереподключение при обрыве.
 
-**UX:** активная вкладка сохраняется в URL hash (`#ym`, `#sc`, `#log`) и восстанавливается при обновлении; кнопка выхода в сайдбаре.
+**UX:** активная вкладка сохраняется в URL hash (`#ym`, `#spotify`, `#sc`, `#log`, `#renames`, `#users`, `#bans`, `#batch`, `#proxies`, `#network`, `#cache`, `#system`) и восстанавливается при обновлении; кнопка выхода в сайдбаре.
 
 **Доступ:**
 Задай `DASHBOARD_TOKEN` в `.env`, затем открой `https://ВАШ_ДОМЕН/dashboard`. Авторизация через куки — токен остаётся до очистки куков.
@@ -771,6 +884,7 @@ docker run --rm \
 | Фреймворк бота | [aiogram 3](https://docs.aiogram.dev/) (async FSM) |
 | API Яндекс Музыки | [yandex-music](https://github.com/MarshalX/yandex-music-api) 2.x |
 | API Spotify | [spotipy](https://github.com/spotipy-dev/spotipy) 2.x |
+| API VK Музыки | [vkpymusic](https://github.com/lordralinc/vkpymusic) 2.x (WIP) |
 | Загрузчик SC/YT | [yt-dlp](https://github.com/yt-dlp/yt-dlp) |
 | Fuzzy-матч | [rapidfuzz](https://github.com/rapidfuzz/RapidFuzz) |
 | OAuth callback + webhook | aiohttp (встроен в процесс бота) |
