@@ -60,6 +60,7 @@ from .common import (
     download_with_proxy_rotation,
     download_yt_with_proxy_rotation,
     extract_yt_url_info_with_proxy_rotation,
+    reset_yt_proxy,
     search_with_proxy_rotation,
 )
 from bot.tracker import set_active_msg
@@ -1706,7 +1707,10 @@ async def _sc_download_and_send(
         if source == "sc":
             path, meta = await download_with_proxy_rotation(result.url, user_id, msg.bot)
         else:
-            path, meta = await sc_downloader.download(result.url, user_id)
+            try:
+                path, meta = await sc_downloader.download(result.url, user_id)
+            finally:
+                reset_yt_proxy()
     except sc_downloader.SCBanError:
         log.warning("SC download ban, all proxies exhausted user=%s url=%s", user_id, result.url)
         await log_event(user_id, username, "sc_search", "error", detail="ban_all_proxies")
