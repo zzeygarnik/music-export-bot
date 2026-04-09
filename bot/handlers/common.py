@@ -616,14 +616,15 @@ async def download_with_proxy_rotation(url: str, user_id: int, bot) -> tuple[str
     return await sc_downloader.download(url, user_id)
 
 
-async def download_yt_with_proxy_rotation(url: str, user_id: int, bot) -> tuple[str, dict]:
+async def download_yt_with_proxy_rotation(url: str, user_id: int, bot, on_geo_block=None) -> tuple[str, dict]:
     """Download from YouTube with automatic proxy rotation on ban errors.
 
     Uses _yt_proxy_index independently from SC. Smart allocation prefers
     a proxy not already used by SC when both need one simultaneously.
+    on_geo_block: optional async callable called once when a geo-block is first detected.
     """
     from core import sc_downloader
-    from core.sc_downloader import SCBanError
+    from core.sc_downloader import SCBanError, GeoBlockError
 
     max_attempts = len(_sc_proxies) + 2
     rotated = False
@@ -645,7 +646,12 @@ async def download_yt_with_proxy_rotation(url: str, user_id: int, bot) -> tuple[
             if rotated:
                 reset_yt_proxy()
             return result
-        except SCBanError:
+        except SCBanError as exc:
+            if not rotated and isinstance(exc, GeoBlockError) and on_geo_block:
+                try:
+                    await on_geo_block()
+                except Exception:
+                    pass
             rotated = True
             had_more = await rotate_yt_proxy(bot)
             if not had_more:
@@ -659,17 +665,25 @@ async def download_yt_with_proxy_rotation(url: str, user_id: int, bot) -> tuple[
     return result
 
 
-async def extract_yt_url_info_with_proxy_rotation(url: str, bot) -> dict:
-    """Extract URL info from YouTube with proxy rotation on geo/ban errors."""
+async def extract_yt_url_info_with_proxy_rotation(url: str, bot, on_geo_block=None) -> dict:
+    """Extract URL info from YouTube with proxy rotation on geo/ban errors.
+
+    on_geo_block: optional async callable called once when a geo-block is first detected.
+    """
     from core import sc_downloader
-    from core.sc_downloader import SCBanError
+    from core.sc_downloader import SCBanError, GeoBlockError
 
     max_attempts = len(_sc_proxies) + 2
     rotated = False
     for attempt in range(max_attempts):
         try:
             return await sc_downloader.extract_url_info(url)
-        except SCBanError:
+        except SCBanError as exc:
+            if not rotated and isinstance(exc, GeoBlockError) and on_geo_block:
+                try:
+                    await on_geo_block()
+                except Exception:
+                    pass
             rotated = True
             had_more = await rotate_yt_proxy(bot)
             if not had_more:

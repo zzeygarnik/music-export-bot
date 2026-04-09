@@ -28,6 +28,10 @@ def service_keyboard() -> InlineKeyboardMarkup:
             text="Исправить теги трека",
             callback_data="service:audio_tag",
         )],
+        [InlineKeyboardButton(
+            text="Новости об этом и других проектах",
+            url="https://t.me/zgarnik",
+        )],
     ])
 
 
