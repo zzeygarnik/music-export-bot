@@ -7,7 +7,7 @@ pydantic-settings==2.6.1
 redis==5.2.1
 streamlit==1.41.1
 pandas==2.2.3
-yt-dlp>=2024.1.1
+yt-dlp[default]>=2026.3.17
 rapidfuzz>=3.0.0
 asyncpg>=0.29.0
 spotipy>=2.24.0
