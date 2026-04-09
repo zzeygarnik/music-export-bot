@@ -642,15 +642,21 @@ async def download_yt_with_proxy_rotation(url: str, user_id: int, bot) -> tuple[
                         )
                     except Exception:
                         pass
+            if rotated:
+                reset_yt_proxy()
             return result
         except SCBanError:
             rotated = True
             had_more = await rotate_yt_proxy(bot)
             if not had_more:
+                reset_yt_proxy()
                 raise
         except Exception:
             raise
-    return await sc_downloader.download(url, user_id)
+    result = await sc_downloader.download(url, user_id)
+    if rotated:
+        reset_yt_proxy()
+    return result
 
 
 async def extract_yt_url_info_with_proxy_rotation(url: str, bot) -> dict:
@@ -671,6 +677,14 @@ async def extract_yt_url_info_with_proxy_rotation(url: str, bot) -> dict:
         except Exception:
             raise
     return await sc_downloader.extract_url_info(url)
+
+
+def reset_yt_proxy() -> None:
+    """Reset YT to direct IP after a per-download proxy use."""
+    global _yt_proxy_index
+    from core import sc_downloader
+    _yt_proxy_index = -1
+    sc_downloader.set_yt_active_proxy("")
 
 
 async def _notify_proxy_result(bot, proxy_label: str, success: bool, detail: str = "") -> None:
