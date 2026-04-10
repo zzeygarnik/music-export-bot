@@ -967,6 +967,7 @@ async def on_sc_ym_token(message: Message, state: FSMContext) -> None:
         return
 
     status_msg = await message.answer("⏳ Проверяю токен…")
+    set_active_msg(user_id, status_msg.message_id)
     try:
         source = YandexMusicSource(token)
         await source._get_client()
