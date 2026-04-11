@@ -1757,6 +1757,7 @@ async def _sc_download_and_send(
             audio=FSInputFile(path, filename=f"{result.artist} - {result.title}.mp3"),
             title=meta.get("title") or result.title,
             performer=meta.get("artist") or result.artist,
+            duration=meta.get("duration") or result.duration or None,
         )
         if sent_msg and sent_msg.audio and cache_key:
             await save_cached_file_id(cache_key, sent_msg.audio.file_id, "manual",
@@ -1916,6 +1917,7 @@ async def _run_batch_download(
                     audio=FSInputFile(r.path, filename=f"{r.artist} - {r.title}.mp3"),
                     title=r.meta.get("title") or r.title,
                     performer=r.meta.get("artist") or r.artist,
+                    duration=r.meta.get("duration") or r.duration or None,
                 )
                 sent = True
                 downloaded_count += 1
