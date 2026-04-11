@@ -161,67 +161,63 @@ _LOGIN_PAGE_HTML = """\
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ZGRNK Music — Login</title>
+<title>ZGRNK Music \u2014 Login</title>
 <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@900&family=Syne:wght@400;600;700&family=Fira+Code:wght@300;400&display=swap" rel="stylesheet">
 <style>
-*,*::before,*::after{{box-sizing:border-box;margin:0;padding:0}}
-:root{{--bg:#0d0d14;--surface:#13131a;--primary:#d2bbff;--accent:#7c3aed;
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0d0d14;--surface:#13131a;--primary:#d2bbff;--accent:#7c3aed;
   --red:#f87171;--text:#e4e1ec;--muted:#9b93a8;--dim:#4d4760;
   --border:rgba(74,68,85,.45);
-  --fd:'Big Shoulders Display',sans-serif;--fu:'Syne',sans-serif;--fm:'Fira Code',monospace}}
-html,body{{height:100%;overflow:hidden;background:var(--bg);color:var(--text);
-  font-family:var(--fu);font-size:14px;-webkit-font-smoothing:antialiased}}
-/* grid + corner glow */
-body::before{{content:'';position:fixed;inset:0;pointer-events:none;
+  --fd:'Big Shoulders Display',sans-serif;--fu:'Syne',sans-serif;--fm:'Fira Code',monospace}
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);
+  font-family:var(--fu);font-size:14px;-webkit-font-smoothing:antialiased}
+body::before{content:'';position:fixed;inset:0;pointer-events:none;
   background-image:linear-gradient(rgba(124,58,237,.035) 1px,transparent 1px),
     linear-gradient(90deg,rgba(124,58,237,.035) 1px,transparent 1px);
-  background-size:52px 52px;z-index:0}}
-body::after{{content:'';position:fixed;top:0;right:0;width:400px;height:400px;
+  background-size:52px 52px;z-index:0}
+body::after{content:'';position:fixed;top:0;right:0;width:400px;height:400px;
   background:radial-gradient(circle at 100% 0,rgba(124,58,237,.1),transparent 65%);
-  pointer-events:none;z-index:0}}
-/* wrap */
-.wrap{{position:relative;z-index:1;height:100%;display:flex;
-  align-items:center;justify-content:center}}
-/* glow orb */
-.login-glow{{position:fixed;width:520px;height:520px;border-radius:50%;
+  pointer-events:none;z-index:0}
+.wrap{position:relative;z-index:1;height:100%;display:flex;
+  align-items:center;justify-content:center}
+.login-glow{position:fixed;width:520px;height:520px;border-radius:50%;
   background:radial-gradient(circle,rgba(124,58,237,.13),transparent 65%);
   pointer-events:none;transform:translate(-50%,-50%);z-index:0;
-  transition:left .07s linear,top .07s linear}}
-/* card */
-.lbox{{position:relative;z-index:1;width:340px;
-  transition:transform .14s ease-out;will-change:transform;transform-style:preserve-3d}}
-.l-title{{font-family:var(--fd);font-weight:900;font-size:3.4rem;line-height:.95;
-  letter-spacing:.06em;color:var(--primary);text-shadow:0 0 60px rgba(210,187,255,.18)}}
-.l-sub{{font-family:var(--fm);font-size:9px;letter-spacing:.35em;color:var(--dim);
-  text-transform:uppercase;margin-top:8px}}
-.l-rule{{width:100%;height:1px;margin:32px 0;
-  background:linear-gradient(90deg,var(--accent) 0%,transparent 100%)}}
-.l-label{{display:block;font-family:var(--fm);font-size:9px;letter-spacing:.28em;
-  text-transform:uppercase;color:var(--muted);margin-bottom:10px}}
-.l-field{{position:relative;margin-bottom:20px}}
-.l-field::after{{content:'';position:absolute;bottom:0;left:0;width:0;height:2px;
-  background:var(--accent);transition:width .3s ease}}
-.l-field:focus-within::after{{width:100%}}
-.l-input{{width:100%;background:transparent;border:none;
+  transition:left .07s linear,top .07s linear}
+.lbox{position:relative;z-index:1;width:340px;
+  transition:transform .14s ease-out;will-change:transform;transform-style:preserve-3d}
+.l-title{font-family:var(--fd);font-weight:900;font-size:3.4rem;line-height:.95;
+  letter-spacing:.06em;color:var(--primary);text-shadow:0 0 60px rgba(210,187,255,.18)}
+.l-sub{font-family:var(--fm);font-size:9px;letter-spacing:.35em;color:var(--dim);
+  text-transform:uppercase;margin-top:8px}
+.l-rule{width:100%;height:1px;margin:32px 0;
+  background:linear-gradient(90deg,var(--accent) 0%,transparent 100%)}
+.l-label{display:block;font-family:var(--fm);font-size:9px;letter-spacing:.28em;
+  text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+.l-field{position:relative;margin-bottom:20px}
+.l-field::after{content:'';position:absolute;bottom:0;left:0;width:0;height:2px;
+  background:var(--accent);transition:width .3s ease}
+.l-field:focus-within::after{width:100%}
+.l-input{width:100%;background:transparent;border:none;
   border-bottom:1px solid var(--border);padding:8px 0;
   color:var(--text);font-family:var(--fm);font-size:15px;
-  letter-spacing:.12em;outline:none;transition:border-color .25s}}
-.l-input:focus{{border-bottom-color:rgba(124,58,237,.5)}}
-.l-btn{{width:100%;padding:13px 24px;background:transparent;
+  letter-spacing:.12em;outline:none;transition:border-color .25s}
+.l-input:focus{border-bottom-color:rgba(124,58,237,.5)}
+.l-btn{width:100%;padding:13px 24px;background:transparent;
   border:1px solid var(--accent);color:var(--primary);
   font-family:var(--fu);font-size:11px;font-weight:700;
   letter-spacing:.22em;text-transform:uppercase;cursor:pointer;
-  position:relative;overflow:hidden;transition:color .25s;margin-top:6px}}
-.l-btn::before{{content:'';position:absolute;inset:0;background:var(--accent);
-  transform:translateX(-100%);transition:transform .28s ease}}
-.l-btn:hover{{color:#fff}}
-.l-btn:hover::before{{transform:translateX(0)}}
-.l-btn span{{position:relative;z-index:1}}
-.l-err{{font-family:var(--fm);font-size:9px;color:var(--red);
-  letter-spacing:.15em;margin-top:12px;display:none}}
-.l-err.on{{display:block}}
-.l-foot{{margin-top:28px;font-family:var(--fm);font-size:9px;
-  color:var(--dim);letter-spacing:.18em;text-transform:uppercase}}
+  position:relative;overflow:hidden;transition:color .25s;margin-top:6px}
+.l-btn::before{content:'';position:absolute;inset:0;background:var(--accent);
+  transform:translateX(-100%);transition:transform .28s ease}
+.l-btn:hover{color:#fff}
+.l-btn:hover::before{transform:translateX(0)}
+.l-btn span{position:relative;z-index:1}
+.l-err{font-family:var(--fm);font-size:9px;color:var(--red);
+  letter-spacing:.15em;margin-top:12px;display:none}
+.l-err.on{display:block}
+.l-foot{margin-top:28px;font-family:var(--fm);font-size:9px;
+  color:var(--dim);letter-spacing:.18em;text-transform:uppercase}
 </style>
 </head>
 <body>
@@ -234,42 +230,41 @@ body::after{{content:'';position:fixed;top:0;right:0;width:400px;height:400px;
       <label class="l-label" for="tok">Access Token</label>
       <div class="l-field">
         <input class="l-input" id="tok" name="token" type="password"
-               placeholder="••••••••••••" autocomplete="off" spellcheck="false">
+               placeholder="\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7" autocomplete="off" spellcheck="false">
       </div>
-      <button class="l-btn" type="submit"><span>Authenticate →</span></button>
+      <button class="l-btn" type="submit"><span>Authenticate &#8594;</span></button>
       <div class="l-err" id="err">Invalid access token</div>
     </form>
-    <div class="l-foot">Admin access only &nbsp;·&nbsp; Rate limited</div>
+    <div class="l-foot">Admin access only &nbsp;&middot;&nbsp; Rate limited</div>
   </div>
 </div>
 <script>
-/* show error from query param */
 const p = new URLSearchParams(location.search);
 if (p.get('err')) document.getElementById('err').classList.add('on');
 
-/* glow + 3-D tilt */
-(()=>{{
-  const wrap = document.getElementById('wrap');
-  const lbox = document.getElementById('lbox');
-  const glow = document.createElement('div');
+(function() {
+  var wrap = document.getElementById('wrap');
+  var lbox = document.getElementById('lbox');
+  var glow = document.createElement('div');
   glow.className = 'login-glow';
-  glow.style.left = '-999px'; glow.style.top = '-999px';
+  glow.style.left = '-999px';
+  glow.style.top  = '-999px';
   document.body.appendChild(glow);
 
-  wrap.addEventListener('mousemove', e => {{
+  wrap.addEventListener('mousemove', function(e) {
     glow.style.left = e.clientX + 'px';
     glow.style.top  = e.clientY + 'px';
-    const r  = wrap.getBoundingClientRect();
-    const dx = (e.clientX - r.left  - r.width  / 2) / (r.width  / 2);
-    const dy = (e.clientY - r.top   - r.height / 2) / (r.height / 2);
+    var r  = wrap.getBoundingClientRect();
+    var dx = (e.clientX - r.left  - r.width  / 2) / (r.width  / 2);
+    var dy = (e.clientY - r.top   - r.height / 2) / (r.height / 2);
     lbox.style.transform =
-      `perspective(900px) rotateY(${{(dx*6).toFixed(2)}}deg) rotateX(${{(-dy*4).toFixed(2)}}deg)`;
-  }});
-  wrap.addEventListener('mouseleave', () => {{
+      'perspective(900px) rotateY(' + (dx * 6).toFixed(2) + 'deg) rotateX(' + (-dy * 4).toFixed(2) + 'deg)';
+  });
+  wrap.addEventListener('mouseleave', function() {
     glow.style.left = '-999px';
     lbox.style.transform = 'perspective(900px) rotateY(0deg) rotateX(0deg)';
-  }});
-}})();
+  });
+}());
 </script>
 </body>
 </html>"""
