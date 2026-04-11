@@ -29,12 +29,21 @@ def parse_code_from_redirect(redirect_url: str) -> str | None:
 
 def _collect_tracks(items: list) -> list[dict]:
     tracks = []
+    skipped_types: list[str] = []
     for item in items:
         t = item.get("track") if isinstance(item, dict) and "track" in item else item
-        if not t or t.get("type") != "track":
+        if not t:
+            skipped_types.append("null")
+            continue
+        item_type = t.get("type", "unknown")
+        if item_type != "track":
+            skipped_types.append(item_type)
             continue
         artist = ", ".join(a["name"] for a in t.get("artists", []))
         tracks.append({"artist": artist, "title": t["name"]})
+    if skipped_types:
+        log.info("Spotify _collect_tracks: skipped %d items by type: %s",
+                 len(skipped_types), skipped_types[:10])
     return tracks
 
 
@@ -76,9 +85,18 @@ class SpotifySource:
         sp = spotipy.Spotify(auth=access_token)
         tracks = []
         results = sp.current_user_saved_tracks(limit=50)
+        page = 0
         while results:
-            tracks.extend(_collect_tracks(results["items"]))
+            items = results.get("items") or []
+            collected = _collect_tracks(items)
+            log.debug(
+                "Spotify liked page %d: api_items=%d collected=%d total_so_far=%d",
+                page, len(items), len(collected), len(tracks) + len(collected),
+            )
+            tracks.extend(collected)
             results = sp.next(results) if results.get("next") else None
+            page += 1
+        log.info("Spotify liked tracks total: %d", len(tracks))
         return tracks
 
     def _fetch_album_sync(self, album_id: str) -> tuple[str, list[dict]]:
