@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import re
+import subprocess
 import time
 from dataclasses import dataclass
 
@@ -284,6 +285,34 @@ async def download(url: str, user_id: int) -> tuple[str, dict]:
     raise last_exc  # type: ignore[misc]
 
 
+def _remux_mp3_sync(path: str) -> None:
+    """
+    Remux MP3 in-place via ffmpeg to add Xing/Info VBR header (TOC).
+    Without it iOS Telegram cannot seek backwards in VBR MP3 files.
+    Silently skips if ffmpeg is unavailable or fails.
+    """
+    tmp = path + ".remux.mp3"
+    try:
+        r = subprocess.run(
+            ["ffmpeg", "-y", "-i", path, "-c:a", "copy", "-write_xing", "1", tmp],
+            capture_output=True,
+        )
+        if r.returncode == 0:
+            os.replace(tmp, path)
+        else:
+            log.debug("ffmpeg remux non-zero: %s", r.stderr.decode(errors="replace")[-300:])
+    except FileNotFoundError:
+        pass  # ffmpeg not available
+    except Exception as e:
+        log.debug("ffmpeg remux failed %s: %s", path, e)
+    finally:
+        if os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+
+
 def _fix_metadata_sync(path: str, meta: dict) -> dict:
     """
     Read embedded tags from the downloaded file, fix artist/title if needed,
@@ -324,6 +353,10 @@ def _fix_metadata_sync(path: str, meta: dict) -> dict:
                 audio.save()
         except Exception:
             pass
+
+    # Remux MP3 to add Xing/Info VBR header — enables backward seeking on iOS Telegram
+    if path.lower().endswith(".mp3"):
+        _remux_mp3_sync(path)
 
     return {"artist": artist, "title": title, "duration": meta.get("duration", 0)}
 
