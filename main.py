@@ -163,6 +163,7 @@ _LOGIN_PAGE_HTML = """\
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ZGRNK Music \u2014 Login</title>
 <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@900&family=Syne:wght@400;600;700&family=Fira+Code:wght@300;400&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/tsparticles@2.12.0/tsparticles.bundle.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{--bg:#0d0d14;--surface:#13131a;--primary:#d2bbff;--accent:#7c3aed;
@@ -180,10 +181,10 @@ body::after{content:'';position:fixed;top:0;right:0;width:400px;height:400px;
   pointer-events:none;z-index:0}
 .wrap{position:relative;z-index:1;height:100%;display:flex;
   align-items:center;justify-content:center}
+#tsparticles{position:fixed;inset:0;z-index:0;pointer-events:none}
 .login-glow{position:fixed;width:520px;height:520px;border-radius:50%;
   background:radial-gradient(circle,rgba(124,58,237,.13),transparent 65%);
-  pointer-events:none;transform:translate(-50%,-50%);z-index:0;
-  transition:left .07s linear,top .07s linear}
+  pointer-events:none;transform:translate(-50%,-50%);z-index:0}
 .lbox{position:relative;z-index:1;width:340px;
   transition:transform .14s ease-out;will-change:transform;transform-style:preserve-3d}
 .l-title{font-family:var(--fd);font-weight:900;font-size:3.4rem;line-height:.95;
@@ -221,6 +222,7 @@ body::after{content:'';position:fixed;top:0;right:0;width:400px;height:400px;
 </style>
 </head>
 <body>
+<div id="tsparticles"></div>
 <div class="wrap" id="wrap">
   <div class="lbox" id="lbox">
     <div class="l-title">ZGRNK<br>MUSIC</div>
@@ -241,6 +243,41 @@ body::after{content:'';position:fixed;top:0;right:0;width:400px;height:400px;
 <script>
 const p = new URLSearchParams(location.search);
 if (p.get('err')) document.getElementById('err').classList.add('on');
+
+document.addEventListener('DOMContentLoaded', function() {
+  tsParticles.load('tsparticles', {
+    fpsLimit: 60,
+    particles: {
+      number: { value: 90, density: { enable: true, area: 900 } },
+      color:  { value: '#ffffff' },
+      shape:  { type: 'circle' },
+      opacity: {
+        value: 0.4, random: true,
+        animation: { enable: true, speed: 0.8, minimumValue: 0.05, sync: false }
+      },
+      size: { value: { min: 1, max: 3 } },
+      links: { enable: false },
+      move: {
+        enable: true, speed: 0.45, direction: 'bottom',
+        random: true, straight: false,
+        outModes: { default: 'out' }
+      }
+    },
+    interactivity: {
+      detectsOn: 'window',
+      events: {
+        onHover: { enable: true, mode: 'grab' },
+        onClick: { enable: true, mode: 'push' },
+        resize: true
+      },
+      modes: {
+        grab: { distance: 160, links: { opacity: 0.45 } },
+        push: { quantity: 3 }
+      }
+    },
+    background: { color: 'transparent' }
+  });
+});
 
 (function() {
   var wrap = document.getElementById('wrap');
