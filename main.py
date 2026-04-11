@@ -135,6 +135,14 @@ def _check_auth(request: aiohttp_web.Request) -> bool:
     return request.cookies.get("dashboard_auth", "") == token
 
 
+def _check_csrf(request: aiohttp_web.Request) -> bool:
+    """Origin/Referer check for mutating requests (defense-in-depth on top of SameSite=Strict)."""
+    origin = request.headers.get("Origin") or request.headers.get("Referer", "")
+    if not origin:
+        return True  # same-host direct requests have no Origin
+    return request.host in origin
+
+
 async def _dashboard_handler(request: aiohttp_web.Request) -> aiohttp_web.Response:
     if not _check_auth(request):
         raise aiohttp_web.HTTPFound("/dashboard/login")
@@ -477,6 +485,21 @@ async def _test_proxy_url(proxy_url: str) -> tuple[bool, str]:
         return False, str(e)[:120]
 
 
+def _mask_proxy_url(url: str) -> str:
+    """Return proxy URL with password replaced by *** for safe display/logging."""
+    from urllib.parse import urlparse, urlunparse
+    try:
+        p = urlparse(url)
+        if p.password:
+            netloc = f"{p.username}:***@{p.hostname}"
+            if p.port:
+                netloc += f":{p.port}"
+            return urlunparse((p.scheme, netloc, p.path, p.params, p.query, p.fragment))
+    except Exception:
+        pass
+    return url
+
+
 def _proxy_short_label(url: str) -> str:
     """Extract host:port from proxy URL for display."""
     from urllib.parse import urlparse
@@ -614,6 +637,7 @@ async def _api_proxies_get(request: aiohttp_web.Request) -> aiohttp_web.Response
     for i, p in enumerate(proxies):
         result.append({
             **p,
+            "url": _mask_proxy_url(p["url"]),
             "active": p["url"] == active_sc_url,
             "active_sc": p["url"] == active_sc_url,
             "active_yt": p["url"] == active_yt_url,
@@ -625,6 +649,8 @@ async def _api_proxies_get(request: aiohttp_web.Request) -> aiohttp_web.Response
 async def _api_proxies_add(request: aiohttp_web.Request) -> aiohttp_web.Response:
     if not _check_auth(request):
         return aiohttp_web.Response(status=401)
+    if not _check_csrf(request):
+        return aiohttp_web.Response(status=403, text="CSRF check failed")
     try:
         body = await request.json()
         url = (body.get("url") or "").strip()
@@ -651,14 +677,14 @@ async def _api_proxies_add(request: aiohttp_web.Request) -> aiohttp_web.Response
 
     # Update runtime list
     hcommon._sc_proxies.append(url)
-    log.info("SC proxy added via dashboard: %s", url)
+    log.info("SC proxy added via dashboard: %s", _mask_proxy_url(url))
 
     # Notify admin
     try:
         await bot.send_message(
             settings.ADMIN_ID,
             f"🔌 <b>Новый SC прокси добавлен через дашборд</b>\n\n"
-            f"<code>{url}</code>\n"
+            f"<code>{_mask_proxy_url(url)}</code>\n"
             f"Метка: <b>{_proxy_short_label(url)}</b>",
             parse_mode="HTML",
         )
@@ -671,6 +697,8 @@ async def _api_proxies_add(request: aiohttp_web.Request) -> aiohttp_web.Response
 async def _api_proxies_delete(request: aiohttp_web.Request) -> aiohttp_web.Response:
     if not _check_auth(request):
         return aiohttp_web.Response(status=401)
+    if not _check_csrf(request):
+        return aiohttp_web.Response(status=403, text="CSRF check failed")
     try:
         idx = int(request.match_info["idx"])
     except (KeyError, ValueError):
@@ -692,14 +720,16 @@ async def _api_proxies_delete(request: aiohttp_web.Request) -> aiohttp_web.Respo
     hcommon._sc_proxy_index = -1
     sc_downloader.set_active_proxy("")
     hcommon.cancel_recovery_check()
-    log.info("SC proxy removed via dashboard: %s", removed["url"])
+    log.info("SC proxy removed via dashboard: %s", _mask_proxy_url(removed["url"]))
 
-    return aiohttp_web.Response(text=json.dumps({"removed": removed["url"]}), content_type="application/json")
+    return aiohttp_web.Response(text=json.dumps({"removed": _mask_proxy_url(removed["url"])}), content_type="application/json")
 
 
 async def _api_proxies_test(request: aiohttp_web.Request) -> aiohttp_web.Response:
     if not _check_auth(request):
         return aiohttp_web.Response(status=401)
+    if not _check_csrf(request):
+        return aiohttp_web.Response(status=403, text="CSRF check failed")
     try:
         idx = int(request.match_info["idx"])
     except (KeyError, ValueError):
@@ -740,6 +770,8 @@ async def _api_bans_get(request: aiohttp_web.Request) -> aiohttp_web.Response:
 async def _api_bans_add(request: aiohttp_web.Request) -> aiohttp_web.Response:
     if not _check_auth(request):
         return aiohttp_web.Response(status=401)
+    if not _check_csrf(request):
+        return aiohttp_web.Response(status=403, text="CSRF check failed")
     try:
         body     = await request.json()
         username = (body.get("username") or "").strip().lstrip("@") or None
@@ -773,6 +805,8 @@ async def _api_bans_add(request: aiohttp_web.Request) -> aiohttp_web.Response:
 async def _api_bans_delete(request: aiohttp_web.Request) -> aiohttp_web.Response:
     if not _check_auth(request):
         return aiohttp_web.Response(status=401)
+    if not _check_csrf(request):
+        return aiohttp_web.Response(status=403, text="CSRF check failed")
     try:
         user_id = int(request.match_info["user_id"])
     except (KeyError, ValueError):
@@ -798,6 +832,8 @@ async def _api_batch_wl_get(request: aiohttp_web.Request) -> aiohttp_web.Respons
 async def _api_batch_wl_add(request: aiohttp_web.Request) -> aiohttp_web.Response:
     if not _check_auth(request):
         return aiohttp_web.Response(status=401)
+    if not _check_csrf(request):
+        return aiohttp_web.Response(status=403, text="CSRF check failed")
     try:
         body     = await request.json()
         username = (body.get("username") or "").strip().lstrip("@") or None
@@ -830,6 +866,8 @@ async def _api_batch_wl_add(request: aiohttp_web.Request) -> aiohttp_web.Respons
 async def _api_batch_wl_delete(request: aiohttp_web.Request) -> aiohttp_web.Response:
     if not _check_auth(request):
         return aiohttp_web.Response(status=401)
+    if not _check_csrf(request):
+        return aiohttp_web.Response(status=403, text="CSRF check failed")
     try:
         user_id = int(request.match_info["user_id"])
     except (KeyError, ValueError):
@@ -855,6 +893,8 @@ async def _api_batch_requests_get(request: aiohttp_web.Request) -> aiohttp_web.R
 async def _api_batch_requests_resolve(request: aiohttp_web.Request) -> aiohttp_web.Response:
     if not _check_auth(request):
         return aiohttp_web.Response(status=401)
+    if not _check_csrf(request):
+        return aiohttp_web.Response(status=403, text="CSRF check failed")
     action = request.match_info.get("action", "")
     if action not in ("approve", "reject"):
         return aiohttp_web.Response(status=400, text="action must be approve or reject")
