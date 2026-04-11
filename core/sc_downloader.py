@@ -229,6 +229,7 @@ def _download_sync(url: str, output_template: str) -> tuple[str, dict]:
         meta["title"] = info.get("title") or ""
         meta["artist"] = info.get("uploader") or info.get("channel") or ""
         meta["duration"] = int(info.get("duration") or 0)
+        meta["thumbnail_url"] = info.get("thumbnail") or ""
     return ext, meta
 
 
@@ -273,7 +274,9 @@ async def download(url: str, user_id: int) -> tuple[str, dict]:
         try:
             ext, meta = await asyncio.to_thread(_download_sync, url, output_template)
             path = f"{output_template}.{ext}"
+            thumbnail_url = meta.pop("thumbnail_url", "")
             meta = await asyncio.to_thread(_fix_metadata_sync, path, meta)
+            await _embed_cover_async(path, thumbnail_url)
             return path, meta
         except SCBanError:
             raise  # don't retry ban errors — proxy rotation logic handles retries
@@ -359,6 +362,53 @@ def _fix_metadata_sync(path: str, meta: dict) -> dict:
         _remux_mp3_sync(path)
 
     return {"artist": artist, "title": title, "duration": meta.get("duration", 0)}
+
+
+def _embed_cover_sync(path: str, cover_bytes: bytes) -> None:
+    """Embed cover art into audio file using mutagen. Silent on failure."""
+    ext = path.rsplit(".", 1)[-1].lower() if "." in path else ""
+    try:
+        if ext == "mp3":
+            from mutagen.id3 import ID3, APIC
+            from mutagen.id3 import error as ID3Error
+            try:
+                tags = ID3(path)
+            except ID3Error:
+                tags = ID3()
+            tags.delall("APIC")
+            tags.add(APIC(
+                encoding=3,
+                mime="image/jpeg",
+                type=3,
+                desc="Cover",
+                data=cover_bytes,
+            ))
+            tags.save(path)
+        elif ext in ("m4a", "mp4"):
+            from mutagen.mp4 import MP4, MP4Cover
+            audio = MP4(path)
+            audio["covr"] = [MP4Cover(cover_bytes, imageformat=MP4Cover.FORMAT_JPEG)]
+            audio.save()
+    except Exception as e:
+        log.debug("Cover embed failed for %s: %s", path, e)
+
+
+async def _embed_cover_async(path: str, thumbnail_url: str) -> None:
+    """Fetch thumbnail URL and embed as cover art. Silent on failure."""
+    if not thumbnail_url:
+        return
+    try:
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                thumbnail_url,
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                if resp.status == 200:
+                    cover_bytes = await resp.read()
+                    await asyncio.to_thread(_embed_cover_sync, path, cover_bytes)
+    except Exception as e:
+        log.debug("Cover fetch/embed failed url=%s path=%s: %s", thumbnail_url, path, e)
 
 
 def _check_main_ip_sync() -> bool:
