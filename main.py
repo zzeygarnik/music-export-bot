@@ -136,6 +136,8 @@ def _check_auth(request: aiohttp_web.Request) -> bool:
 
 
 async def _dashboard_handler(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    if not _check_auth(request):
+        raise aiohttp_web.HTTPFound("/dashboard/login")
     html_path = os.path.join(_DASHBOARD_DIR, "index.html")
     try:
         with open(html_path, "r", encoding="utf-8") as f:
@@ -145,8 +147,75 @@ async def _dashboard_handler(request: aiohttp_web.Request) -> aiohttp_web.Respon
     return aiohttp_web.Response(text=content, content_type="text/html")
 
 
+_LOGIN_PAGE_HTML = """\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ZGRNK Music — Login</title>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@900&family=Syne:wght@400;600&family=Fira+Code:wght@300;400&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{{box-sizing:border-box;margin:0;padding:0}}
+:root{{--bg:#0d0d14;--surface:#13131a;--primary:#d2bbff;--accent:#7c3aed;
+  --text:#e4e1ec;--muted:#9b93a8;--dim:#4d4760;--border:rgba(74,68,85,.45);
+  --fd:'Big Shoulders Display',sans-serif;--fu:'Syne',sans-serif;--fm:'Fira Code',monospace}}
+html,body{{height:100%;background:var(--bg);color:var(--text);font-family:var(--fu);
+  font-size:14px;-webkit-font-smoothing:antialiased;display:flex;
+  align-items:center;justify-content:center}}
+.lbox{{width:340px}}
+.l-title{{font-family:var(--fd);font-weight:900;font-size:3.4rem;line-height:.95;
+  letter-spacing:.06em;color:var(--primary);text-shadow:0 0 60px rgba(210,187,255,.18)}}
+.l-sub{{font-family:var(--fm);font-size:9px;letter-spacing:.35em;color:var(--dim);
+  text-transform:uppercase;margin-top:8px}}
+.l-rule{{width:100%;height:1px;margin:32px 0;
+  background:linear-gradient(90deg,var(--accent) 0%,transparent 100%)}}
+.l-label{{display:block;font-family:var(--fm);font-size:9px;letter-spacing:.28em;
+  text-transform:uppercase;color:var(--muted);margin-bottom:10px}}
+.l-field{{position:relative;margin-bottom:20px}}
+.l-field::after{{content:'';position:absolute;bottom:0;left:0;width:0;height:2px;
+  background:var(--accent);transition:width .3s ease}}
+.l-field:focus-within::after{{width:100%}}
+.l-input{{width:100%;background:transparent;border:none;border-bottom:1px solid var(--border);
+  padding:8px 0;color:var(--text);font-family:var(--fm);font-size:15px;
+  letter-spacing:.12em;outline:none;transition:border-color .25s}}
+.l-input:focus{{border-bottom-color:rgba(124,58,237,.5)}}
+.l-btn{{width:100%;padding:13px 24px;background:transparent;border:1px solid var(--accent);
+  color:var(--primary);font-family:var(--fm);font-size:11px;letter-spacing:.3em;
+  text-transform:uppercase;cursor:pointer;transition:background .25s,box-shadow .25s}}
+.l-btn:hover{{background:rgba(124,58,237,.12);box-shadow:0 0 20px rgba(124,58,237,.2)}}
+.l-err{{margin-top:16px;font-family:var(--fm);font-size:11px;
+  color:#f87171;letter-spacing:.1em;display:none}}
+.l-err.show{{display:block}}
+</style>
+</head>
+<body>
+<div class="lbox">
+  <div class="l-title">ZGRNK</div>
+  <div class="l-sub">music dashboard</div>
+  <div class="l-rule"></div>
+  <form id="lf" method="POST" action="/dashboard/login">
+    <label class="l-label" for="tok">Access Token</label>
+    <div class="l-field">
+      <input class="l-input" id="tok" name="token" type="password"
+             placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button class="l-btn" type="submit">Enter</button>
+    <div class="l-err" id="err">Invalid token</div>
+  </form>
+</div>
+<script>
+const p = new URLSearchParams(location.search);
+if (p.get('err')) document.getElementById('err').classList.add('show');
+</script>
+</body>
+</html>"""
+
+
 async def _dashboard_login_get(request: aiohttp_web.Request) -> aiohttp_web.Response:
-    raise aiohttp_web.HTTPFound("/dashboard")
+    if _check_auth(request):
+        raise aiohttp_web.HTTPFound("/dashboard")
+    return aiohttp_web.Response(text=_LOGIN_PAGE_HTML, content_type="text/html")
 
 
 async def _dashboard_login_post(request: aiohttp_web.Request) -> aiohttp_web.Response:
@@ -175,7 +244,7 @@ async def _dashboard_login_post(request: aiohttp_web.Request) -> aiohttp_web.Res
             content_type="text/html",
             status=429,
         )
-    return aiohttp_web.Response(status=401)
+    raise aiohttp_web.HTTPFound("/dashboard/login?err=1")
 
 
 async def _dashboard_logout(request: aiohttp_web.Request) -> aiohttp_web.Response:
