@@ -162,16 +162,34 @@ _LOGIN_PAGE_HTML = """\
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ZGRNK Music — Login</title>
-<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@900&family=Syne:wght@400;600&family=Fira+Code:wght@300;400&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@900&family=Syne:wght@400;600;700&family=Fira+Code:wght@300;400&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{{box-sizing:border-box;margin:0;padding:0}}
 :root{{--bg:#0d0d14;--surface:#13131a;--primary:#d2bbff;--accent:#7c3aed;
-  --text:#e4e1ec;--muted:#9b93a8;--dim:#4d4760;--border:rgba(74,68,85,.45);
+  --red:#f87171;--text:#e4e1ec;--muted:#9b93a8;--dim:#4d4760;
+  --border:rgba(74,68,85,.45);
   --fd:'Big Shoulders Display',sans-serif;--fu:'Syne',sans-serif;--fm:'Fira Code',monospace}}
-html,body{{height:100%;background:var(--bg);color:var(--text);font-family:var(--fu);
-  font-size:14px;-webkit-font-smoothing:antialiased;display:flex;
+html,body{{height:100%;overflow:hidden;background:var(--bg);color:var(--text);
+  font-family:var(--fu);font-size:14px;-webkit-font-smoothing:antialiased}}
+/* grid + corner glow */
+body::before{{content:'';position:fixed;inset:0;pointer-events:none;
+  background-image:linear-gradient(rgba(124,58,237,.035) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(124,58,237,.035) 1px,transparent 1px);
+  background-size:52px 52px;z-index:0}}
+body::after{{content:'';position:fixed;top:0;right:0;width:400px;height:400px;
+  background:radial-gradient(circle at 100% 0,rgba(124,58,237,.1),transparent 65%);
+  pointer-events:none;z-index:0}}
+/* wrap */
+.wrap{{position:relative;z-index:1;height:100%;display:flex;
   align-items:center;justify-content:center}}
-.lbox{{width:340px}}
+/* glow orb */
+.login-glow{{position:fixed;width:520px;height:520px;border-radius:50%;
+  background:radial-gradient(circle,rgba(124,58,237,.13),transparent 65%);
+  pointer-events:none;transform:translate(-50%,-50%);z-index:0;
+  transition:left .07s linear,top .07s linear}}
+/* card */
+.lbox{{position:relative;z-index:1;width:340px;
+  transition:transform .14s ease-out;will-change:transform;transform-style:preserve-3d}}
 .l-title{{font-family:var(--fd);font-weight:900;font-size:3.4rem;line-height:.95;
   letter-spacing:.06em;color:var(--primary);text-shadow:0 0 60px rgba(210,187,255,.18)}}
 .l-sub{{font-family:var(--fm);font-size:9px;letter-spacing:.35em;color:var(--dim);
@@ -184,37 +202,74 @@ html,body{{height:100%;background:var(--bg);color:var(--text);font-family:var(--
 .l-field::after{{content:'';position:absolute;bottom:0;left:0;width:0;height:2px;
   background:var(--accent);transition:width .3s ease}}
 .l-field:focus-within::after{{width:100%}}
-.l-input{{width:100%;background:transparent;border:none;border-bottom:1px solid var(--border);
-  padding:8px 0;color:var(--text);font-family:var(--fm);font-size:15px;
+.l-input{{width:100%;background:transparent;border:none;
+  border-bottom:1px solid var(--border);padding:8px 0;
+  color:var(--text);font-family:var(--fm);font-size:15px;
   letter-spacing:.12em;outline:none;transition:border-color .25s}}
 .l-input:focus{{border-bottom-color:rgba(124,58,237,.5)}}
-.l-btn{{width:100%;padding:13px 24px;background:transparent;border:1px solid var(--accent);
-  color:var(--primary);font-family:var(--fm);font-size:11px;letter-spacing:.3em;
-  text-transform:uppercase;cursor:pointer;transition:background .25s,box-shadow .25s}}
-.l-btn:hover{{background:rgba(124,58,237,.12);box-shadow:0 0 20px rgba(124,58,237,.2)}}
-.l-err{{margin-top:16px;font-family:var(--fm);font-size:11px;
-  color:#f87171;letter-spacing:.1em;display:none}}
-.l-err.show{{display:block}}
+.l-btn{{width:100%;padding:13px 24px;background:transparent;
+  border:1px solid var(--accent);color:var(--primary);
+  font-family:var(--fu);font-size:11px;font-weight:700;
+  letter-spacing:.22em;text-transform:uppercase;cursor:pointer;
+  position:relative;overflow:hidden;transition:color .25s;margin-top:6px}}
+.l-btn::before{{content:'';position:absolute;inset:0;background:var(--accent);
+  transform:translateX(-100%);transition:transform .28s ease}}
+.l-btn:hover{{color:#fff}}
+.l-btn:hover::before{{transform:translateX(0)}}
+.l-btn span{{position:relative;z-index:1}}
+.l-err{{font-family:var(--fm);font-size:9px;color:var(--red);
+  letter-spacing:.15em;margin-top:12px;display:none}}
+.l-err.on{{display:block}}
+.l-foot{{margin-top:28px;font-family:var(--fm);font-size:9px;
+  color:var(--dim);letter-spacing:.18em;text-transform:uppercase}}
 </style>
 </head>
 <body>
-<div class="lbox">
-  <div class="l-title">ZGRNK</div>
-  <div class="l-sub">music dashboard</div>
-  <div class="l-rule"></div>
-  <form id="lf" method="POST" action="/dashboard/login">
-    <label class="l-label" for="tok">Access Token</label>
-    <div class="l-field">
-      <input class="l-input" id="tok" name="token" type="password"
-             placeholder="••••••••" autocomplete="current-password">
-    </div>
-    <button class="l-btn" type="submit">Enter</button>
-    <div class="l-err" id="err">Invalid token</div>
-  </form>
+<div class="wrap" id="wrap">
+  <div class="lbox" id="lbox">
+    <div class="l-title">ZGRNK<br>MUSIC</div>
+    <div class="l-sub">Music Export Bot</div>
+    <div class="l-rule"></div>
+    <form id="lf" method="POST" action="/dashboard/login">
+      <label class="l-label" for="tok">Access Token</label>
+      <div class="l-field">
+        <input class="l-input" id="tok" name="token" type="password"
+               placeholder="••••••••••••" autocomplete="off" spellcheck="false">
+      </div>
+      <button class="l-btn" type="submit"><span>Authenticate →</span></button>
+      <div class="l-err" id="err">Invalid access token</div>
+    </form>
+    <div class="l-foot">Admin access only &nbsp;·&nbsp; Rate limited</div>
+  </div>
 </div>
 <script>
+/* show error from query param */
 const p = new URLSearchParams(location.search);
-if (p.get('err')) document.getElementById('err').classList.add('show');
+if (p.get('err')) document.getElementById('err').classList.add('on');
+
+/* glow + 3-D tilt */
+(()=>{{
+  const wrap = document.getElementById('wrap');
+  const lbox = document.getElementById('lbox');
+  const glow = document.createElement('div');
+  glow.className = 'login-glow';
+  glow.style.left = '-999px'; glow.style.top = '-999px';
+  document.body.appendChild(glow);
+
+  wrap.addEventListener('mousemove', e => {{
+    glow.style.left = e.clientX + 'px';
+    glow.style.top  = e.clientY + 'px';
+    const r  = wrap.getBoundingClientRect();
+    const dx = (e.clientX - r.left  - r.width  / 2) / (r.width  / 2);
+    const dy = (e.clientY - r.top   - r.height / 2) / (r.height / 2);
+    lbox.style.transform =
+      `perspective(900px) rotateY(${{(dx*6).toFixed(2)}}deg) rotateX(${{(-dy*4).toFixed(2)}}deg)`;
+  }});
+  wrap.addEventListener('mouseleave', () => {{
+    glow.style.left = '-999px';
+    lbox.style.transform = 'perspective(900px) rotateY(0deg) rotateX(0deg)';
+  }});
+}})();
 </script>
 </body>
 </html>"""
