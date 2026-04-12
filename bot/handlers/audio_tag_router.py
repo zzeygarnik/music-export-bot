@@ -5,7 +5,7 @@ import os
 import tempfile
 
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, FSInputFile
+from aiogram.types import Message, CallbackQuery, FSInputFile, BufferedInputFile
 from aiogram.fsm.context import FSMContext
 from aiogram.filters import StateFilter
 
@@ -19,6 +19,7 @@ from bot.keyboards import (
 )
 from bot.tracker import set_active_msg
 from utils import db
+from core.sc_downloader import resize_for_telegram_sync
 
 router = Router()
 log = logging.getLogger(__name__)
@@ -152,6 +153,16 @@ async def _process_and_send(message: Message, state: FSMContext, cover_bytes: by
 
     suffix = os.path.splitext(original_filename)[1] or ".mp3"
     filename = f"{artist} - {title}{suffix}"
+
+    import asyncio
+    thumb_input = None
+    if cover_bytes:
+        try:
+            thumb_bytes = await asyncio.to_thread(resize_for_telegram_sync, cover_bytes)
+            thumb_input = BufferedInputFile(thumb_bytes, filename="cover.jpg")
+        except Exception:
+            pass
+
     tmp_in = tmp_out = None
     sent = None
     try:
@@ -171,6 +182,7 @@ async def _process_and_send(message: Message, state: FSMContext, cover_bytes: by
             audio=FSInputFile(tmp_out, filename=filename),
             title=title,
             performer=artist,
+            thumbnail=thumb_input,
         )
 
     except Exception as e:
@@ -180,6 +192,7 @@ async def _process_and_send(message: Message, state: FSMContext, cover_bytes: by
                 audio=file_id,
                 title=title,
                 performer=artist,
+                thumbnail=thumb_input,
             )
             log.info("AudioTagFlow fallback (file_id resend) succeeded user=%s", message.from_user.id)
         except Exception as e2:
