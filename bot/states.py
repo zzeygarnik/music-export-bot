@@ -64,10 +64,11 @@ class FAQFlow(StatesGroup):
 
 
 class AudioTagFlow(StatesGroup):
-    waiting_for_audio  = State()  # user clicked button, waiting for file
-    waiting_for_title  = State()  # waiting for track title input
-    waiting_for_artist = State()  # waiting for artist name input
-    waiting_for_cover  = State()  # waiting for cover image (or skip)
+    waiting_for_audio          = State()  # user clicked button, waiting for file
+    waiting_for_field_selection = State() # audio received; user picks what to change
+    waiting_for_title          = State()  # waiting for track title input
+    waiting_for_artist         = State()  # waiting for artist name input
+    waiting_for_cover          = State()  # waiting for cover image
 
 class VKSearchFlow(StatesGroup):
     vk_search_query   = State()   # waiting for search query
