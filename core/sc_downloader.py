@@ -276,7 +276,8 @@ async def download(url: str, user_id: int) -> tuple[str, dict]:
             path = f"{output_template}.{ext}"
             thumbnail_url = meta.pop("thumbnail_url", "")
             meta = await asyncio.to_thread(_fix_metadata_sync, path, meta)
-            await _embed_cover_async(path, thumbnail_url)
+            cover_path = await _embed_cover_async(path, thumbnail_url)
+            meta["cover_path"] = cover_path
             return path, meta
         except SCBanError:
             raise  # don't retry ban errors — proxy rotation logic handles retries
@@ -393,10 +394,11 @@ def _embed_cover_sync(path: str, cover_bytes: bytes) -> None:
         log.debug("Cover embed failed for %s: %s", path, e)
 
 
-async def _embed_cover_async(path: str, thumbnail_url: str) -> None:
-    """Fetch thumbnail URL and embed as cover art. Silent on failure."""
+async def _embed_cover_async(path: str, thumbnail_url: str) -> str:
+    """Fetch thumbnail URL, embed as cover art, save as temp jpg. Returns cover jpg path or ''."""
     if not thumbnail_url:
-        return
+        return ""
+    cover_path = ""
     try:
         import aiohttp
         async with aiohttp.ClientSession() as session:
@@ -407,8 +409,19 @@ async def _embed_cover_async(path: str, thumbnail_url: str) -> None:
                 if resp.status == 200:
                     cover_bytes = await resp.read()
                     await asyncio.to_thread(_embed_cover_sync, path, cover_bytes)
+                    cover_path = path.rsplit(".", 1)[0] + "_cover.jpg"
+                    try:
+                        await asyncio.to_thread(_write_bytes_sync, cover_path, cover_bytes)
+                    except Exception:
+                        cover_path = ""
     except Exception as e:
         log.debug("Cover fetch/embed failed url=%s path=%s: %s", thumbnail_url, path, e)
+    return cover_path
+
+
+def _write_bytes_sync(path: str, data: bytes) -> None:
+    with open(path, "wb") as f:
+        f.write(data)
 
 
 def _check_main_ip_sync() -> bool:

@@ -84,6 +84,7 @@ class _TrackFetchResult:
     path: str | None              # local file path (needs os.remove after send)
     meta: dict                    # yt-dlp/sc metadata; empty for cache hits
     cached_file_id: str | None    # Telegram file_id (from cache, no download needed)
+    cover_path: str | None = None # temp jpg path for Telegram thumbnail= param (needs os.remove)
     # Error flags
     not_found: bool = False
     sc_errors: int = 0
@@ -136,9 +137,10 @@ async def _fetch_track(
             if sc_downloader._is_youtube_url(direct_url):
                 try:
                     path, meta = await download_yt_with_proxy_rotation(direct_url, user_id, bot)
+                    cover_path = meta.pop("cover_path", "") or None
                     return _TrackFetchResult(
                         track=track, artist=artist, title=title, cache_key=cache_key,
-                        path=path, meta=meta, cached_file_id=None,
+                        path=path, meta=meta, cached_file_id=None, cover_path=cover_path,
                     )
                 except Exception as e:
                     log.warning("YT batch direct download failed '%s — %s': %s", artist, title, e)
@@ -149,9 +151,10 @@ async def _fetch_track(
             else:
                 try:
                     path, meta = await download_with_proxy_rotation(direct_url, user_id, bot)
+                    cover_path = meta.pop("cover_path", "") or None
                     return _TrackFetchResult(
                         track=track, artist=artist, title=title, cache_key=cache_key,
-                        path=path, meta=meta, cached_file_id=None,
+                        path=path, meta=meta, cached_file_id=None, cover_path=cover_path,
                     )
                 except Exception as e:
                     log.warning("SC batch URL download failed '%s — %s': %s", artist, title, e)
@@ -195,9 +198,11 @@ async def _fetch_track(
                     path=None, meta={}, cached_file_id=None, not_found=True, sc_errors=sc_errors,
                 )
 
+        cover_path = meta.pop("cover_path", "") or None
         return _TrackFetchResult(
             track=track, artist=artist, title=title, cache_key=cache_key,
-            path=path, meta=meta, cached_file_id=None, sc_errors=sc_errors, yt_errors=yt_errors,
+            path=path, meta=meta, cached_file_id=None, cover_path=cover_path,
+            sc_errors=sc_errors, yt_errors=yt_errors,
         )
 
 
@@ -1744,6 +1749,8 @@ async def _sc_download_and_send(
         )
         return
 
+    cover_path = meta.pop("cover_path", "") or None
+
     try:
         await msg.edit_text(
             f"⏳ Выгружаю трек: <b>{result.artist} — {result.title}</b>…",
@@ -1758,6 +1765,7 @@ async def _sc_download_and_send(
             title=meta.get("title") or result.title,
             performer=meta.get("artist") or result.artist,
             duration=meta.get("duration") or result.duration or None,
+            thumbnail=FSInputFile(cover_path) if cover_path else None,
         )
         if sent_msg and sent_msg.audio and cache_key:
             await save_cached_file_id(cache_key, sent_msg.audio.file_id, "manual",
@@ -1778,6 +1786,11 @@ async def _sc_download_and_send(
             os.remove(path)
         except OSError:
             pass
+        if cover_path:
+            try:
+                os.remove(cover_path)
+            except OSError:
+                pass
 
     if return_to_menu and await state.get_state() is not None:
         done_msg = await msg.answer("✅ Готово! Скачать ещё?", reply_markup=sc_after_download_keyboard())
@@ -1918,6 +1931,7 @@ async def _run_batch_download(
                     title=r.meta.get("title") or r.title,
                     performer=r.meta.get("artist") or r.artist,
                     duration=r.meta.get("duration") or r.duration or None,
+                    thumbnail=FSInputFile(r.cover_path) if r.cover_path else None,
                 )
                 sent = True
                 downloaded_count += 1
@@ -1934,6 +1948,11 @@ async def _run_batch_download(
                 if r.path:
                     try:
                         os.remove(r.path)
+                    except OSError:
+                        pass
+                if r.cover_path:
+                    try:
+                        os.remove(r.cover_path)
                     except OSError:
                         pass
 
