@@ -86,6 +86,7 @@ def _apply_metadata(path: str, title: str, artist: str, cover_bytes: bytes | Non
             cmd += ["-i", cover_tmp,
                     "-map", "0:a", "-map", "1:v",
                     "-c:a", "copy", "-c:v", "copy",
+                    "-disposition:v:0", "attached_pic",
                     "-metadata:s:v", "title=Album cover",
                     "-metadata:s:v", "comment=Cover (front)"]
         else:
@@ -163,7 +164,8 @@ async def _process_and_send(message: Message, state: FSMContext, cover_bytes: by
 
         import shutil
         shutil.copy(tmp_in, tmp_out)
-        _apply_metadata(tmp_out, title, artist, cover_bytes)
+        if not _apply_metadata(tmp_out, title, artist, cover_bytes):
+            log.warning("_apply_metadata failed user=%s file=%s", message.from_user.id, original_filename)
 
         sent = await message.answer_audio(
             audio=FSInputFile(tmp_out, filename=filename),
@@ -299,7 +301,7 @@ async def audio_tag_cancel(call: CallbackQuery, state: FSMContext) -> None:
 
 @router.message(StateFilter(AudioTagFlow.waiting_for_title), F.text)
 async def audio_tag_got_title(message: Message, state: FSMContext) -> None:
-    title = message.text.strip()
+    title = _INVISIBLE_RE.sub("", message.text.strip())
     await state.update_data(title=title)
     await state.set_state(AudioTagFlow.waiting_for_artist)
     sent = await message.answer(
@@ -332,9 +334,12 @@ async def audio_tag_cancel_from_artist(call: CallbackQuery, state: FSMContext) -
     await call.answer()
 
 
+_INVISIBLE_RE = __import__("re").compile(r"[\u200b\u200c\u200d\u200e\u200f\u00ad\ufeff]")
+
+
 @router.message(StateFilter(AudioTagFlow.waiting_for_artist), F.text)
 async def audio_tag_got_artist(message: Message, state: FSMContext) -> None:
-    artist = message.text.strip()
+    artist = _INVISIBLE_RE.sub("", message.text.strip())
     data = await state.get_data()
     title = data["title"]
     await state.update_data(artist=artist)
