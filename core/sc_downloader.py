@@ -411,7 +411,8 @@ async def _embed_cover_async(path: str, thumbnail_url: str) -> str:
                     await asyncio.to_thread(_embed_cover_sync, path, cover_bytes)
                     cover_path = path.rsplit(".", 1)[0] + "_cover.jpg"
                     try:
-                        await asyncio.to_thread(_write_bytes_sync, cover_path, cover_bytes)
+                        resized = await asyncio.to_thread(resize_for_telegram_sync, cover_bytes)
+                        await asyncio.to_thread(_write_bytes_sync, cover_path, resized)
                     except Exception:
                         cover_path = ""
     except Exception as e:
@@ -422,6 +423,24 @@ async def _embed_cover_async(path: str, thumbnail_url: str) -> str:
 def _write_bytes_sync(path: str, data: bytes) -> None:
     with open(path, "wb") as f:
         f.write(data)
+
+
+def resize_for_telegram_sync(image_bytes: bytes) -> bytes:
+    """Resize image to max 320×320 JPEG ≤200KB — required for Telegram thumbnail= param (iOS strict)."""
+    try:
+        from PIL import Image
+        import io
+        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        img.thumbnail((320, 320), Image.LANCZOS)
+        quality = 85
+        while True:
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=quality)
+            if buf.tell() <= 200 * 1024 or quality <= 30:
+                return buf.getvalue()
+            quality -= 10
+    except Exception:
+        return image_bytes
 
 
 def _check_main_ip_sync() -> bool:
