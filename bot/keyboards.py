@@ -600,24 +600,29 @@ def tsel_selected_keyboard(selected: list, page: int = 0, page_size: int = 8) ->
 # ── AudioTagFlow keyboards ─────────────────────────────────────────────────────
 
 def audio_tag_cancel_keyboard() -> InlineKeyboardMarkup:
-    """Shown while waiting for track title — Назад cancels the whole flow."""
+    """Shown while waiting for audio file — Назад cancels the whole flow."""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="← Назад", callback_data="audio_tag:cancel")],
     ])
 
 
-def audio_tag_back_keyboard() -> InlineKeyboardMarkup:
-    """Shown while waiting for artist — Назад returns to title prompt."""
+def audio_tag_field_keyboard() -> InlineKeyboardMarkup:
+    """Main selection screen: choose which fields to edit, then Apply."""
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="← Назад", callback_data="audio_tag:back_to_title")],
+        [
+            InlineKeyboardButton(text="✏️ Название",    callback_data="audio_tag:edit_title"),
+            InlineKeyboardButton(text="✏️ Исполнитель", callback_data="audio_tag:edit_artist"),
+        ],
+        [InlineKeyboardButton(text="🖼 Обложка",        callback_data="audio_tag:edit_cover")],
+        [InlineKeyboardButton(text="✅ Применить",      callback_data="audio_tag:apply")],
+        [InlineKeyboardButton(text="← Назад",           callback_data="audio_tag:cancel")],
     ])
 
 
-def audio_tag_cover_keyboard() -> InlineKeyboardMarkup:
-    """Shown while waiting for cover image — skip or back to artist."""
+def audio_tag_back_to_selection_keyboard() -> InlineKeyboardMarkup:
+    """Shown while editing title / artist / cover — Назад returns to field selection."""
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Пропустить", callback_data="audio_tag:skip_cover")],
-        [InlineKeyboardButton(text="← Назад", callback_data="audio_tag:back_to_artist")],
+        [InlineKeyboardButton(text="← Назад", callback_data="audio_tag:back_to_selection")],
     ])
 
 
@@ -625,7 +630,7 @@ def audio_tag_done_keyboard() -> InlineKeyboardMarkup:
     """Shown after successfully retagging a track."""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Исправить ещё трек", callback_data="audio_tag:tag_another")],
-        [InlineKeyboardButton(text="← В меню", callback_data="audio_tag:to_menu")],
+        [InlineKeyboardButton(text="← В меню",           callback_data="audio_tag:to_menu")],
     ])
 
 

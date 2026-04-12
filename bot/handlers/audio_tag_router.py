@@ -12,8 +12,8 @@ from aiogram.filters import StateFilter
 from bot.states import AudioTagFlow
 from bot.keyboards import (
     audio_tag_cancel_keyboard,
-    audio_tag_back_keyboard,
-    audio_tag_cover_keyboard,
+    audio_tag_field_keyboard,
+    audio_tag_back_to_selection_keyboard,
     audio_tag_done_keyboard,
     service_keyboard,
 )
@@ -235,6 +235,43 @@ async def _process_and_send(message: Message, state: FSMContext, cover_bytes: by
             set_active_msg(message.chat.id, err.message_id)
 
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _field_selection_text(title: str, artist: str, has_cover: bool) -> str:
+    cover_line = "🖼 Обложка: <i>будет заменена</i>" if has_cover else "🖼 Обложка: <i>без изменений</i>"
+    return (
+        f"🎵 <b>{_html.escape(artist or '—')} — {_html.escape(title or '—')}</b>\n"
+        f"{cover_line}\n\n"
+        "Что хочешь изменить?"
+    )
+
+
+async def _show_field_selection_edit(call: CallbackQuery, state: FSMContext) -> None:
+    """Edit the existing bot message to show field selection."""
+    data = await state.get_data()
+    await state.set_state(AudioTagFlow.waiting_for_field_selection)
+    text = _field_selection_text(
+        data.get("title", ""),
+        data.get("artist", ""),
+        bool(data.get("cover_b64")),
+    )
+    await call.message.edit_text(text, parse_mode="HTML", reply_markup=audio_tag_field_keyboard())
+    set_active_msg(call.message.chat.id, call.message.message_id)
+
+
+async def _show_field_selection_answer(message: Message, state: FSMContext) -> None:
+    """Send a new message with field selection (used after user sent a text/photo)."""
+    data = await state.get_data()
+    await state.set_state(AudioTagFlow.waiting_for_field_selection)
+    text = _field_selection_text(
+        data.get("title", ""),
+        data.get("artist", ""),
+        bool(data.get("cover_b64")),
+    )
+    sent = await message.answer(text, parse_mode="HTML", reply_markup=audio_tag_field_keyboard())
+    set_active_msg(message.chat.id, sent.message_id)
+
+
 # ── Entry via button ──────────────────────────────────────────────────────────
 
 @router.callback_query(F.data == "service:audio_tag")
@@ -266,18 +303,16 @@ async def audio_tag_cancel_waiting(call: CallbackQuery, state: FSMContext) -> No
 )
 async def handle_audio_in_flow(message: Message, state: FSMContext) -> None:
     file_id, filename, orig_title, orig_artist = _extract_audio_meta(message)
-    await state.set_state(AudioTagFlow.waiting_for_title)
     await state.update_data(
         file_id=file_id,
         original_filename=filename,
         original_title=orig_title,
         original_artist=orig_artist,
+        title=orig_title,
+        artist=orig_artist,
+        cover_b64=None,
     )
-    sent = await message.answer(
-        "🎵 Введи название трека:",
-        reply_markup=audio_tag_cancel_keyboard(),
-    )
-    set_active_msg(message.chat.id, sent.message_id)
+    await _show_field_selection_answer(message, state)
 
 
 # ── Audio received out of the blue (any other state) ─────────────────────────
@@ -286,115 +321,131 @@ async def handle_audio_in_flow(message: Message, state: FSMContext) -> None:
 async def handle_audio_received(message: Message, state: FSMContext) -> None:
     """User attached or forwarded audio without going through the menu button."""
     file_id, filename, orig_title, orig_artist = _extract_audio_meta(message)
-    await state.set_state(AudioTagFlow.waiting_for_title)
     await state.update_data(
         file_id=file_id,
         original_filename=filename,
         original_title=orig_title,
         original_artist=orig_artist,
+        title=orig_title,
+        artist=orig_artist,
+        cover_b64=None,
     )
-    sent = await message.answer(
-        "Трек снова скачался со спамом в названии или неправильными метаданными? "
-        "Исправь всё здесь - поддерживается прямое прикрепление треков и пересылка.\n\n"
-        "🎵 Введи название трека:",
-        reply_markup=audio_tag_cancel_keyboard(),
-    )
-    set_active_msg(message.chat.id, sent.message_id)
+    await _show_field_selection_answer(message, state)
 
 
-# ── Step 2: title ─────────────────────────────────────────────────────────────
+# ── Field selection screen ────────────────────────────────────────────────────
 
-@router.callback_query(StateFilter(AudioTagFlow.waiting_for_title), F.data == "audio_tag:cancel")
-async def audio_tag_cancel(call: CallbackQuery, state: FSMContext) -> None:
+@router.callback_query(StateFilter(AudioTagFlow.waiting_for_field_selection), F.data == "audio_tag:cancel")
+async def audio_tag_cancel_selection(call: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await call.message.edit_text("Выбери действие:", reply_markup=service_keyboard())
     set_active_msg(call.message.chat.id, call.message.message_id)
     await call.answer()
+
+
+@router.callback_query(StateFilter(AudioTagFlow.waiting_for_field_selection), F.data == "audio_tag:edit_title")
+async def audio_tag_start_edit_title(call: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    current = _html.escape(data.get("title") or "")
+    await state.set_state(AudioTagFlow.waiting_for_title)
+    await call.message.edit_text(
+        f"Текущее название: <b>{current or '—'}</b>\n\n🎵 Введи новое название трека:",
+        parse_mode="HTML",
+        reply_markup=audio_tag_back_to_selection_keyboard(),
+    )
+    set_active_msg(call.message.chat.id, call.message.message_id)
+    await call.answer()
+
+
+@router.callback_query(StateFilter(AudioTagFlow.waiting_for_field_selection), F.data == "audio_tag:edit_artist")
+async def audio_tag_start_edit_artist(call: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    current = _html.escape(data.get("artist") or "")
+    await state.set_state(AudioTagFlow.waiting_for_artist)
+    await call.message.edit_text(
+        f"Текущий исполнитель: <b>{current or '—'}</b>\n\n🎤 Введи нового исполнителя:",
+        parse_mode="HTML",
+        reply_markup=audio_tag_back_to_selection_keyboard(),
+    )
+    set_active_msg(call.message.chat.id, call.message.message_id)
+    await call.answer()
+
+
+@router.callback_query(StateFilter(AudioTagFlow.waiting_for_field_selection), F.data == "audio_tag:edit_cover")
+async def audio_tag_start_edit_cover(call: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    has_cover = bool(data.get("cover_b64"))
+    status = "уже установлена" if has_cover else "не задана"
+    await state.set_state(AudioTagFlow.waiting_for_cover)
+    await call.message.edit_text(
+        f"Обложка: <i>{status}</i>\n\n🖼 Пришли новое фото для обложки:",
+        parse_mode="HTML",
+        reply_markup=audio_tag_back_to_selection_keyboard(),
+    )
+    set_active_msg(call.message.chat.id, call.message.message_id)
+    await call.answer()
+
+
+@router.callback_query(StateFilter(AudioTagFlow.waiting_for_field_selection), F.data == "audio_tag:apply")
+async def audio_tag_apply(call: CallbackQuery, state: FSMContext) -> None:
+    import base64
+    data = await state.get_data()
+    cover_b64 = data.get("cover_b64")
+    cover_bytes = base64.b64decode(cover_b64) if cover_b64 else None
+    await call.answer()
+    await call.message.edit_reply_markup(reply_markup=None)
+    await _process_and_send(call.message, state, cover_bytes=cover_bytes)
+
+
+# ── Step: title input ────────────────────────────────────────────────────────
+
+_INVISIBLE_RE = __import__("re").compile(r"[\u200b\u200c\u200d\u200e\u200f\u00ad\ufeff]")
+
+
+@router.callback_query(StateFilter(AudioTagFlow.waiting_for_title), F.data == "audio_tag:back_to_selection")
+async def audio_tag_back_from_title(call: CallbackQuery, state: FSMContext) -> None:
+    await call.answer()
+    await _show_field_selection_edit(call, state)
 
 
 @router.message(StateFilter(AudioTagFlow.waiting_for_title), F.text)
 async def audio_tag_got_title(message: Message, state: FSMContext) -> None:
     title = _INVISIBLE_RE.sub("", message.text.strip())
     await state.update_data(title=title)
-    await state.set_state(AudioTagFlow.waiting_for_artist)
-    sent = await message.answer(
-        f"Трек: <b>{title}</b>\n\nВведи имя исполнителя:",
-        parse_mode="HTML",
-        reply_markup=audio_tag_back_keyboard(),
-    )
-    set_active_msg(message.chat.id, sent.message_id)
+    await _show_field_selection_answer(message, state)
 
 
-# ── Step 3: artist ────────────────────────────────────────────────────────────
+# ── Step: artist input ───────────────────────────────────────────────────────
 
-@router.callback_query(StateFilter(AudioTagFlow.waiting_for_artist), F.data == "audio_tag:back_to_title")
-async def audio_tag_back_to_title(call: CallbackQuery, state: FSMContext) -> None:
-    await state.set_state(AudioTagFlow.waiting_for_title)
-    await call.message.edit_text(
-        "🎵 Введи название трека:",
-        reply_markup=audio_tag_cancel_keyboard(),
-    )
-    set_active_msg(call.message.chat.id, call.message.message_id)
+@router.callback_query(StateFilter(AudioTagFlow.waiting_for_artist), F.data == "audio_tag:back_to_selection")
+async def audio_tag_back_from_artist(call: CallbackQuery, state: FSMContext) -> None:
     await call.answer()
-
-
-@router.callback_query(StateFilter(AudioTagFlow.waiting_for_artist), F.data == "audio_tag:cancel")
-async def audio_tag_cancel_from_artist(call: CallbackQuery, state: FSMContext) -> None:
-    """Handle stale 'cancel' button from the title step while in artist state."""
-    await state.clear()
-    await call.message.edit_text("Выбери действие:", reply_markup=service_keyboard())
-    set_active_msg(call.message.chat.id, call.message.message_id)
-    await call.answer()
-
-
-_INVISIBLE_RE = __import__("re").compile(r"[\u200b\u200c\u200d\u200e\u200f\u00ad\ufeff]")
+    await _show_field_selection_edit(call, state)
 
 
 @router.message(StateFilter(AudioTagFlow.waiting_for_artist), F.text)
 async def audio_tag_got_artist(message: Message, state: FSMContext) -> None:
     artist = _INVISIBLE_RE.sub("", message.text.strip())
-    data = await state.get_data()
-    title = data["title"]
     await state.update_data(artist=artist)
-    await state.set_state(AudioTagFlow.waiting_for_cover)
-    sent = await message.answer(
-        f"Трек: <b>{_html.escape(artist)} — {_html.escape(title)}</b>\n\n"
-        "🖼 Пришли обложку (фото), или нажми «Пропустить»:",
-        parse_mode="HTML",
-        reply_markup=audio_tag_cover_keyboard(),
-    )
-    set_active_msg(message.chat.id, sent.message_id)
+    await _show_field_selection_answer(message, state)
 
 
-# ── Step 4: cover ─────────────────────────────────────────────────────────────
+# ── Step: cover input ────────────────────────────────────────────────────────
 
-@router.callback_query(StateFilter(AudioTagFlow.waiting_for_cover), F.data == "audio_tag:back_to_artist")
-async def audio_tag_back_to_artist(call: CallbackQuery, state: FSMContext) -> None:
-    data = await state.get_data()
-    title = data.get("title", "")
-    await state.set_state(AudioTagFlow.waiting_for_artist)
-    await call.message.edit_text(
-        f"Трек: <b>{_html.escape(title)}</b>\n\nВведи имя исполнителя:",
-        parse_mode="HTML",
-        reply_markup=audio_tag_back_keyboard(),
-    )
-    set_active_msg(call.message.chat.id, call.message.message_id)
+@router.callback_query(StateFilter(AudioTagFlow.waiting_for_cover), F.data == "audio_tag:back_to_selection")
+async def audio_tag_back_from_cover(call: CallbackQuery, state: FSMContext) -> None:
     await call.answer()
-
-
-@router.callback_query(StateFilter(AudioTagFlow.waiting_for_cover), F.data == "audio_tag:skip_cover")
-async def audio_tag_skip_cover(call: CallbackQuery, state: FSMContext) -> None:
-    await call.answer()
-    await call.message.edit_reply_markup(reply_markup=None)
-    await _process_and_send(call.message, state, cover_bytes=None)
+    await _show_field_selection_edit(call, state)
 
 
 @router.message(StateFilter(AudioTagFlow.waiting_for_cover), F.photo)
 async def audio_tag_got_cover(message: Message, state: FSMContext) -> None:
+    import base64
     photo = message.photo[-1]  # highest resolution
     cover_bytes_io = await message.bot.download(photo.file_id)
     cover_bytes = cover_bytes_io.read()
-    await _process_and_send(message, state, cover_bytes=cover_bytes)
+    await state.update_data(cover_b64=base64.b64encode(cover_bytes).decode())
+    await _show_field_selection_answer(message, state)
 
 
 # ── Post-send actions ─────────────────────────────────────────────────────────
