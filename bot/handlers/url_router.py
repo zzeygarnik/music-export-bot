@@ -25,13 +25,21 @@ log = logging.getLogger(__name__)
 # ── URL patterns (specific before general) ────────────────────────────────────
 
 _PATTERNS: list[tuple[re.Pattern, str]] = [
+    # YM (specific before general)
     (re.compile(r'music\.yandex\.(ru|com)/album/\d+/track/\d+'), "ym_track"),
     (re.compile(r'music\.yandex\.(ru|com)/users/[^/\s]+/playlists/\d+'), "ym_playlist"),
     (re.compile(r'music\.yandex\.(ru|com)/playlists/[^\s]+'), "ym_playlist"),
     (re.compile(r'music\.yandex\.(ru|com)/album/\d+'), "ym_album"),
+    # Spotify
     (re.compile(r'open\.spotify\.com(?:/intl-[a-z]+)?/track/[A-Za-z0-9]+'), "spotify_track"),
     (re.compile(r'open\.spotify\.com(?:/intl-[a-z]+)?/playlist/[A-Za-z0-9]+'), "spotify_playlist"),
     (re.compile(r'open\.spotify\.com(?:/intl-[a-z]+)?/album/[A-Za-z0-9]+'), "spotify_album"),
+    # YouTube (video links → direct download)
+    (re.compile(r'(?:https?://)?(?:www\.)?youtube\.com/watch[^\s]+'), "yt_video"),
+    (re.compile(r'(?:https?://)?youtu\.be/[^\s]+'), "yt_video"),
+    (re.compile(r'(?:https?://)?music\.youtube\.com/watch[^\s]+'), "yt_video"),
+    # SoundCloud (track or playlist → direct download)
+    (re.compile(r'(?:https?://)?(?:www\.)?soundcloud\.com/[^\s]+'), "sc_url"),
 ]
 
 _TYPE_LABELS = {
@@ -41,6 +49,8 @@ _TYPE_LABELS = {
     "spotify_track":   "🟢 Трек из Spotify",
     "spotify_album":   "🟢 Альбом в Spotify",
     "spotify_playlist":"🟢 Плейлист в Spotify",
+    "yt_video":        "🎬 Видео на YouTube",
+    "sc_url":          "🔊 Ссылка SoundCloud",
 }
 
 # States where the bot itself is waiting for text input — don't intercept there
@@ -80,7 +90,7 @@ def _detect(text: str) -> tuple[str, str] | None:
 
 
 class _SmartUrlFilter(Filter):
-    """Fires only when message contains a detectable YM/Spotify URL and bot isn't expecting text input."""
+    """Fires only when message contains a detectable URL and bot isn't expecting text input."""
     async def __call__(self, message: Message, state: FSMContext) -> bool:
         if not message.text:
             return False
@@ -96,8 +106,10 @@ def _action_keyboard(url_type: str) -> InlineKeyboardMarkup:
         rows.append([InlineKeyboardButton(text="📥 Загрузить", callback_data="url_detect:load_ym")])
     elif url_type in ("spotify_album", "spotify_playlist"):
         rows.append([InlineKeyboardButton(text="📥 Загрузить", callback_data="url_detect:load_spotify")])
+    elif url_type in ("yt_video", "sc_url"):
+        rows.append([InlineKeyboardButton(text="📥 Скачать", callback_data="url_detect:download_url")])
     else:
-        # single track — redirect to SC search
+        # YM/Spotify track — redirect to SC search
         rows.append([InlineKeyboardButton(text="🔍 Поиск на SoundCloud", callback_data="url_detect:sc_search")])
         rows.append([InlineKeyboardButton(text="🔍 Поиск на YouTube", callback_data="url_detect:yt_search")])
     rows.append([InlineKeyboardButton(text="← Отмена", callback_data="url_detect:cancel")])
@@ -174,6 +186,73 @@ async def on_url_yt_search(call: CallbackQuery, state: FSMContext) -> None:
         reply_markup=sc_cancel_keyboard(),
     )
     set_active_msg(call.message.chat.id, call.message.message_id)
+
+
+@router.callback_query(F.data == "url_detect:download_url")
+async def on_url_download(call: CallbackQuery, state: FSMContext) -> None:
+    from .sc_router import _sc_download_and_send  # lazy — avoids circular import
+    from .common import extract_yt_url_info_with_proxy_rotation
+    from core import sc_downloader
+
+    user_id, username = _get_user_info(call)
+    data = await state.get_data()
+    url = data.get("url_detected", "")
+    if not url:
+        await call.answer("Ссылка не найдена. Пришли снова.", show_alert=True)
+        return
+    await call.answer()
+
+    status_msg = await call.message.edit_text("⏳ Получаю информацию по ссылке…")
+    set_active_msg(user_id, status_msg.message_id)
+
+    async def _on_geo_block():
+        await status_msg.edit_text(
+            "⚠️ Видео заблокировано в регионе сервера. Скачиваю через прокси, ожидайте…",
+            parse_mode="HTML",
+        )
+
+    try:
+        if sc_downloader._is_youtube_url(url):
+            info = await extract_yt_url_info_with_proxy_rotation(
+                url, call.bot, on_geo_block=_on_geo_block
+            )
+        else:
+            info = await sc_downloader.extract_url_info(url)
+    except Exception as e:
+        log.warning("url_router download extract failed user=%s url=%s: %s", user_id, url, e)
+        from bot.keyboards import sc_cancel_keyboard
+        await status_msg.edit_text(
+            "❌ Не удалось получить информацию. Проверь ссылку и попробуй ещё раз.",
+            reply_markup=sc_cancel_keyboard(),
+        )
+        return
+
+    if info["type"] == "track":
+        result = info["result"]
+        await status_msg.edit_text(
+            f"⏳ Скачиваю: <b>{result.artist} — {result.title}</b>…",
+            parse_mode="HTML",
+        )
+        source = "yt" if sc_downloader._is_youtube_url(url) else "sc"
+        await _sc_download_and_send(status_msg, state, result, user_id,
+                                    return_to_menu=True, username=username, source=source)
+    else:
+        # playlist/album — hand off to sc batch flow
+        entries = info["entries"]
+        title = info["title"]
+        if not entries:
+            await status_msg.edit_text("😔 Плейлист пуст или не удалось загрузить треки.")
+            return
+        tracks = [{"url": e.url, "artist": e.artist, "title": e.title} for e in entries]
+        await state.update_data(sc_tracks=tracks, sc_resume_back_cb="sc_menu",
+                                sc_filter_artists=[], sc_original_tracks=None)
+        from bot.keyboards import sc_resume_keyboard
+        await status_msg.edit_text(
+            f"📥 Найдено <b>{len(tracks)}</b> треков в плейлисте «{title}».\n\nС какого трека начать?",
+            parse_mode="HTML",
+            reply_markup=sc_resume_keyboard(),
+        )
+        await state.set_state(SCBatchFlow.sc_resume_choice)
 
 
 @router.callback_query(F.data == "url_detect:cancel")
