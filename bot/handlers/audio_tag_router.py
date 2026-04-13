@@ -92,7 +92,7 @@ def _apply_metadata(path: str, title: str, artist: str, cover_bytes: bytes | Non
                     "-metadata:s:v", "comment=Cover (front)"]
         else:
             cmd += ["-map", "0:a", "-c:a", "copy"]
-        cmd += ["-id3v2_version", "3",
+        cmd += ["-write_xing", "1", "-id3v2_version", "3",
                 "-metadata", f"title={title}",
                 "-metadata", f"artist={artist}",
                 out_tmp]
@@ -206,6 +206,16 @@ async def _process_and_send(message: Message, state: FSMContext, cover_bytes: by
             tmp_out = f.name
 
         await message.bot.download(file_id, destination=tmp_in)
+
+        # Fallback: read duration from file if Telegram didn't provide it (e.g. document)
+        if not duration:
+            try:
+                from mutagen import File as MutagenFile  # noqa: PLC0415
+                _mf = await asyncio.to_thread(MutagenFile, tmp_in)
+                if _mf and hasattr(_mf, "info") and _mf.info:
+                    duration = int(_mf.info.length)
+            except Exception:
+                pass
 
         # If user didn't provide a new cover, extract the original one from the file
         if cover_bytes is None:
