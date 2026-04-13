@@ -169,6 +169,45 @@ async def on_spotify_load_liked_auto(call: CallbackQuery, state: FSMContext) -> 
 
 # ── Playlist URL input ────────────────────────────────────────────────────────
 
+async def load_spotify_url(
+    status_msg,
+    state: FSMContext,
+    url: str,
+    user_id: int,
+    username: str | None,
+) -> bool:
+    """Load a Spotify playlist/album URL into state. Edits status_msg with result. Returns True on success."""
+    source = _spotify_source()
+    if not source:
+        await status_msg.edit_text("❌ Spotify не настроен на этом боте.", reply_markup=spotify_cancel_keyboard())
+        return False
+    try:
+        title, tracks = await source.get_playlist(url)
+    except ValueError as e:
+        await status_msg.edit_text(f"❌ {e}", reply_markup=spotify_cancel_keyboard())
+        return False
+    except Exception as e:
+        log.exception("Spotify playlist load failed user=%s: %s", user_id, e)
+        await status_msg.edit_text(
+            "❌ Не удалось загрузить плейлист. Проверь ссылку и попробуй ещё раз.",
+            reply_markup=spotify_cancel_keyboard(),
+        )
+        return False
+    if not tracks:
+        await status_msg.edit_text("😔 Плейлист пуст или недоступен.", reply_markup=spotify_cancel_keyboard())
+        return False
+    await log_event(user_id, username, "spotify_playlist_load", "success", track_count=len(tracks), detail=title[:80])
+    await state.update_data(spotify_tracks=tracks, spotify_title=title)
+    safe_title = title[:50]
+    await status_msg.edit_text(
+        f'✅ Загружен плейлист <b>«{safe_title}»</b> — {len(tracks)} треков.\n\nЧто делаем?',
+        parse_mode="HTML",
+        reply_markup=spotify_actions_keyboard(),
+    )
+    await state.set_state(SpotifyFlow.actions)
+    return True
+
+
 @router.message(SpotifyFlow.playlist_waiting)
 async def on_spotify_playlist_input(message: Message, state: FSMContext) -> None:
     user_id, username = _get_user_info(message)
@@ -180,34 +219,7 @@ async def on_spotify_playlist_input(message: Message, state: FSMContext) -> None
     url = message.text.strip()
     status_msg = await message.answer("⏳ Загружаю плейлист…")
     set_active_msg(user_id, status_msg.message_id)
-
-    source = _spotify_source()
-    try:
-        title, tracks = await source.get_playlist(url)
-    except ValueError as e:
-        await status_msg.edit_text(f"❌ {e}", reply_markup=spotify_cancel_keyboard())
-        return
-    except Exception as e:
-        log.exception("Spotify playlist load failed user=%s: %s", user_id, e)
-        await status_msg.edit_text(
-            "❌ Не удалось загрузить плейлист. Проверь ссылку и попробуй ещё раз.",
-            reply_markup=spotify_cancel_keyboard(),
-        )
-        return
-
-    if not tracks:
-        await status_msg.edit_text("😔 Плейлист пуст или недоступен.", reply_markup=spotify_cancel_keyboard())
-        return
-
-    await log_event(user_id, username, "spotify_playlist_load", "success", track_count=len(tracks), detail=title[:80])
-    await state.update_data(spotify_tracks=tracks, spotify_title=title)
-    safe_title = title[:50]
-    await status_msg.edit_text(
-        f'✅ Загружен плейлист <b>«{safe_title}»</b> — {len(tracks)} треков.\n\nЧто делаем?',
-        parse_mode="HTML",
-        reply_markup=spotify_actions_keyboard(),
-    )
-    await state.set_state(SpotifyFlow.actions)
+    await load_spotify_url(status_msg, state, url, user_id, username)
 
 
 # ── OAuth redirect URL input ──────────────────────────────────────────────────

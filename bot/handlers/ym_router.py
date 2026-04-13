@@ -96,7 +96,7 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject)
             return
 
     msg = await message.answer(
-        '👋 Привет! Что хочешь сделать?',
+        '👋 Привет! Что хочешь сделать?\n\n💡 Пришли ссылку на альбом или плейлист из ЯМ / Spotify — сразу предложу действия.',
         parse_mode="HTML",
         reply_markup=service_keyboard(),
     )

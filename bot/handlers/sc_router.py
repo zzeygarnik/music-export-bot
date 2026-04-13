@@ -396,7 +396,7 @@ async def on_sc_batch_menu(call: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(SCSearchFlow.sc_menu, F.data == "sc:back")
 async def on_sc_back(call: CallbackQuery, state: FSMContext) -> None:
-    await call.message.edit_text("👋 Привет! Что хочешь сделать?", reply_markup=service_keyboard())
+    await call.message.edit_text("👋 Привет! Что хочешь сделать?\n\n💡 Пришли ссылку на альбом или плейлист из ЯМ / Spotify — сразу предложу действия.", reply_markup=service_keyboard())
     await state.set_state(ExportFlow.choosing_service)
 
 
@@ -775,7 +775,7 @@ async def on_inline_search(call: CallbackQuery, state: FSMContext) -> None:
     action = call.data.split(":", 1)[1]
 
     if action == "cancel":
-        await call.message.edit_text("👋 Привет! Что хочешь сделать?", reply_markup=service_keyboard())
+        await call.message.edit_text("👋 Привет! Что хочешь сделать?\n\n💡 Пришли ссылку на альбом или плейлист из ЯМ / Spotify — сразу предложу действия.", reply_markup=service_keyboard())
         await state.clear()
         return
 
@@ -1228,7 +1228,7 @@ async def on_cancel_queue(call: CallbackQuery, state: FSMContext) -> None:
     user_id = call.from_user.id
     _batch_queue[:] = [item for item in _batch_queue if item.user_id != user_id]
     await state.update_data(in_batch_queue=False)
-    await call.message.edit_text("👋 Привет! Что хочешь сделать?", reply_markup=service_keyboard())
+    await call.message.edit_text("👋 Привет! Что хочешь сделать?\n\n💡 Пришли ссылку на альбом или плейлист из ЯМ / Spotify — сразу предложу действия.", reply_markup=service_keyboard())
     await state.set_state(ExportFlow.choosing_service)
 
 

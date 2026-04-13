@@ -115,8 +115,8 @@ def _apply_metadata(path: str, title: str, artist: str, cover_bytes: bytes | Non
                     pass
 
 
-def _extract_audio_meta(message: Message) -> tuple[str, str, str, str]:
-    """Return (file_id, filename, original_title, original_artist) from a message."""
+def _extract_audio_meta(message: Message) -> tuple[str, str, str, str, int | None]:
+    """Return (file_id, filename, original_title, original_artist, duration) from a message."""
     audio = message.audio
     doc   = message.document
     if audio:
@@ -125,12 +125,14 @@ def _extract_audio_meta(message: Message) -> tuple[str, str, str, str]:
             audio.file_name or "track.mp3",
             audio.title or "",
             audio.performer or "",
+            audio.duration,
         )
     return (
         doc.file_id,
         doc.file_name or "track.mp3",
         "",
         "",
+        None,
     )
 
 
@@ -180,6 +182,7 @@ async def _process_and_send(message: Message, state: FSMContext, cover_bytes: by
     original_filename = data.get("original_filename", "track.mp3")
     original_title    = data.get("original_title", "")
     original_artist   = data.get("original_artist", "")
+    duration          = data.get("duration")
     await state.clear()
 
     progress = await message.answer(
@@ -224,6 +227,7 @@ async def _process_and_send(message: Message, state: FSMContext, cover_bytes: by
             audio=FSInputFile(tmp_out, filename=filename),
             title=title,
             performer=artist,
+            duration=duration,
             thumbnail=thumb_input,
         )
 
@@ -234,6 +238,7 @@ async def _process_and_send(message: Message, state: FSMContext, cover_bytes: by
                 audio=file_id,
                 title=title,
                 performer=artist,
+                duration=duration,
                 thumbnail=thumb_input,
             )
             log.info("AudioTagFlow fallback (file_id resend) succeeded user=%s", message.from_user.id)
@@ -344,7 +349,7 @@ async def audio_tag_cancel_waiting(call: CallbackQuery, state: FSMContext) -> No
     F.audio | (F.document & F.document.mime_type.in_(_AUDIO_MIME)),
 )
 async def handle_audio_in_flow(message: Message, state: FSMContext) -> None:
-    file_id, filename, orig_title, orig_artist = _extract_audio_meta(message)
+    file_id, filename, orig_title, orig_artist, duration = _extract_audio_meta(message)
     await state.update_data(
         file_id=file_id,
         original_filename=filename,
@@ -353,6 +358,7 @@ async def handle_audio_in_flow(message: Message, state: FSMContext) -> None:
         title=orig_title,
         artist=orig_artist,
         cover_b64=None,
+        duration=duration,
     )
     await _show_field_selection_answer(message, state)
 
@@ -362,7 +368,7 @@ async def handle_audio_in_flow(message: Message, state: FSMContext) -> None:
 @router.message(F.audio | (F.document & F.document.mime_type.in_(_AUDIO_MIME)))
 async def handle_audio_received(message: Message, state: FSMContext) -> None:
     """User attached or forwarded audio without going through the menu button."""
-    file_id, filename, orig_title, orig_artist = _extract_audio_meta(message)
+    file_id, filename, orig_title, orig_artist, duration = _extract_audio_meta(message)
     await state.update_data(
         file_id=file_id,
         original_filename=filename,
@@ -371,6 +377,7 @@ async def handle_audio_received(message: Message, state: FSMContext) -> None:
         title=orig_title,
         artist=orig_artist,
         cover_b64=None,
+        duration=duration,
     )
     await _show_field_selection_answer(message, state)
 
