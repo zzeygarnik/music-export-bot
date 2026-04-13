@@ -134,6 +134,43 @@ def _extract_audio_meta(message: Message) -> tuple[str, str, str, str]:
     )
 
 
+def _extract_cover_sync(path: str) -> bytes | None:
+    """Extract embedded cover art from audio file. Returns raw bytes or None."""
+    try:
+        from mutagen import File as MutagenFile  # noqa: PLC0415
+        audio = MutagenFile(path)
+        if audio is None:
+            return None
+        # MP3 — ID3 APIC frame
+        try:
+            from mutagen.id3 import ID3  # noqa: PLC0415
+            tags = ID3(path)
+            frames = tags.getall("APIC")
+            if frames:
+                return frames[0].data
+        except Exception:
+            pass
+        # MP4 / M4A
+        try:
+            from mutagen.mp4 import MP4  # noqa: PLC0415
+            if isinstance(audio, MP4):
+                covers = audio.get("covr")
+                if covers:
+                    return bytes(covers[0])
+        except Exception:
+            pass
+        # FLAC
+        try:
+            from mutagen.flac import FLAC  # noqa: PLC0415
+            if isinstance(audio, FLAC) and audio.pictures:
+                return audio.pictures[0].data
+        except Exception:
+            pass
+    except Exception:
+        pass
+    return None
+
+
 async def _process_and_send(message: Message, state: FSMContext, cover_bytes: bytes | None) -> None:
     """Download, retag (+ optional cover), and send the audio file."""
     data = await state.get_data()
@@ -156,12 +193,6 @@ async def _process_and_send(message: Message, state: FSMContext, cover_bytes: by
 
     import asyncio
     thumb_input = None
-    if cover_bytes:
-        try:
-            thumb_bytes = await asyncio.to_thread(resize_for_telegram_sync, cover_bytes)
-            thumb_input = BufferedInputFile(thumb_bytes, filename="cover.jpg")
-        except Exception:
-            pass
 
     tmp_in = tmp_out = None
     sent = None
@@ -172,6 +203,17 @@ async def _process_and_send(message: Message, state: FSMContext, cover_bytes: by
             tmp_out = f.name
 
         await message.bot.download(file_id, destination=tmp_in)
+
+        # If user didn't provide a new cover, extract the original one from the file
+        if cover_bytes is None:
+            cover_bytes = await asyncio.to_thread(_extract_cover_sync, tmp_in)
+
+        if cover_bytes:
+            try:
+                thumb_bytes = await asyncio.to_thread(resize_for_telegram_sync, cover_bytes)
+                thumb_input = BufferedInputFile(thumb_bytes, filename="cover.jpg")
+            except Exception:
+                pass
 
         import shutil
         shutil.copy(tmp_in, tmp_out)
