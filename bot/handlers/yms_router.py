@@ -75,6 +75,44 @@ async def on_yms_token(message: Message, state: FSMContext) -> None:
     await state.set_state(YMShareFlow.waiting)
 
 
+async def load_ym_url(
+    status_msg,
+    state: FSMContext,
+    url: str,
+    user_id: int,
+    username: str | None,
+) -> bool:
+    """Load a YM album/playlist URL into state. Edits status_msg with result. Returns True on success."""
+    data = await state.get_data()
+    token = settings.YM_BOT_TOKEN or data.get("yms_token", "")
+    try:
+        title, tracks = await YandexMusicSource(token).get_playlist_by_url(url)
+    except ValueError as e:
+        log.warning("YMShare load ValueError user=%s url=%s: %s", user_id, url[:80], e)
+        await status_msg.edit_text(f"❌ {e}", parse_mode="HTML", reply_markup=ym_share_cancel_keyboard())
+        return False
+    except Exception as e:
+        log.exception("YMShare load failed user=%s url=%s: %s", user_id, url[:80], e)
+        await status_msg.edit_text(
+            "❌ Не удалось загрузить плейлист. Проверь ссылку и попробуй ещё раз.",
+            reply_markup=ym_share_cancel_keyboard(),
+        )
+        return False
+    if not tracks:
+        await status_msg.edit_text("😔 Плейлист пуст или недоступен.", reply_markup=ym_share_cancel_keyboard())
+        return False
+    await log_event(user_id, username, "yms_load", "success", track_count=len(tracks), detail=title)
+    await state.update_data(yms_tracks=tracks, yms_playlist_title=title, yms_filter_artists=[], yms_filtered_tracks=None)
+    safe_title = title[:50] if title else "Плейлист"
+    await status_msg.edit_text(
+        f'✅ Загружено <b>«{safe_title}»</b> — {len(tracks)} треков.\n\nЧто делаем?',
+        parse_mode="HTML",
+        reply_markup=ym_share_actions_keyboard(),
+    )
+    await state.set_state(YMShareFlow.actions)
+    return True
+
+
 @router.message(YMShareFlow.waiting)
 async def on_yms_waiting(message: Message, state: FSMContext) -> None:
     user_id, username = _get_user_info(message)
@@ -100,45 +138,9 @@ async def on_yms_waiting(message: Message, state: FSMContext) -> None:
         )
         return
 
-    data = await state.get_data()
-    token = settings.YM_BOT_TOKEN or data.get("yms_token", "")
-
     status_msg = await message.answer("⏳ Загружаю…")
     set_active_msg(user_id, status_msg.message_id)
-    try:
-        title, tracks = await YandexMusicSource(token).get_playlist_by_url(url)
-    except ValueError as e:
-        log.warning("YMShare load ValueError user=%s url=%s: %s", user_id, url[:80], e)
-        await status_msg.edit_text(
-            f"❌ {e}",
-            parse_mode="HTML",
-            reply_markup=ym_share_cancel_keyboard(),
-        )
-        return
-    except Exception as e:
-        log.exception("YMShare load failed user=%s url=%s: %s", user_id, url[:80], e)
-        await status_msg.edit_text(
-            "❌ Не удалось загрузить плейлист. Проверь ссылку и попробуй ещё раз.",
-            reply_markup=ym_share_cancel_keyboard(),
-        )
-        return
-
-    if not tracks:
-        await status_msg.edit_text(
-            "😔 Плейлист пуст или недоступен.",
-            reply_markup=ym_share_cancel_keyboard(),
-        )
-        return
-
-    await log_event(user_id, username, "yms_load", "success", track_count=len(tracks), detail=title)
-    await state.update_data(yms_tracks=tracks, yms_playlist_title=title, yms_filter_artists=[], yms_filtered_tracks=None)
-    safe_title = title[:50] if title else "Плейлист"
-    await status_msg.edit_text(
-        f'✅ Загружено <b>«{safe_title}»</b> — {len(tracks)} треков.\n\nЧто делаем?',
-        parse_mode="HTML",
-        reply_markup=ym_share_actions_keyboard(),
-    )
-    await state.set_state(YMShareFlow.actions)
+    await load_ym_url(status_msg, state, url, user_id, username)
 
 
 @router.callback_query(YMShareFlow.actions, F.data == "yms:download_all")
