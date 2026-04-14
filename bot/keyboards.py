@@ -227,7 +227,7 @@ def sc_playlists_keyboard(playlists: list[dict]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def sc_resume_keyboard(filter_artists: list | None = None) -> InlineKeyboardMarkup:
+def sc_resume_keyboard(filter_artists: list | None = None, zip_mode: bool = False) -> InlineKeyboardMarkup:
     has_filter = bool(filter_artists)
     rows = [
         [InlineKeyboardButton(
@@ -254,6 +254,10 @@ def sc_resume_keyboard(filter_artists: list | None = None) -> InlineKeyboardMark
             text="Добавить ещё исполнителя" if has_filter else "Фильтр по исполнителю",
             callback_data="sc_resume:filter_artist",
             icon_custom_emoji_id="6037397706505195857",
+        )],
+        [InlineKeyboardButton(
+            text="📦 Получить ZIP-архивом ✅" if zip_mode else "📦 Получить ZIP-архивом",
+            callback_data="sc_resume:toggle_zip",
         )],
     ]
     if has_filter:

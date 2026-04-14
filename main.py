@@ -10,6 +10,7 @@ from datetime import datetime, timezone, timedelta
 from aiohttp import web as aiohttp_web
 from aiogram import Bot, Dispatcher
 from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.client.telegram import TelegramAPIServer, PRODUCTION
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.types import BotCommand, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler
@@ -1134,6 +1135,7 @@ async def main() -> None:
         log.warning("POSTGRES_URL not set — event logging disabled")
 
     session = AiohttpSession(
+        api=TelegramAPIServer.from_base(settings.LOCAL_API_URL, is_local=True) if settings.LOCAL_API_URL else PRODUCTION,
         proxy=settings.SC_PROXY or None,
         timeout=600,  # 10 min — SC download via proxy can be slow
     )

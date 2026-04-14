@@ -2,12 +2,14 @@
 import asyncio
 import dataclasses
 import logging
+import io
 import os
+import zipfile
 from collections import Counter
 from datetime import datetime, timezone
 
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, FSInputFile
+from aiogram.types import Message, CallbackQuery, FSInputFile, BufferedInputFile
 from aiogram.fsm.context import FSMContext
 
 from bot.states import ExportFlow, SCSearchFlow, SCBatchFlow, YMShareFlow, SpotifyFlow
@@ -97,6 +99,7 @@ async def _fetch_track(
     bot,
     *,
     dl_sem: asyncio.Semaphore,
+    skip_cache: bool = False,
 ) -> _TrackFetchResult:
     """Resolve one track: cache hit → instant return; otherwise acquire dl_sem and download."""
     artist    = (track.get("artist") or "").strip()
@@ -105,7 +108,7 @@ async def _fetch_track(
     direct_url = track.get("url")
 
     # ── Cache lookup (outside semaphore — cheap DB query) ─────────────────────
-    if cache_key:
+    if cache_key and not skip_cache:
         try:
             fid = await get_cached_file_id(cache_key)
             if fid:
@@ -117,7 +120,7 @@ async def _fetch_track(
             pass
 
     # ── Fuzzy cache fallback (no semaphore — cheap DB query) ──────────────────
-    if cache_key and (artist or title):
+    if cache_key and not skip_cache and (artist or title):
         try:
             fuzzy_hits = await search_cache_fuzzy(f"{artist} {title}", threshold=82)
             if fuzzy_hits:
@@ -431,7 +434,7 @@ async def on_sc_batch_from_ym(call: CallbackQuery, state: FSMContext) -> None:
     msg = await call.message.answer(
         f"📥 Готов скачать <b>{len(sc_tracks)}</b> треков с SoundCloud.\n\nС какого трека начать?",
         parse_mode="HTML",
-        reply_markup=sc_resume_keyboard(),
+        reply_markup=sc_resume_keyboard(zip_mode=data.get("zip_mode", False)),
     )
     set_active_msg(call.from_user.id, msg.message_id)
     await state.set_state(SCBatchFlow.sc_resume_choice)
@@ -881,12 +884,12 @@ async def on_sc_url_input(message: Message, state: FSMContext) -> None:
             return
         back_cb = data.get("sc_resume_back_cb", "sc_menu")
         tracks = [{"url": e.url, "artist": e.artist, "title": e.title} for e in entries]
-        await state.update_data(sc_tracks=tracks, sc_resume_back_cb=back_cb, sc_filter_artists=[], sc_original_tracks=None)
+        await state.update_data(sc_tracks=tracks, sc_resume_back_cb=back_cb, sc_filter_artists=[], sc_original_tracks=None, zip_mode=False)
         await status_msg.edit_text(
             f'<tg-emoji emoji-id="6039802767931871481">📥</tg-emoji> '
             f'Найдено <b>{len(tracks)}</b> треков в плейлисте «{title}».\n\nС какого трека начать?',
             parse_mode="HTML",
-            reply_markup=sc_resume_keyboard(),
+            reply_markup=sc_resume_keyboard(zip_mode=False),
         )
         await state.set_state(SCBatchFlow.sc_resume_choice)
 
@@ -1032,11 +1035,11 @@ async def on_sc_ym_playlist_selected(call: CallbackQuery, state: FSMContext) -> 
         await state.set_state(SCSearchFlow.sc_menu)
         return
 
-    await state.update_data(sc_tracks=tracks, sc_resume_back_cb="sc_ym_playlists", sc_filter_artists=[], sc_original_tracks=None)
+    await state.update_data(sc_tracks=tracks, sc_resume_back_cb="sc_ym_playlists", sc_filter_artists=[], sc_original_tracks=None, zip_mode=False)
     await call.message.edit_text(
         f"📥 Готов скачать <b>{len(tracks)}</b> треков с SoundCloud из «{title}».\n\nС какого трека начать?",
         parse_mode="HTML",
-        reply_markup=sc_resume_keyboard(),
+        reply_markup=sc_resume_keyboard(zip_mode=False),
     )
     await state.set_state(SCBatchFlow.sc_resume_choice)
 
@@ -1339,7 +1342,7 @@ async def on_sc_filter_back(call: CallbackQuery, state: FSMContext) -> None:
     await call.message.edit_text(
         f"📥 Готов скачать <b>{len(tracks)}</b> треков.\n\nС какого трека начать?",
         parse_mode="HTML",
-        reply_markup=sc_resume_keyboard(filter_artists=filter_artists),
+        reply_markup=sc_resume_keyboard(filter_artists=filter_artists, zip_mode=data.get("zip_mode", False)),
     )
     await state.set_state(SCBatchFlow.sc_resume_choice)
 
@@ -1383,7 +1386,7 @@ async def on_sc_filter_input(message: Message, state: FSMContext) -> None:
         f"✅ Найдено <b>{len(matched)}</b> треков исполнителя <b>{query}</b>. "
         f"Всего в фильтре: <b>{len(union_tracks)}</b>.\n\nС какого трека начать?",
         parse_mode="HTML",
-        reply_markup=sc_resume_keyboard(filter_artists=artists),
+        reply_markup=sc_resume_keyboard(filter_artists=artists, zip_mode=data.get("zip_mode", False)),
     )
     set_active_msg(message.from_user.id, msg.message_id)
     await state.set_state(SCBatchFlow.sc_resume_choice)
@@ -1417,8 +1420,20 @@ async def on_sc_rm_artist(call: CallbackQuery, state: FSMContext) -> None:
     await call.message.edit_text(
         f"📥 Готов скачать <b>{len(union_tracks)}</b> треков.\n\nС какого трека начать?",
         parse_mode="HTML",
-        reply_markup=sc_resume_keyboard(filter_artists=artists or None),
+        reply_markup=sc_resume_keyboard(filter_artists=artists or None, zip_mode=data.get("zip_mode", False)),
     )
+
+
+@router.callback_query(SCBatchFlow.sc_resume_choice, F.data == "sc_resume:toggle_zip")
+async def on_sc_toggle_zip(call: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    zip_mode = not data.get("zip_mode", False)
+    await state.update_data(zip_mode=zip_mode)
+    filter_artists = data.get("sc_filter_artists") or None
+    await call.message.edit_reply_markup(
+        reply_markup=sc_resume_keyboard(filter_artists=filter_artists, zip_mode=zip_mode)
+    )
+    await call.answer()
 
 
 @router.message(SCBatchFlow.track_selection)
@@ -1673,7 +1688,7 @@ async def on_tsel_cancel(call: CallbackQuery, state: FSMContext) -> None:
     await call.message.edit_text(
         f"📥 Готов скачать <b>{len(tracks)}</b> треков.\n\nС какого трека начать?",
         parse_mode="HTML",
-        reply_markup=sc_resume_keyboard(filter_artists=filter_artists),
+        reply_markup=sc_resume_keyboard(filter_artists=filter_artists, zip_mode=data.get("zip_mode", False)),
     )
     await state.set_state(SCBatchFlow.sc_resume_choice)
 
@@ -1798,6 +1813,36 @@ async def _sc_download_and_send(
         await state.set_state(SCSearchFlow.sc_menu)
 
 
+async def _send_as_zip(
+    msg: Message,
+    tracks: list[tuple[str, str, str]],
+) -> None:
+    """Build a ZIP archive from downloaded track paths and send it as a document.
+
+    tracks: list of (artist, title, local_path). Paths must exist when called.
+    Files are NOT removed here; caller is responsible for cleanup.
+    """
+    try:
+        await msg.edit_text(
+            f"📦 Создаю архив ({len(tracks)} треков)…",
+            reply_markup=None,
+        )
+    except Exception:
+        pass
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for artist, title, file_path in tracks:
+            safe_name = f"{artist} - {title}.mp3".replace("/", "-").replace("\\", "-")
+            zf.write(file_path, safe_name)
+    buf.seek(0)
+
+    await msg.answer_document(
+        document=BufferedInputFile(buf.read(), filename="playlist.zip"),
+        caption=f"📦 playlist.zip — {len(tracks)} треков",
+    )
+
+
 async def _run_batch_download(
     progress_msg: Message,
     state: FSMContext,
@@ -1809,6 +1854,10 @@ async def _run_batch_download(
     await _batch_semaphore.acquire()
     cancel_event = asyncio.Event()
     _cancel_events[user_id] = cancel_event
+
+    _state_data = await state.get_data()
+    zip_mode: bool = _state_data.get("zip_mode", False)
+    zip_collected: list[tuple[str, str, str]] = []  # (artist, title, path) for ZIP mode
 
     total = len(tracks)
     not_found: list[str] = []
@@ -1839,7 +1888,7 @@ async def _run_batch_download(
     # the background.  We await them below in original playlist order, so sends
     # are always in order even though downloads overlap.
     all_tasks = [
-        asyncio.create_task(_fetch_track(t, user_id, progress_msg.bot, dl_sem=dl_sem))
+        asyncio.create_task(_fetch_track(t, user_id, progress_msg.bot, dl_sem=dl_sem, skip_cache=zip_mode))
         for t in track_slice
     ]
 
@@ -1885,84 +1934,104 @@ async def _run_batch_download(
                 failed_tracks.append(track)
                 continue
 
-            # ── Send phase (always sequential, always in playlist order) ──────
+            # ── Send / collect phase ────────────────────────────────────────────
 
-            if r.cached_file_id:
-                try:
-                    await progress_msg.answer_audio(
-                        audio=r.cached_file_id,
-                        title=r.title,
-                        performer=r.artist,
-                    )
-                    downloaded_count += 1
-                    cache_hits_count += 1
-                    try:
-                        await progress_msg.edit_text(
-                            f"⚡ {_progress_bar(i, total)} — {r.artist} — {r.title}",
-                            reply_markup=sc_stop_keyboard(),
-                        )
-                    except Exception:
-                        pass
-                    continue
-                except Exception as e:
-                    log.warning("SC batch send_audio (cache) failed '%s': %s", r.cache_key, e)
-                    if r.cache_key:
-                        await delete_cached_file_id(r.cache_key)
-                    # Stale file_id — re-download synchronously (rare)
-                    try:
-                        r = await _fetch_track(
-                            track, user_id, progress_msg.bot,
-                            dl_sem=asyncio.Semaphore(1),
-                        )
-                        if r.not_found or not r.path:
-                            not_found.append(f"{artist} — {title}")
-                            failed_tracks.append(track)
-                            continue
-                    except Exception:
-                        not_found.append(f"{artist} — {title}")
-                        failed_tracks.append(track)
-                        continue
-
-            # r.path is set — send downloaded file
-            sent = False
-            try:
-                sent_msg = await progress_msg.answer_audio(
-                    audio=FSInputFile(r.path, filename=f"{r.artist} - {r.title}.mp3"),
-                    title=r.meta.get("title") or r.title,
-                    performer=r.meta.get("artist") or r.artist,
-                    duration=r.meta.get("duration") or r.duration or None,
-                    thumbnail=FSInputFile(r.cover_path) if r.cover_path else None,
-                )
-                sent = True
-                downloaded_count += 1
-                if sent_msg and sent_msg.audio and r.cache_key:
-                    await save_cached_file_id(
-                        r.cache_key, sent_msg.audio.file_id, "batch",
-                        artist=r.artist, title=r.title,
-                    )
-            except Exception as e:
-                log.warning("SC batch send_audio failed '%s — %s': %s", r.artist, r.title, e)
-                not_found.append(f"{r.artist} — {r.title}")
-                failed_tracks.append(track)
-            finally:
+            if zip_mode:
+                # ZIP mode: accumulate path; send one archive after all tracks are fetched
                 if r.path:
-                    try:
-                        os.remove(r.path)
-                    except OSError:
-                        pass
+                    zip_collected.append((r.artist, r.title, r.path))
+                downloaded_count += 1
                 if r.cover_path:
                     try:
                         os.remove(r.cover_path)
                     except OSError:
                         pass
+            else:
+                if r.cached_file_id:
+                    try:
+                        await progress_msg.answer_audio(
+                            audio=r.cached_file_id,
+                            title=r.title,
+                            performer=r.artist,
+                        )
+                        downloaded_count += 1
+                        cache_hits_count += 1
+                        try:
+                            await progress_msg.edit_text(
+                                f"⚡ {_progress_bar(i, total)} — {r.artist} — {r.title}",
+                                reply_markup=sc_stop_keyboard(),
+                            )
+                        except Exception:
+                            pass
+                        continue
+                    except Exception as e:
+                        log.warning("SC batch send_audio (cache) failed '%s': %s", r.cache_key, e)
+                        if r.cache_key:
+                            await delete_cached_file_id(r.cache_key)
+                        # Stale file_id — re-download synchronously (rare)
+                        try:
+                            r = await _fetch_track(
+                                track, user_id, progress_msg.bot,
+                                dl_sem=asyncio.Semaphore(1),
+                            )
+                            if r.not_found or not r.path:
+                                not_found.append(f"{artist} — {title}")
+                                failed_tracks.append(track)
+                                continue
+                        except Exception:
+                            not_found.append(f"{artist} — {title}")
+                            failed_tracks.append(track)
+                            continue
 
-            if sent:
+                # r.path is set — send downloaded file
+                sent = False
                 try:
-                    await progress_msg.edit_text(
-                        f"⏳ {_progress_bar(i, total)} — {r.artist} — {r.title}",
-                        reply_markup=sc_stop_keyboard(),
+                    sent_msg = await progress_msg.answer_audio(
+                        audio=FSInputFile(r.path, filename=f"{r.artist} - {r.title}.mp3"),
+                        title=r.meta.get("title") or r.title,
+                        performer=r.meta.get("artist") or r.artist,
+                        duration=r.meta.get("duration") or r.duration or None,
+                        thumbnail=FSInputFile(r.cover_path) if r.cover_path else None,
                     )
-                except Exception:
+                    sent = True
+                    downloaded_count += 1
+                    if sent_msg and sent_msg.audio and r.cache_key:
+                        await save_cached_file_id(
+                            r.cache_key, sent_msg.audio.file_id, "batch",
+                            artist=r.artist, title=r.title,
+                        )
+                except Exception as e:
+                    log.warning("SC batch send_audio failed '%s — %s': %s", r.artist, r.title, e)
+                    not_found.append(f"{r.artist} — {r.title}")
+                    failed_tracks.append(track)
+                finally:
+                    if r.path:
+                        try:
+                            os.remove(r.path)
+                        except OSError:
+                            pass
+                    if r.cover_path:
+                        try:
+                            os.remove(r.cover_path)
+                        except OSError:
+                            pass
+
+                if sent:
+                    try:
+                        await progress_msg.edit_text(
+                            f"⏳ {_progress_bar(i, total)} — {r.artist} — {r.title}",
+                            reply_markup=sc_stop_keyboard(),
+                        )
+                    except Exception:
+                        pass
+
+        # ── ZIP mode: build archive and send ─────────────────────────────────────
+        if zip_mode and zip_collected:
+            await _send_as_zip(progress_msg, zip_collected)
+            for _, _, _zp in zip_collected:
+                try:
+                    os.remove(_zp)
+                except OSError:
                     pass
 
     finally:
@@ -2008,7 +2077,7 @@ async def _run_batch_download(
     for track_name in not_found:
         await log_event(user_id, username, "sc_track_fail", "error", detail=track_name)
 
-    summary = "⛔ Скачивание остановлено." if cancel_event.is_set() else "✅ Плейлист скачан!"
+    summary = "⛔ Скачивание остановлено." if cancel_event.is_set() else ("📦 Архив отправлен!" if zip_mode else "✅ Плейлист скачан!")
     summary += f"\n\n📊 Скачано: {downloaded_count}/{total}"
     if cache_hits_count:
         summary += f"  ·  ⚡ {cache_hits_count} из кэша"
