@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     WEBHOOK_SECRET: str = ""                          # secret token for Telegram webhook verification
     DASHBOARD_TOKEN: str = ""                         # secret token for web dashboard access (set to enable)
     VK_TOKEN: str = ""                               # VK Kate Mobile token (vkpymusic) for VK music search/download
+    LOCAL_API_URL: str = ""                          # e.g. http://localhost:8081 — Telegram Local Bot API server (removes 50 MB file size limit)
 
     def is_batch_allowed(self, user_id: int, username: str | None) -> bool:
         val = self.BATCH_ALLOWED_USERS.strip()
