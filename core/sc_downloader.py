@@ -486,7 +486,12 @@ async def extract_url_info(url: str) -> dict:
         for e in (raw.get("entries") or []):
             if not e:
                 continue
-            track_url = e.get("url") or e.get("webpage_url") or ""
+            track_url = e.get("webpage_url") or e.get("url") or ""
+            # extract_flat returns bare video ID (e.g. "dQw4w9WgXcQ") for YT playlists.
+            # Without "youtube.com" in the URL, _is_youtube_url() returns False →
+            # wrong format/cookies/proxy → yt-dlp picks "best" (video) instead of audio.
+            if track_url and not track_url.startswith("http") and _is_youtube_url(url):
+                track_url = f"https://www.youtube.com/watch?v={track_url}"
             if not track_url:
                 continue
             entries.append(SCResult(
