@@ -2,14 +2,13 @@
 import asyncio
 import dataclasses
 import logging
-import io
 import os
 import zipfile
 from collections import Counter
 from datetime import datetime, timezone
 
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, FSInputFile, BufferedInputFile
+from aiogram.types import Message, CallbackQuery, FSInputFile
 from aiogram.fsm.context import FSMContext
 
 from bot.states import ExportFlow, SCSearchFlow, SCBatchFlow, YMShareFlow, SpotifyFlow
@@ -1830,17 +1829,23 @@ async def _send_as_zip(
     except Exception:
         pass
 
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for artist, title, file_path in tracks:
-            safe_name = f"{artist} - {title}.mp3".replace("/", "-").replace("\\", "-")
-            zf.write(file_path, safe_name)
-    buf.seek(0)
+    import tempfile, os as _os
+    tmp_zip = tempfile.mktemp(suffix=".zip")
+    try:
+        def _build_zip():
+            with zipfile.ZipFile(tmp_zip, "w", zipfile.ZIP_STORED) as zf:
+                for artist, title, file_path in tracks:
+                    safe_name = f"{artist} - {title}.mp3".replace("/", "-").replace("\\", "-")
+                    zf.write(file_path, safe_name)
+        await asyncio.to_thread(_build_zip)
 
-    await msg.answer_document(
-        document=BufferedInputFile(buf.read(), filename="playlist.zip"),
-        caption=f"📦 playlist.zip — {len(tracks)} треков",
-    )
+        await msg.answer_document(
+            document=FSInputFile(tmp_zip, filename="playlist.zip"),
+            caption=f"📦 playlist.zip — {len(tracks)} треков",
+        )
+    finally:
+        if _os.path.exists(tmp_zip):
+            _os.remove(tmp_zip)
 
 
 async def _run_batch_download(
@@ -1915,9 +1920,25 @@ async def _run_batch_download(
                 "status": "running",
             })
 
-            # Await the result of this track's fetch task
+            # In ZIP mode show "downloading N/total" BEFORE awaiting —
+            # otherwise the message stays frozen until the track finishes.
+            if zip_mode:
+                try:
+                    await progress_msg.edit_text(
+                        f"📦 {_progress_bar(i - 1, total)} — ⬇️ {i}/{total}: {artist} — {title}…",
+                        reply_markup=sc_stop_keyboard(),
+                    )
+                except Exception:
+                    pass
+
+            # Await the result of this track's fetch task (5 min hard cap per track)
             try:
-                r: _TrackFetchResult = await task
+                r: _TrackFetchResult = await asyncio.wait_for(task, timeout=300)
+            except asyncio.TimeoutError:
+                log.warning("SC batch _fetch_track TIMEOUT '%s — %s'", artist, title)
+                not_found.append(f"{artist} — {title}")
+                failed_tracks.append(track)
+                continue
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -1941,6 +1962,13 @@ async def _run_batch_download(
                 if r.path:
                     zip_collected.append((r.artist, r.title, r.path))
                 downloaded_count += 1
+                try:
+                    await progress_msg.edit_text(
+                        f"📦 {_progress_bar(i, total)} — {r.artist} — {r.title}",
+                        reply_markup=sc_stop_keyboard(),
+                    )
+                except Exception:
+                    pass
                 if r.cover_path:
                     try:
                         os.remove(r.cover_path)
