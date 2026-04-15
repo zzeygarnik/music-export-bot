@@ -205,7 +205,7 @@ def _download_sync(url: str, output_template: str) -> tuple[str, dict]:
     # Re-encoding adds CPU time and inflates file size without quality gain.
     # For YouTube: prefer format 140 (native m4a/128kbps) — WebM/Opus breaks
     # seeking on iOS Telegram. m4a is always seekable.
-    yt_audio_format = "140/bestaudio[ext=m4a]/bestaudio/best" if _is_youtube_url(url) else "bestaudio/best"
+    yt_audio_format = "140/bestaudio[ext=m4a]/bestaudio" if _is_youtube_url(url) else "bestaudio/best"
     opts = {
         "quiet": True,
         "no_warnings": True,
