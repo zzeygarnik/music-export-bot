@@ -599,6 +599,12 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
           </svg>
           System
         </a>
+        <a class="nav-link" data-tab="cookies">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+            <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
+          </svg>
+          Cookies
+        </a>
       </div>
     </nav>
     <div class="sb-foot">
@@ -1206,6 +1212,65 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
         </div>
       </div>
 
+
+      <div class="tab" id="tab-cookies">
+        <div class="pg-head" style="display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <div class="pg-title">Cookies</div>
+            <div class="pg-sub">Update SC / YouTube Netscape cookie files — applied immediately, no restart needed</div>
+          </div>
+          <button class="p-btn secondary" id="cookies-refresh-btn" style="padding:7px 16px">Refresh</button>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px">
+          <div class="card" id="cookies-sc-card">
+            <div class="card-hdr">
+              <div>
+                <div class="card-title">SoundCloud Cookies</div>
+                <div id="cookies-sc-path" style="font-family:var(--fm);font-size:9px;color:var(--muted);margin-top:2px"></div>
+              </div>
+              <span id="cookies-sc-mtime" style="font-family:var(--fm);font-size:9px;color:var(--dim)"></span>
+            </div>
+            <div class="card-body" style="padding:14px">
+              <textarea id="cookies-sc-ta" spellcheck="false" autocomplete="off"
+                style="width:100%;height:220px;resize:vertical;font-family:var(--fm);font-size:10px;background:var(--bg);color:var(--text);border:1px solid var(--bdr);border-radius:6px;padding:10px;box-sizing:border-box;outline:none"
+                placeholder="Netscape cookie format (# Netscape HTTP Cookie File...)"></textarea>
+              <div style="display:flex;align-items:center;gap:10px;margin-top:10px">
+                <button class="p-btn" id="cookies-sc-save" style="padding:7px 20px">Save</button>
+                <span id="cookies-sc-msg" style="font-family:var(--fm);font-size:9px;color:var(--muted)"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" id="cookies-yt-card">
+            <div class="card-hdr">
+              <div>
+                <div class="card-title">YouTube Cookies</div>
+                <div id="cookies-yt-path" style="font-family:var(--fm);font-size:9px;color:var(--muted);margin-top:2px"></div>
+              </div>
+              <span id="cookies-yt-mtime" style="font-family:var(--fm);font-size:9px;color:var(--dim)"></span>
+            </div>
+            <div class="card-body" style="padding:14px">
+              <textarea id="cookies-yt-ta" spellcheck="false" autocomplete="off"
+                style="width:100%;height:220px;resize:vertical;font-family:var(--fm);font-size:10px;background:var(--bg);color:var(--text);border:1px solid var(--bdr);border-radius:6px;padding:10px;box-sizing:border-box;outline:none"
+                placeholder="Netscape cookie format (# Netscape HTTP Cookie File...)"></textarea>
+              <div style="display:flex;align-items:center;gap:10px;margin-top:10px">
+                <button class="p-btn" id="cookies-yt-save" style="padding:7px 20px">Save</button>
+                <span id="cookies-yt-msg" style="font-family:var(--fm);font-size:9px;color:var(--muted)"></span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <div style="margin-top:14px;padding:10px 14px;background:var(--adim);border-radius:6px;border:1px solid var(--bdr)">
+          <span style="font-family:var(--fm);font-size:9px;color:var(--muted)">
+            Format: Netscape HTTP Cookie File. Export from browser via EditThisCookie or cookie-editor extension.
+            Changes take effect on the next download request.
+          </span>
+        </div>
+      </div>
+
     </div><!-- /inner -->
   </main>
 </div><!-- /dash -->
@@ -1532,7 +1597,7 @@ async function loadStats() {
 
 /* ── TABS ────────────────────────────────────────────────── */
 function switchTab(id) {
-  const valid = ['ym','spotify','sc','log','proxies','network','users','bans','batch','system','renames','cache'];
+  const valid = ['ym','spotify','sc','log','proxies','network','users','bans','batch','system','renames','cache','cookies'];
   if (!valid.includes(id)) id='ym';
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
   document.querySelectorAll('.nav-link').forEach(l=>l.classList.remove('active'));
@@ -1541,7 +1606,7 @@ function switchTab(id) {
   history.replaceState(null,'','#'+id);
   const tbl = document.getElementById('tbl-'+id);
   const isEmpty = tbl && tbl.children.length === 0;
-  const alwaysReload = ['proxies','network','users','bans','batch','system','renames','cache'];
+  const alwaysReload = ['proxies','network','users','bans','batch','system','renames','cache','cookies'];
   if (!loaded[id] || isEmpty || alwaysReload.includes(id)) { loadTabData(id); loaded[id]=true; }
 }
 
@@ -1568,6 +1633,8 @@ async function loadTabData(id) {
     await loadRenames();
   } else if (id === 'cache') {
     await loadCache();
+  } else if (id === 'cookies') {
+    await loadCookies();
   } else {
     offsets.log = 0;
     await loadTable(logSrc, 'tbl-log', 0, false, logUsernameFilter);
@@ -2488,6 +2555,61 @@ async function loadRenames(append = false) {
 }
 
 document.getElementById('more-renames')?.addEventListener('click', () => loadRenames(true));
+
+
+/* -- Cookies -- */
+async function loadCookies() {
+  const data = await apiFetch('/api/cookies');
+  if (!data) return;
+  ['sc', 'yt'].forEach(src => {
+    const info    = data[src] || {};
+    const pathEl  = document.getElementById(`cookies-${src}-path`);
+    const mtimeEl = document.getElementById(`cookies-${src}-mtime`);
+    const ta      = document.getElementById(`cookies-${src}-ta`);
+    const saveBtn = document.getElementById(`cookies-${src}-save`);
+    if (pathEl)  pathEl.textContent  = info.error ? '⚠ ' + info.error : (info.path || 'Not configured');
+    if (mtimeEl) mtimeEl.textContent = info.mtime ? 'Updated: ' + fmtTs(info.mtime) : '';
+    if (ta) {
+      ta.value    = (info.content !== null && info.content !== undefined) ? info.content : '';
+      ta.disabled = !!info.error;
+    }
+    if (saveBtn) saveBtn.disabled = !!info.error;
+  });
+}
+
+async function saveCookies(src) {
+  const ta  = document.getElementById(`cookies-${src}-ta`);
+  const msg = document.getElementById(`cookies-${src}-msg`);
+  if (!ta || !msg) return;
+  msg.textContent = 'Saving…';
+  msg.style.color = 'var(--muted)';
+  try {
+    const r = await fetch('/api/cookies/' + src, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({content: ta.value}),
+    });
+    if (r.status === 401) { window.location.href = '/dashboard/login'; return; }
+    if (r.ok) {
+      const d = await r.json();
+      msg.textContent = 'Saved — ' + fmtTs(d.mtime);
+      msg.style.color = 'var(--green, #4ade80)';
+      const mtimeEl = document.getElementById(`cookies-${src}-mtime`);
+      if (mtimeEl && d.mtime) mtimeEl.textContent = 'Updated: ' + fmtTs(d.mtime);
+    } else {
+      msg.textContent = 'Error: ' + await r.text();
+      msg.style.color = 'var(--red)';
+    }
+  } catch(e) {
+    msg.textContent = 'Network error';
+    msg.style.color = 'var(--red)';
+  }
+  setTimeout(() => { msg.textContent = ''; }, 4000);
+}
+
+document.getElementById('cookies-sc-save')?.addEventListener('click', () => saveCookies('sc'));
+document.getElementById('cookies-yt-save')?.addEventListener('click', () => saveCookies('yt'));
+document.getElementById('cookies-refresh-btn')?.addEventListener('click', loadCookies);
 
 /* ── INIT ────────────────────────────────────────────────── */
 function initDash() {
