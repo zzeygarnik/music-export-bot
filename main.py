@@ -1029,6 +1029,62 @@ async def _api_batch_requests_resolve(request: aiohttp_web.Request) -> aiohttp_w
         content_type="application/json",
     )
 
+# Cookie API handlers
+
+async def _api_cookies_get(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    if not _check_auth(request):
+        return aiohttp_web.Response(status=401)
+    result = {}
+    for key, path in [("sc", settings.SC_COOKIE_FILE), ("yt", settings.YT_COOKIE_FILE)]:
+        if not path:
+            result[key] = {"path": None, "content": None, "mtime": None, "error": "Not configured"}
+            continue
+        try:
+            mtime = None
+            content_text = ""
+            if os.path.exists(path):
+                mtime = datetime.fromtimestamp(
+                    os.path.getmtime(path), tz=timezone.utc
+                ).isoformat(timespec="seconds")
+                with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                    content_text = fh.read()
+            result[key] = {"path": path, "content": content_text, "mtime": mtime}
+        except Exception as e:
+            result[key] = {"path": path, "content": None, "mtime": None, "error": str(e)[:120]}
+    return aiohttp_web.Response(text=json.dumps(result), content_type="application/json")
+
+
+async def _api_cookies_post(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    if not _check_auth(request):
+        return aiohttp_web.Response(status=401)
+    if not _check_csrf(request):
+        return aiohttp_web.Response(status=403, text="CSRF check failed")
+    source = request.match_info["source"]
+    if source not in ("sc", "yt"):
+        return aiohttp_web.Response(status=404)
+    path = settings.SC_COOKIE_FILE if source == "sc" else settings.YT_COOKIE_FILE
+    if not path:
+        return aiohttp_web.Response(status=422, text=f"{source.upper()}_COOKIE_FILE is not configured")
+    try:
+        body = await request.json()
+        new_content = body.get("content", "")
+    except Exception:
+        return aiohttp_web.Response(status=400, text="Invalid JSON")
+    try:
+        with open(path, "w", encoding="utf-8", newline="") as fh:
+            fh.write(new_content)
+        mtime = datetime.fromtimestamp(
+            os.path.getmtime(path), tz=timezone.utc
+        ).isoformat(timespec="seconds")
+        log.info("Cookie file updated via dashboard: source=%s path=%s", source, path)
+    except Exception as e:
+        return aiohttp_web.Response(status=500, text=f"Failed to write cookie file: {e}")
+    return aiohttp_web.Response(
+        text=json.dumps({"ok": True, "path": path, "mtime": mtime}),
+        content_type="application/json",
+    )
+
+
 
 # ── System API ────────────────────────────────────────────────────────────
 
@@ -1207,6 +1263,9 @@ async def main() -> None:
             # Moderation — batch access requests
             web_app.router.add_get("/api/batch-requests",                          _api_batch_requests_get)
             web_app.router.add_post("/api/batch-requests/{req_id}/{action}",       _api_batch_requests_resolve)
+            # Cookie file management
+            web_app.router.add_get("/api/cookies",              _api_cookies_get)
+            web_app.router.add_post("/api/cookies/{source}",    _api_cookies_post)
             # System stats
             web_app.router.add_get("/api/system",               _api_system)
             log.info("Dashboard registered at /dashboard")
