@@ -272,6 +272,16 @@ async def _process_and_send(message: Message, state: FSMContext, cover_bytes: by
 
     if sent:
         set_active_msg(message.chat.id, sent.message_id)
+        # Cache the re-tagged file so it's available via inline queries
+        if sent.audio and (title or artist):
+            try:
+                from bot.handlers.common import _make_cache_key  # noqa: PLC0415
+                cache_key = _make_cache_key(artist, title)
+                await db.save_cached_file_id(cache_key, sent.audio.file_id, "tag_editor",
+                                             artist=artist, title=title)
+                log.info("AudioTag cached: key=%r file_id=%s", cache_key, sent.audio.file_id)
+            except Exception as exc:
+                log.warning("AudioTag cache save failed: %s", exc)
         try:
             await progress.delete()
         except Exception:
