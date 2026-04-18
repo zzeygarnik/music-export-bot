@@ -98,17 +98,17 @@ def _apply_metadata(path: str, title: str, artist: str, cover_bytes: bytes | Non
                 out_tmp]
         result = subprocess.run(cmd, capture_output=True)
         if result.returncode != 0:
-            log.warning("ffmpeg failed: %s", result.stderr.decode(errors="replace")[-500:])
+            log.warning("ffmpeg failed (returncode=%d): %s", result.returncode, result.stderr.decode(errors="replace")[-500:])
             return False
         _shutil.move(out_tmp, path)
         out_tmp = None
         return True
     except Exception as exc:
-        log.warning("ffmpeg metadata write failed %s: %s", path, exc)
+        log.warning("ffmpeg MP3 metadata write failed %s: %s", path, exc)
         return False
     finally:
         for p in (cover_tmp, out_tmp):
-            if p:
+            if p and os.path.exists(p):
                 try:
                     os.remove(p)
                 except OSError:
@@ -176,14 +176,20 @@ def _extract_cover_sync(path: str) -> bytes | None:
 async def _process_and_send(message: Message, state: FSMContext, cover_bytes: bytes | None) -> None:
     """Download, retag (+ optional cover), and send the audio file."""
     data = await state.get_data()
-    title             = data["title"]
-    artist            = data["artist"]
-    file_id           = data["file_id"]
+    title             = data.get("title") or ""
+    artist            = data.get("artist") or ""
+    file_id           = data.get("file_id")
     original_filename = data.get("original_filename", "track.mp3")
     original_title    = data.get("original_title", "")
     original_artist   = data.get("original_artist", "")
     duration          = data.get("duration")
     await state.clear()
+
+    if not file_id:
+        log.warning("AudioTag _process_and_send: no file_id in state for user=%s", message.chat.id)
+        err = await message.answer("❌ Данные о файле потеряны. Пришли аудио ещё раз.", reply_markup=service_keyboard())
+        set_active_msg(message.chat.id, err.message_id)
+        return
 
     progress = await message.answer(
         f"⏳ Теггирую: <b>{_html.escape(artist)} — {_html.escape(title)}</b>…",
@@ -230,8 +236,9 @@ async def _process_and_send(message: Message, state: FSMContext, cover_bytes: by
 
         import shutil
         shutil.copy(tmp_in, tmp_out)
+        log.info("AudioTag applying: user=%s title=%r artist=%r file=%s", message.chat.id, title, artist, original_filename)
         if not _apply_metadata(tmp_out, title, artist, cover_bytes):
-            log.warning("_apply_metadata failed user=%s file=%s", message.from_user.id, original_filename)
+            log.warning("_apply_metadata failed user=%s file=%s title=%r artist=%r", message.chat.id, original_filename, title, artist)
 
         sent = await message.answer_audio(
             audio=FSInputFile(tmp_out, filename=filename),
