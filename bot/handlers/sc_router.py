@@ -123,10 +123,18 @@ async def _fetch_track(
         try:
             fuzzy_hits = await search_cache_fuzzy(f"{artist} {title}", threshold=82)
             if fuzzy_hits:
-                return _TrackFetchResult(
-                    track=track, artist=artist, title=title, cache_key=cache_key,
-                    path=None, meta={}, cached_file_id=fuzzy_hits[0]["file_id"],
-                )
+                hit = fuzzy_hits[0]
+                hit_title = (hit.get("title") or "").lower()
+                req_title = title.lower()
+                # token_set_ratio can give 85%+ when only artist matches and title is short
+                # (e.g. "crocodiller рис" vs "crocodiller story savelovskaya").
+                # Guard: require titles to be at least 60% similar.
+                title_ok = not (req_title and hit_title and fuzz.partial_ratio(req_title, hit_title) < 60)
+                if title_ok:
+                    return _TrackFetchResult(
+                        track=track, artist=artist, title=title, cache_key=cache_key,
+                        path=None, meta={}, cached_file_id=hit["file_id"],
+                    )
         except Exception:
             pass
 
