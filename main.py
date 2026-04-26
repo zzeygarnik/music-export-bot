@@ -156,6 +156,7 @@ def _check_csrf(request: aiohttp_web.Request) -> bool:
             return True
     except Exception:
         pass
+    log.warning("CSRF FAIL | host=%r | origin=%r | x-fwd=%r", request.host, origin, request.headers.get("X-Forwarded-Host", ""))
     return False
 
 
