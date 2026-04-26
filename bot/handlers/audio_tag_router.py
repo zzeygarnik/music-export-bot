@@ -173,7 +173,7 @@ def _extract_cover_sync(path: str) -> bytes | None:
     return None
 
 
-async def _process_and_send(message: Message, state: FSMContext, cover_bytes: bytes | None) -> None:
+async def _process_and_send(message: Message, state: FSMContext, cover_bytes: bytes | None, from_user=None) -> None:
     """Download, retag (+ optional cover), and send the audio file."""
     data = await state.get_data()
     title             = data.get("title") or ""
@@ -288,9 +288,10 @@ async def _process_and_send(message: Message, state: FSMContext, cover_bytes: by
             pass
         done = await message.answer("Готово! Что дальше?", reply_markup=audio_tag_done_keyboard())
         set_active_msg(message.chat.id, done.message_id)
+        _actor = from_user or message.from_user
         await db.log_rename(
-            user_id=message.from_user.id,
-            username=message.from_user.username,
+            user_id=_actor.id,
+            username=_actor.username,
             original_title=original_title,
             original_artist=original_artist,
             new_title=title,
@@ -470,7 +471,7 @@ async def audio_tag_apply(call: CallbackQuery, state: FSMContext) -> None:
     cover_bytes = base64.b64decode(cover_b64) if cover_b64 else None
     await call.answer()
     await call.message.edit_reply_markup(reply_markup=None)
-    await _process_and_send(call.message, state, cover_bytes=cover_bytes)
+    await _process_and_send(call.message, state, cover_bytes=cover_bytes, from_user=call.from_user)
 
 
 # ── Step: title input ────────────────────────────────────────────────────────
