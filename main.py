@@ -141,7 +141,13 @@ def _check_csrf(request: aiohttp_web.Request) -> bool:
     origin = request.headers.get("Origin") or request.headers.get("Referer", "")
     if not origin:
         return True  # same-host direct requests have no Origin
-    return request.host in origin
+    if request.host in origin:
+        return True
+    # Also accept when behind a reverse proxy that rewrites Host
+    forwarded = request.headers.get("X-Forwarded-Host", "").split(",")[0].strip()
+    if forwarded and forwarded in origin:
+        return True
+    return False
 
 
 async def _dashboard_handler(request: aiohttp_web.Request) -> aiohttp_web.Response:
@@ -738,7 +744,7 @@ async def _api_proxies_add(request: aiohttp_web.Request) -> aiohttp_web.Response
     if not _check_auth(request):
         return aiohttp_web.Response(status=401)
     if not _check_csrf(request):
-        return aiohttp_web.Response(status=403, text="CSRF check failed")
+        return aiohttp_web.Response(status=403, text='{"error":"CSRF check failed"}', content_type="application/json")
     try:
         body = await request.json()
         url = (body.get("url") or "").strip()
@@ -786,7 +792,7 @@ async def _api_proxies_delete(request: aiohttp_web.Request) -> aiohttp_web.Respo
     if not _check_auth(request):
         return aiohttp_web.Response(status=401)
     if not _check_csrf(request):
-        return aiohttp_web.Response(status=403, text="CSRF check failed")
+        return aiohttp_web.Response(status=403, text='{"error":"CSRF check failed"}', content_type="application/json")
     try:
         idx = int(request.match_info["idx"])
     except (KeyError, ValueError):
@@ -817,7 +823,7 @@ async def _api_proxies_test(request: aiohttp_web.Request) -> aiohttp_web.Respons
     if not _check_auth(request):
         return aiohttp_web.Response(status=401)
     if not _check_csrf(request):
-        return aiohttp_web.Response(status=403, text="CSRF check failed")
+        return aiohttp_web.Response(status=403, text='{"error":"CSRF check failed"}', content_type="application/json")
     try:
         idx = int(request.match_info["idx"])
     except (KeyError, ValueError):
@@ -859,7 +865,7 @@ async def _api_bans_add(request: aiohttp_web.Request) -> aiohttp_web.Response:
     if not _check_auth(request):
         return aiohttp_web.Response(status=401)
     if not _check_csrf(request):
-        return aiohttp_web.Response(status=403, text="CSRF check failed")
+        return aiohttp_web.Response(status=403, text='{"error":"CSRF check failed"}', content_type="application/json")
     try:
         body     = await request.json()
         username = (body.get("username") or "").strip().lstrip("@") or None
@@ -894,7 +900,7 @@ async def _api_bans_delete(request: aiohttp_web.Request) -> aiohttp_web.Response
     if not _check_auth(request):
         return aiohttp_web.Response(status=401)
     if not _check_csrf(request):
-        return aiohttp_web.Response(status=403, text="CSRF check failed")
+        return aiohttp_web.Response(status=403, text='{"error":"CSRF check failed"}', content_type="application/json")
     try:
         user_id = int(request.match_info["user_id"])
     except (KeyError, ValueError):
@@ -921,7 +927,7 @@ async def _api_batch_wl_add(request: aiohttp_web.Request) -> aiohttp_web.Respons
     if not _check_auth(request):
         return aiohttp_web.Response(status=401)
     if not _check_csrf(request):
-        return aiohttp_web.Response(status=403, text="CSRF check failed")
+        return aiohttp_web.Response(status=403, text='{"error":"CSRF check failed"}', content_type="application/json")
     try:
         body     = await request.json()
         username = (body.get("username") or "").strip().lstrip("@") or None
@@ -955,7 +961,7 @@ async def _api_batch_wl_delete(request: aiohttp_web.Request) -> aiohttp_web.Resp
     if not _check_auth(request):
         return aiohttp_web.Response(status=401)
     if not _check_csrf(request):
-        return aiohttp_web.Response(status=403, text="CSRF check failed")
+        return aiohttp_web.Response(status=403, text='{"error":"CSRF check failed"}', content_type="application/json")
     try:
         user_id = int(request.match_info["user_id"])
     except (KeyError, ValueError):
@@ -982,7 +988,7 @@ async def _api_batch_requests_resolve(request: aiohttp_web.Request) -> aiohttp_w
     if not _check_auth(request):
         return aiohttp_web.Response(status=401)
     if not _check_csrf(request):
-        return aiohttp_web.Response(status=403, text="CSRF check failed")
+        return aiohttp_web.Response(status=403, text='{"error":"CSRF check failed"}', content_type="application/json")
     action = request.match_info.get("action", "")
     if action not in ("approve", "reject"):
         return aiohttp_web.Response(status=400, text="action must be approve or reject")
@@ -1058,7 +1064,7 @@ async def _api_cookies_post(request: aiohttp_web.Request) -> aiohttp_web.Respons
     if not _check_auth(request):
         return aiohttp_web.Response(status=401)
     if not _check_csrf(request):
-        return aiohttp_web.Response(status=403, text="CSRF check failed")
+        return aiohttp_web.Response(status=403, text='{"error":"CSRF check failed"}', content_type="application/json")
     source = request.match_info["source"]
     if source not in ("sc", "yt"):
         return aiohttp_web.Response(status=404)

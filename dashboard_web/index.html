@@ -2002,10 +2002,16 @@ async function testProxy(idx) {
   try {
     const r = await fetch(`/api/proxies/${idx}/test`, { method: 'POST' });
     if (r.status === 401) { window.location.href = '/dashboard/login'; return; }
+    if (!r.ok) {
+      const txt = await r.text().catch(() => r.status);
+      if (detail) detail.textContent = `Error ${r.status}: ${txt}`;
+      return;
+    }
     const d = await r.json();
     await loadProxies(); // re-render with updated status from server
   } catch (e) {
     if (detail) detail.textContent = 'Error: ' + e.message;
+  } finally {
     if (btn) { btn.disabled = false; btn.textContent = 'Test'; }
   }
 }
