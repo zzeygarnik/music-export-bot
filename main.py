@@ -143,10 +143,19 @@ def _check_csrf(request: aiohttp_web.Request) -> bool:
         return True  # same-host direct requests have no Origin
     if request.host in origin:
         return True
-    # Also accept when behind a reverse proxy that rewrites Host
+    # Accept when behind a reverse proxy that rewrites Host
     forwarded = request.headers.get("X-Forwarded-Host", "").split(",")[0].strip()
     if forwarded and forwarded in origin:
         return True
+    # Fallback: compare hostname only (ignores port mismatch from proxy)
+    try:
+        from urllib.parse import urlparse
+        origin_host = urlparse(origin).hostname or ""
+        req_host = request.host.split(":")[0]
+        if origin_host and req_host and origin_host == req_host:
+            return True
+    except Exception:
+        pass
     return False
 
 
