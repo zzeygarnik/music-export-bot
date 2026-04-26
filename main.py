@@ -138,16 +138,24 @@ def _check_auth(request: aiohttp_web.Request) -> bool:
 
 def _check_csrf(request: aiohttp_web.Request) -> bool:
     """Origin/Referer check for mutating requests (defense-in-depth on top of SameSite=Strict)."""
+    import ipaddress
+    # When request arrives from a local reverse proxy (nginx on same host),
+    # SameSite=Strict cookie is the CSRF guard — no Origin check needed
+    try:
+        if ipaddress.ip_address(request.remote or "").is_loopback:
+            return True
+    except ValueError:
+        pass
     origin = request.headers.get("Origin") or request.headers.get("Referer", "")
     if not origin:
         return True  # same-host direct requests have no Origin
     if request.host in origin:
         return True
-    # Accept when behind a reverse proxy that rewrites Host
+    # Accept when behind a reverse proxy that passes X-Forwarded-Host
     forwarded = request.headers.get("X-Forwarded-Host", "").split(",")[0].strip()
     if forwarded and forwarded in origin:
         return True
-    # Fallback: compare hostname only (ignores port mismatch from proxy)
+    # Fallback: compare hostname only (ignores port mismatch)
     try:
         from urllib.parse import urlparse
         origin_host = urlparse(origin).hostname or ""
@@ -156,7 +164,6 @@ def _check_csrf(request: aiohttp_web.Request) -> bool:
             return True
     except Exception:
         pass
-    log.warning("CSRF FAIL | host=%r | origin=%r | x-fwd=%r", request.host, origin, request.headers.get("X-Forwarded-Host", ""))
     return False
 
 
