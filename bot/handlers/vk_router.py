@@ -146,12 +146,14 @@ async def _vk_download_and_send(
         cached_fid = await get_cached_file_id(cache_key)
         if cached_fid:
             try:
-                await msg.answer_audio(
+                sent_cached = await msg.answer_audio(
                     audio=cached_fid,
                     title=track.title,
                     performer=track.artist,
                 )
-                asyncio.create_task(log_track_sent(user_id, cached_fid, track.artist, track.title, "vk"))
+                asyncio.create_task(log_track_sent(user_id, cached_fid, track.artist, track.title, "vk",
+                    (sent_cached.audio.duration if sent_cached and sent_cached.audio else None) or track.duration or None,
+                    sent_cached.audio.thumbnail.file_id if sent_cached and sent_cached.audio and sent_cached.audio.thumbnail else None))
                 await msg.edit_text(_SC_MENU_TEXT, parse_mode="HTML", reply_markup=sc_menu_keyboard())
                 await state.set_state(SCSearchFlow.sc_menu)
                 await log_event(user_id, username, "vk_download", "success",
@@ -176,7 +178,8 @@ async def _vk_download_and_send(
         if cache_key and sent.audio:
             await save_cached_file_id(cache_key, sent.audio.file_id, "vk", artist, title)
         if sent and sent.audio:
-            asyncio.create_task(log_track_sent(user_id, sent.audio.file_id, artist, title, "vk", track.duration))
+            asyncio.create_task(log_track_sent(user_id, sent.audio.file_id, artist, title, "vk", track.duration,
+                sent.audio.thumbnail.file_id if sent.audio.thumbnail else None))
 
         await msg.edit_text(_SC_MENU_TEXT, parse_mode="HTML", reply_markup=sc_menu_keyboard())
         await state.set_state(SCSearchFlow.sc_menu)
