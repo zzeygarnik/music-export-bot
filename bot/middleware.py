@@ -13,7 +13,11 @@ from bot.tracker import _active_msg
 log = logging.getLogger(__name__)
 
 # Callback prefixes that are exempt from stale check (must work until explicitly acted on).
-_ETERNAL_CALLBACK_PREFIXES = ("batch_req:approve:", "batch_req:reject:", "batch_req:send")
+_ETERNAL_CALLBACK_PREFIXES = (
+    "batch_req:approve:", "batch_req:reject:", "batch_req:send",
+    # Post-tagging choice buttons — FSM already cleared, no active flow to protect
+    "audio_tag:tag_another", "audio_tag:to_menu",
+)
 
 
 class BanMiddleware(BaseMiddleware):
