@@ -132,6 +132,7 @@ async def _create_tables() -> None:
                 title      TEXT        DEFAULT '',
                 source     TEXT        DEFAULT '',
                 duration   INTEGER,
+                thumb_id   TEXT,
                 sent_at    TIMESTAMPTZ DEFAULT NOW()
             )
         """)
@@ -139,6 +140,8 @@ async def _create_tables() -> None:
             CREATE INDEX IF NOT EXISTS user_track_history_user_idx
             ON user_track_history (user_id, sent_at DESC)
         """)
+        await conn.execute("ALTER TABLE user_track_history ADD COLUMN IF NOT EXISTS thumb_id TEXT")
+        await conn.execute("ALTER TABLE user_track_history ADD COLUMN IF NOT EXISTS message_id BIGINT")
 
 
 async def save_track_to_history(
@@ -148,13 +151,14 @@ async def save_track_to_history(
     title: str = '',
     source: str = '',
     duration: int | None = None,
+    thumb_id: str | None = None,
 ) -> None:
     try:
         async with _pool.acquire() as conn:
             await conn.execute("""
-                INSERT INTO user_track_history (user_id, file_id, artist, title, source, duration)
-                VALUES ($1, $2, $3, $4, $5, $6)
-            """, user_id, file_id, artist, title, source, duration)
+                INSERT INTO user_track_history (user_id, file_id, artist, title, source, duration, thumb_id)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+            """, user_id, file_id, artist, title, source, duration, thumb_id)
     except Exception as e:
         log.warning("save_track_to_history failed: %s", e)
 
@@ -163,7 +167,7 @@ async def get_user_track_history(user_id: int, limit: int = 50) -> list[dict]:
     try:
         async with _pool.acquire() as conn:
             rows = await conn.fetch("""
-                SELECT file_id, artist, title, source, duration, sent_at
+                SELECT file_id, artist, title, source, duration, thumb_id, sent_at
                 FROM user_track_history
                 WHERE user_id = $1
                 ORDER BY sent_at DESC
@@ -176,6 +180,7 @@ async def get_user_track_history(user_id: int, limit: int = 50) -> list[dict]:
                     "title":    r["title"] or "",
                     "source":   r["source"] or "",
                     "duration": r["duration"],
+                    "thumb_id": r["thumb_id"] or "",
                     "sent_at":  r["sent_at"].isoformat() if r["sent_at"] else None,
                 }
                 for r in rows
@@ -183,6 +188,20 @@ async def get_user_track_history(user_id: int, limit: int = 50) -> list[dict]:
     except Exception as e:
         log.warning("get_user_track_history failed: %s", e)
         return []
+
+
+
+async def get_track_message_id(user_id: int, file_id: str) -> int | None:
+    try:
+        async with _pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT message_id FROM user_track_history WHERE user_id=$1 AND file_id=$2",
+                user_id, file_id,
+            )
+            return row["message_id"] if row else None
+    except Exception as e:
+        log.warning("get_track_message_id failed: %s", e)
+        return None
 
 
 async def get_cached_file_id(cache_key: str) -> str | None:
@@ -1081,3 +1100,13 @@ async def cleanup_old_batch_live() -> int:
     except Exception as e:
         log.warning("cleanup_old_batch_live failed: %s", e)
         return 0
+
+async def delete_track_from_history(user_id: int, file_id: str) -> None:
+    try:
+        async with _pool.acquire() as conn:
+            await conn.execute(
+                'DELETE FROM user_track_history WHERE user_id = $1 AND file_id = $2',
+                user_id, file_id,
+            )
+    except Exception as e:
+        log.warning('delete_track_from_history failed: %s', e)

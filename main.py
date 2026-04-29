@@ -1142,7 +1142,7 @@ async def _miniapp_handler(request: aiohttp_web.Request) -> aiohttp_web.Response
     if not os.path.exists(index):
         return aiohttp_web.Response(text="Mini App not built yet", status=404)
     with open(index, "r", encoding="utf-8") as f:
-        return aiohttp_web.Response(text=f.read(), content_type="text/html")
+        return aiohttp_web.Response(text=f.read(), content_type="text/html", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 
 async def _api_player_tracks(request: aiohttp_web.Request) -> aiohttp_web.Response:
@@ -1176,11 +1176,36 @@ async def _api_player_stream(request: aiohttp_web.Request) -> aiohttp_web.Stream
         tg_file = await bot.get_file(file_id)
     except Exception as e:
         log.warning("player stream get_file failed: %s", e)
+        # Fallback: Pyrogram proxy for migrated tracks with expired file_reference
+        user_id = _validate_tg_init_data(init_data)
+        if user_id:
+            msg_id = await db.get_track_message_id(user_id, file_id)
+            proxy_url = f"http://127.0.0.1:8991/stream/{file_id}"
+            if msg_id:
+                proxy_url += f"?msg={msg_id}&chat={user_id}"
+            import aiohttp as _aiohttp
+            try:
+                async with _aiohttp.ClientSession() as sess:
+                    async with sess.get(proxy_url) as upstream:
+                        if upstream.status == 200:
+                            resp = aiohttp_web.StreamResponse(headers={
+                                "Content-Type": upstream.headers.get("Content-Type", "audio/mpeg"),
+                                "Accept-Ranges": "bytes",
+                                "Cache-Control": "no-cache",
+                            })
+                            if "Content-Length" in upstream.headers:
+                                resp.headers["Content-Length"] = upstream.headers["Content-Length"]
+                            await resp.prepare(request)
+                            async for chunk in upstream.content.iter_chunked(65536):
+                                await resp.write(chunk)
+                            return resp
+            except Exception as pe:
+                log.warning("player stream pyrogram proxy failed: %s", pe)
         return aiohttp_web.Response(status=404)
 
     file_path = tg_file.file_path or ""
 
-    # Local Bot API: file_path is absolute disk path
+    # Local Bot API: absolute disk path
     if file_path.startswith("/") and os.path.exists(file_path):
         import aiofiles
         stat = os.stat(file_path)
@@ -1196,10 +1221,96 @@ async def _api_player_stream(request: aiohttp_web.Request) -> aiohttp_web.Stream
                 await resp.write(chunk)
         return resp
 
+    # Local Bot API: relative path — proxy via local API HTTP server
+    if settings.LOCAL_API_URL and file_path:
+        local_url = f"{settings.LOCAL_API_URL}/file/bot{settings.BOT_TOKEN}/{file_path}"
+        import aiohttp as _aiohttp
+        try:
+            async with _aiohttp.ClientSession() as sess:
+                async with sess.get(local_url) as upstream:
+                    if upstream.status == 200:
+                        resp = aiohttp_web.StreamResponse(headers={
+                            "Content-Type": upstream.headers.get("Content-Type", "audio/mpeg"),
+                            "Accept-Ranges": "bytes",
+                            "Cache-Control": "no-cache",
+                        })
+                        if "Content-Length" in upstream.headers:
+                            resp.headers["Content-Length"] = upstream.headers["Content-Length"]
+                        await resp.prepare(request)
+                        async for chunk in upstream.content.iter_chunked(65536):
+                            await resp.write(chunk)
+                        return resp
+        except Exception as e:
+            log.warning("player stream local proxy failed: %s", e)
+
     # Regular Telegram CDN: redirect to temporary URL
     cdn_url = f"https://api.telegram.org/file/bot{settings.BOT_TOKEN}/{file_path}"
     raise aiohttp_web.HTTPFound(cdn_url)
 
+
+
+async def _api_player_delete(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    init_data = request.headers.get('X-Tg-Init-Data', '')
+    user_id = _validate_tg_init_data(init_data)
+    if not user_id:
+        return aiohttp_web.Response(status=401, text='{"error":"unauthorized"}', content_type='application/json')
+    file_id = request.match_info['file_id']
+    await db.delete_track_from_history(user_id, file_id)
+    return aiohttp_web.Response(text='{"ok":true}', content_type='application/json')
+
+
+async def _api_player_thumb(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    """Proxy thumbnail image for a track by file_id."""
+    init_data = (request.headers.get("X-Tg-Init-Data", "")
+                 or request.query.get("tma", ""))
+    if not _validate_tg_init_data(init_data):
+        return aiohttp_web.Response(status=401)
+    file_id = request.match_info["file_id"]
+    bot: Bot = request.app["bot"]
+    try:
+        tg_file = await bot.get_file(file_id)
+    except Exception as e:
+        log.warning("player thumb get_file failed: %s", e)
+        user_id = _validate_tg_init_data(init_data)
+        if user_id:
+            msg_id = await db.get_track_message_id(user_id, file_id)
+            proxy_url = f"http://127.0.0.1:8991/thumb/{file_id}"
+            if msg_id:
+                proxy_url += f"?msg={msg_id}&chat={user_id}"
+            import aiohttp as _aiohttp
+            try:
+                async with _aiohttp.ClientSession() as sess:
+                    async with sess.get(proxy_url) as upstream:
+                        if upstream.status == 200:
+                            data = await upstream.read()
+                            ct = upstream.headers.get("Content-Type", "image/jpeg")
+                            return aiohttp_web.Response(body=data, content_type=ct,
+                                headers={"Cache-Control": "public, max-age=86400"})
+            except Exception as pe:
+                log.warning("player thumb pyrogram proxy failed: %s", pe)
+        return aiohttp_web.Response(status=404)
+    file_path = tg_file.file_path or ""
+    if file_path.startswith("/") and os.path.exists(file_path):
+        import aiofiles
+        async with aiofiles.open(file_path, "rb") as f:
+            data = await f.read()
+        return aiohttp_web.Response(body=data, content_type="image/jpeg",
+            headers={"Cache-Control": "public, max-age=86400"})
+    if settings.LOCAL_API_URL and file_path:
+        local_url = f"{settings.LOCAL_API_URL}/file/bot{settings.BOT_TOKEN}/{file_path}"
+        import aiohttp as _aiohttp
+        try:
+            async with _aiohttp.ClientSession() as sess:
+                async with sess.get(local_url) as upstream:
+                    if upstream.status == 200:
+                        data = await upstream.read()
+                        ct = upstream.headers.get("Content-Type", "image/jpeg")
+                        return aiohttp_web.Response(body=data, content_type=ct,
+                            headers={"Cache-Control": "public, max-age=86400"})
+        except Exception as e:
+            log.warning("player thumb proxy failed: %s", e)
+    cdn_url = f"https://api.telegram.org/file/bot{settings.BOT_TOKEN}/{file_path}"
+    raise aiohttp_web.HTTPFound(cdn_url)
 
 # ── System API ────────────────────────────────────────────────────────────
 
@@ -1389,9 +1500,20 @@ async def main() -> None:
         web_app.router.add_get("/player",  _miniapp_handler)
         web_app.router.add_get("/player/", _miniapp_handler)
         if os.path.isdir(os.path.join(_MINIAPP_DIR, "assets")):
-            web_app.router.add_static("/player/assets", os.path.join(_MINIAPP_DIR, "assets"), show_index=False)
+            async def _miniapp_asset(req: aiohttp_web.Request) -> aiohttp_web.Response:
+                fname = req.match_info["filename"]
+                fpath = os.path.join(_MINIAPP_DIR, "assets", fname)
+                if not os.path.isfile(fpath):
+                    return aiohttp_web.Response(status=404)
+                ct = "application/javascript" if fname.endswith(".js") else ("text/css" if fname.endswith(".css") else "application/octet-stream")
+                with open(fpath, "rb") as f:
+                    return aiohttp_web.Response(body=f.read(), content_type=ct,
+                        headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+            web_app.router.add_get("/player/assets/{filename}", _miniapp_asset)
         web_app.router.add_get("/api/player/tracks",           _api_player_tracks)
         web_app.router.add_get("/api/player/stream/{file_id}", _api_player_stream)
+        web_app.router.add_get("/api/player/thumb/{file_id}",  _api_player_thumb)
+        web_app.router.add_delete("/api/player/tracks/{file_id}", _api_player_delete)
         log.info("Mini App player registered at /player")
 
         if settings.WEBHOOK_URL:
