@@ -250,7 +250,8 @@ async def _process_and_send(message: Message, state: FSMContext, cover_bytes: by
             thumbnail=thumb_input,
         )
         if sent and sent.audio:
-            asyncio.create_task(log_track_sent(message.from_user.id, sent.audio.file_id, artist, title, "tag_editor", duration))
+            asyncio.create_task(log_track_sent(message.from_user.id, sent.audio.file_id, artist, title, "tag_editor", duration,
+                sent.audio.thumbnail.file_id if sent.audio.thumbnail else None))
 
     except Exception as e:
         log.exception("AudioTagFlow download/upload failed user=%s: %s", message.from_user.id, e)
@@ -263,7 +264,8 @@ async def _process_and_send(message: Message, state: FSMContext, cover_bytes: by
                 thumbnail=thumb_input,
             )
             if sent and sent.audio:
-                asyncio.create_task(log_track_sent(message.from_user.id, sent.audio.file_id, artist, title, "tag_editor", duration))
+                asyncio.create_task(log_track_sent(message.from_user.id, sent.audio.file_id, artist, title, "tag_editor", duration,
+                    sent.audio.thumbnail.file_id if sent.audio.thumbnail else None))
             log.info("AudioTagFlow fallback (file_id resend) succeeded user=%s", message.from_user.id)
         except Exception as e2:
             log.exception("AudioTagFlow fallback also failed user=%s: %s", message.from_user.id, e2)

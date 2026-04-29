@@ -777,10 +777,11 @@ async def log_track_sent(
     title: str = '',
     source: str = '',
     duration: int | None = None,
+    thumb_id: str | None = None,
 ) -> None:
     """Fire-and-forget: save sent track to user history for Mini App player."""
     try:
-        await db.save_track_to_history(user_id, file_id, artist, title, source, duration)
+        await db.save_track_to_history(user_id, file_id, artist, title, source, duration, thumb_id)
     except Exception as e:
         log.warning("log_track_sent failed: %s", e)
 
