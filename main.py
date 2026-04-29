@@ -1153,9 +1153,9 @@ async def _api_player_tracks(request: aiohttp_web.Request) -> aiohttp_web.Respon
         return aiohttp_web.Response(status=401, text='{"error":"unauthorized"}',
                                     content_type="application/json")
     try:
-        limit = min(int(request.query.get("limit", 50)), 100)
+        limit = min(int(request.query.get("limit", 500)), 1000)
     except ValueError:
-        limit = 50
+        limit = 500
     tracks = await db.get_user_track_history(user_id, limit)
     return aiohttp_web.Response(
         text=json.dumps(tracks), content_type="application/json"
