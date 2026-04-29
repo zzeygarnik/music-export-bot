@@ -17,6 +17,7 @@ from .common import (
     _SC_MENU_TEXT,
     _make_cache_key,
     _get_user_info,
+    log_track_sent,
 )
 from bot.tracker import set_active_msg
 from config import settings
@@ -150,6 +151,7 @@ async def _vk_download_and_send(
                     title=track.title,
                     performer=track.artist,
                 )
+                asyncio.create_task(log_track_sent(user_id, cached_fid, track.artist, track.title, "vk"))
                 await msg.edit_text(_SC_MENU_TEXT, parse_mode="HTML", reply_markup=sc_menu_keyboard())
                 await state.set_state(SCSearchFlow.sc_menu)
                 await log_event(user_id, username, "vk_download", "success",
@@ -173,6 +175,8 @@ async def _vk_download_and_send(
         )
         if cache_key and sent.audio:
             await save_cached_file_id(cache_key, sent.audio.file_id, "vk", artist, title)
+        if sent and sent.audio:
+            asyncio.create_task(log_track_sent(user_id, sent.audio.file_id, artist, title, "vk", track.duration))
 
         await msg.edit_text(_SC_MENU_TEXT, parse_mode="HTML", reply_markup=sc_menu_keyboard())
         await state.set_state(SCSearchFlow.sc_menu)

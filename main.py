@@ -25,6 +25,7 @@ from utils import db
 log = logging.getLogger(__name__)
 
 _DASHBOARD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard_web")
+_MINIAPP_DIR   = os.path.join(os.path.dirname(os.path.abspath(__file__)), "miniapp_dist")
 
 _RATE_LIMIT_HTML = """\
 <!DOCTYPE html>
@@ -1109,6 +1110,97 @@ async def _api_cookies_post(request: aiohttp_web.Request) -> aiohttp_web.Respons
 
 
 
+# ── Mini App player ──────────────────────────────────────────────────────
+
+def _validate_tg_init_data(init_data: str) -> int | None:
+    """Validate Telegram WebApp initData HMAC. Returns user_id or None if invalid."""
+    import hashlib
+    import hmac as _hmac
+    from urllib.parse import parse_qsl
+    try:
+        params = dict(parse_qsl(init_data, strict_parsing=True))
+        hash_value = params.pop("hash", None)
+        if not hash_value:
+            return None
+        data_check = "\n".join(f"{k}={v}" for k, v in sorted(params.items()))
+        secret = _hmac.new(b"WebAppData", settings.BOT_TOKEN.encode(), hashlib.sha256).digest()
+        computed = _hmac.new(secret, data_check.encode(), hashlib.sha256).hexdigest()
+        if not _hmac.compare_digest(computed, hash_value):
+            return None
+        import json as _json
+        user = _json.loads(params.get("user", "{}"))
+        uid = user.get("id")
+        return int(uid) if uid else None
+    except Exception as e:
+        log.warning("_validate_tg_init_data error: %s", e)
+        return None
+
+
+async def _miniapp_handler(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    """Serve the Mini App SPA index.html."""
+    index = os.path.join(_MINIAPP_DIR, "index.html")
+    if not os.path.exists(index):
+        return aiohttp_web.Response(text="Mini App not built yet", status=404)
+    with open(index, "r", encoding="utf-8") as f:
+        return aiohttp_web.Response(text=f.read(), content_type="text/html")
+
+
+async def _api_player_tracks(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    """Return track history for the authenticated Mini App user."""
+    init_data = request.headers.get("X-Tg-Init-Data", "")
+    user_id = _validate_tg_init_data(init_data)
+    if not user_id:
+        return aiohttp_web.Response(status=401, text='{"error":"unauthorized"}',
+                                    content_type="application/json")
+    try:
+        limit = min(int(request.query.get("limit", 50)), 100)
+    except ValueError:
+        limit = 50
+    tracks = await db.get_user_track_history(user_id, limit)
+    return aiohttp_web.Response(
+        text=json.dumps(tracks), content_type="application/json"
+    )
+
+
+async def _api_player_stream(request: aiohttp_web.Request) -> aiohttp_web.StreamResponse:
+    """Stream audio file by file_id. Resolves via Local Bot API or Telegram CDN."""
+    init_data = (request.headers.get("X-Tg-Init-Data", "")
+                 or request.query.get("tma", ""))
+    if not _validate_tg_init_data(init_data):
+        return aiohttp_web.Response(status=401)
+
+    file_id = request.match_info["file_id"]
+    bot: Bot = request.app["bot"]
+
+    try:
+        tg_file = await bot.get_file(file_id)
+    except Exception as e:
+        log.warning("player stream get_file failed: %s", e)
+        return aiohttp_web.Response(status=404)
+
+    file_path = tg_file.file_path or ""
+
+    # Local Bot API: file_path is absolute disk path
+    if file_path.startswith("/") and os.path.exists(file_path):
+        import aiofiles
+        stat = os.stat(file_path)
+        resp = aiohttp_web.StreamResponse(headers={
+            "Content-Type": "audio/mpeg",
+            "Content-Length": str(stat.st_size),
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "no-cache",
+        })
+        await resp.prepare(request)
+        async with aiofiles.open(file_path, "rb") as f:
+            while chunk := await f.read(65536):
+                await resp.write(chunk)
+        return resp
+
+    # Regular Telegram CDN: redirect to temporary URL
+    cdn_url = f"https://api.telegram.org/file/bot{settings.BOT_TOKEN}/{file_path}"
+    raise aiohttp_web.HTTPFound(cdn_url)
+
+
 # ── System API ────────────────────────────────────────────────────────────
 
 async def _api_system(request: aiohttp_web.Request) -> aiohttp_web.Response:
@@ -1292,6 +1384,15 @@ async def main() -> None:
             # System stats
             web_app.router.add_get("/api/system",               _api_system)
             log.info("Dashboard registered at /dashboard")
+
+        # Mini App player (public — auth via Telegram initData)
+        web_app.router.add_get("/player",  _miniapp_handler)
+        web_app.router.add_get("/player/", _miniapp_handler)
+        if os.path.isdir(os.path.join(_MINIAPP_DIR, "assets")):
+            web_app.router.add_static("/player/assets", os.path.join(_MINIAPP_DIR, "assets"), show_index=False)
+        web_app.router.add_get("/api/player/tracks",           _api_player_tracks)
+        web_app.router.add_get("/api/player/stream/{file_id}", _api_player_stream)
+        log.info("Mini App player registered at /player")
 
         if settings.WEBHOOK_URL:
             webhook_path = "/bot/webhook"

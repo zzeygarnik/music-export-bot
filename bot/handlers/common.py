@@ -770,6 +770,21 @@ async def search_with_proxy_rotation(query: str, max_results: int, bot) -> list:
     return []
 
 
+async def log_track_sent(
+    user_id: int,
+    file_id: str,
+    artist: str = '',
+    title: str = '',
+    source: str = '',
+    duration: int | None = None,
+) -> None:
+    """Fire-and-forget: save sent track to user history for Mini App player."""
+    try:
+        await db.save_track_to_history(user_id, file_id, artist, title, source, duration)
+    except Exception as e:
+        log.warning("log_track_sent failed: %s", e)
+
+
 async def _show_batch_access_page(call: CallbackQuery, back_cb: str, use_answer: bool = False) -> None:
     """Show access request page or 'already pending' page depending on user's request status.
 

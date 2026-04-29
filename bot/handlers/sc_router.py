@@ -63,6 +63,7 @@ from .common import (
     extract_yt_url_info_with_proxy_rotation,
     reset_yt_proxy,
     search_with_proxy_rotation,
+    log_track_sent,
 )
 from bot.tracker import set_active_msg
 from bot.states import ExportFlow
@@ -667,6 +668,7 @@ async def on_cache_pick(call: CallbackQuery, state: FSMContext) -> None:
             title=hit["title"],
             performer=hit["artist"],
         )
+        asyncio.create_task(log_track_sent(user_id, hit["file_id"], hit["artist"], hit["title"], "sc"))
         await log_event(user_id, username, "sc_search", "success",
                   track_count=1, detail=f"{hit['artist']} — {hit['title']} [cache]")
         try:
@@ -1721,6 +1723,7 @@ async def _sc_download_and_send(
                 title=result.title,
                 performer=result.artist,
             )
+            asyncio.create_task(log_track_sent(user_id, cached_file_id, result.artist, result.title, source))
             await log_event(user_id, username, f"{source}_search", "success",
                       track_count=1, detail=f"{result.artist} — {result.title}")
             try:
@@ -1792,6 +1795,8 @@ async def _sc_download_and_send(
         if sent_msg and sent_msg.audio and cache_key:
             await save_cached_file_id(cache_key, sent_msg.audio.file_id, "manual",
                                 artist=result.artist, title=result.title)
+        if sent_msg and sent_msg.audio:
+            asyncio.create_task(log_track_sent(user_id, sent_msg.audio.file_id, result.artist, result.title, source, meta.get("duration") or result.duration))
         await log_event(user_id, username, f"{source}_search", "success",
                   track_count=1, detail=f"{result.artist} — {result.title}")
         try:
@@ -1990,6 +1995,7 @@ async def _run_batch_download(
                             title=r.title,
                             performer=r.artist,
                         )
+                        asyncio.create_task(log_track_sent(user_id, r.cached_file_id, r.artist, r.title, "sc"))
                         downloaded_count += 1
                         cache_hits_count += 1
                         try:
@@ -2036,6 +2042,8 @@ async def _run_batch_download(
                             r.cache_key, sent_msg.audio.file_id, "batch",
                             artist=r.artist, title=r.title,
                         )
+                    if sent_msg and sent_msg.audio:
+                        asyncio.create_task(log_track_sent(user_id, sent_msg.audio.file_id, r.artist, r.title, "sc", r.meta.get("duration") or r.duration))
                 except Exception as e:
                     log.warning("SC batch send_audio failed '%s — %s': %s", r.artist, r.title, e)
                     not_found.append(f"{r.artist} — {r.title}")
