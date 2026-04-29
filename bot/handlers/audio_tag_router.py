@@ -20,6 +20,8 @@ from bot.keyboards import (
 from bot.tracker import set_active_msg
 from utils import db
 from core.sc_downloader import resize_for_telegram_sync
+from .common import log_track_sent
+import asyncio
 
 router = Router()
 log = logging.getLogger(__name__)
@@ -247,6 +249,8 @@ async def _process_and_send(message: Message, state: FSMContext, cover_bytes: by
             duration=duration,
             thumbnail=thumb_input,
         )
+        if sent and sent.audio:
+            asyncio.create_task(log_track_sent(message.from_user.id, sent.audio.file_id, artist, title, "tag_editor", duration))
 
     except Exception as e:
         log.exception("AudioTagFlow download/upload failed user=%s: %s", message.from_user.id, e)
@@ -258,6 +262,8 @@ async def _process_and_send(message: Message, state: FSMContext, cover_bytes: by
                 duration=duration,
                 thumbnail=thumb_input,
             )
+            if sent and sent.audio:
+                asyncio.create_task(log_track_sent(message.from_user.id, sent.audio.file_id, artist, title, "tag_editor", duration))
             log.info("AudioTagFlow fallback (file_id resend) succeeded user=%s", message.from_user.id)
         except Exception as e2:
             log.exception("AudioTagFlow fallback also failed user=%s: %s", message.from_user.id, e2)

@@ -123,6 +123,66 @@ async def _create_tables() -> None:
             )
         """)
         await conn.execute("CREATE INDEX IF NOT EXISTS track_renames_ts_idx ON track_renames (ts DESC)")
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS user_track_history (
+                id         BIGSERIAL PRIMARY KEY,
+                user_id    BIGINT      NOT NULL,
+                file_id    TEXT        NOT NULL,
+                artist     TEXT        DEFAULT '',
+                title      TEXT        DEFAULT '',
+                source     TEXT        DEFAULT '',
+                duration   INTEGER,
+                sent_at    TIMESTAMPTZ DEFAULT NOW()
+            )
+        """)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS user_track_history_user_idx
+            ON user_track_history (user_id, sent_at DESC)
+        """)
+
+
+async def save_track_to_history(
+    user_id: int,
+    file_id: str,
+    artist: str = '',
+    title: str = '',
+    source: str = '',
+    duration: int | None = None,
+) -> None:
+    try:
+        async with _pool.acquire() as conn:
+            await conn.execute("""
+                INSERT INTO user_track_history (user_id, file_id, artist, title, source, duration)
+                VALUES ($1, $2, $3, $4, $5, $6)
+            """, user_id, file_id, artist, title, source, duration)
+    except Exception as e:
+        log.warning("save_track_to_history failed: %s", e)
+
+
+async def get_user_track_history(user_id: int, limit: int = 50) -> list[dict]:
+    try:
+        async with _pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT file_id, artist, title, source, duration, sent_at
+                FROM user_track_history
+                WHERE user_id = $1
+                ORDER BY sent_at DESC
+                LIMIT $2
+            """, user_id, limit)
+            return [
+                {
+                    "file_id":  r["file_id"],
+                    "artist":   r["artist"] or "",
+                    "title":    r["title"] or "",
+                    "source":   r["source"] or "",
+                    "duration": r["duration"],
+                    "sent_at":  r["sent_at"].isoformat() if r["sent_at"] else None,
+                }
+                for r in rows
+            ]
+    except Exception as e:
+        log.warning("get_user_track_history failed: %s", e)
+        return []
 
 
 async def get_cached_file_id(cache_key: str) -> str | None:
