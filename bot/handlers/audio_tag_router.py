@@ -343,7 +343,7 @@ async def _show_field_selection_edit(call: CallbackQuery, state: FSMContext) -> 
 
 
 async def _show_field_selection_answer(message: Message, state: FSMContext) -> None:
-    """Send a new message with field selection (used after user sent a text/photo)."""
+    """Edit the tracked field-selection message in-place; send new only if unavailable."""
     data = await state.get_data()
     await state.set_state(AudioTagFlow.waiting_for_field_selection)
     text = _field_selection_text(
@@ -351,7 +351,22 @@ async def _show_field_selection_answer(message: Message, state: FSMContext) -> N
         data.get("artist", ""),
         bool(data.get("cover_b64")),
     )
+    field_msg_id = data.get("field_msg_id")
+    if field_msg_id:
+        try:
+            await message.bot.edit_message_text(
+                chat_id=message.chat.id,
+                message_id=field_msg_id,
+                text=text,
+                parse_mode="HTML",
+                reply_markup=audio_tag_field_keyboard(),
+            )
+            set_active_msg(message.chat.id, field_msg_id)
+            return
+        except Exception:
+            pass
     sent = await message.answer(text, parse_mode="HTML", reply_markup=audio_tag_field_keyboard())
+    await state.update_data(field_msg_id=sent.message_id)
     set_active_msg(message.chat.id, sent.message_id)
 
 
@@ -395,6 +410,7 @@ async def handle_audio_in_flow(message: Message, state: FSMContext) -> None:
         artist=orig_artist,
         cover_b64=None,
         duration=duration,
+        field_msg_id=None,
     )
     await _show_field_selection_answer(message, state)
 
@@ -414,6 +430,7 @@ async def handle_audio_received(message: Message, state: FSMContext) -> None:
         artist=orig_artist,
         cover_b64=None,
         duration=duration,
+        field_msg_id=None,
     )
     await _show_field_selection_answer(message, state)
 
