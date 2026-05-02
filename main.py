@@ -107,6 +107,21 @@ _RATE_LIMIT_HTML = """\
 _login_attempts: dict[str, list[float]] = defaultdict(list)
 _RATE_LIMIT_MAX = 5
 _RATE_LIMIT_WINDOW = 600  # seconds
+
+_PLAYER_RL: dict = {}
+_PLAYER_RL_MAX = 60   # requests per window per user
+_PLAYER_RL_WIN = 60   # seconds
+
+def _check_player_rl(user_id: int) -> bool:
+    """Returns True if player rate limit exceeded."""
+    import time as _t
+    now = _t.time()
+    reqs = [x for x in _PLAYER_RL.get(user_id, []) if now - x < _PLAYER_RL_WIN]
+    _PLAYER_RL[user_id] = reqs
+    if len(reqs) >= _PLAYER_RL_MAX:
+        return True
+    _PLAYER_RL[user_id].append(now)
+    return False
 _startup_time: float = 0.0
 
 
@@ -1127,6 +1142,11 @@ def _validate_tg_init_data(init_data: str) -> int | None:
         computed = _hmac.new(secret, data_check.encode(), hashlib.sha256).hexdigest()
         if not _hmac.compare_digest(computed, hash_value):
             return None
+        import time as _time_auth
+        auth_date = params.get("auth_date")
+        if not auth_date or _time_auth.time() - int(auth_date) > 86400:  # 24h window
+            log.warning("initData expired or missing auth_date")
+            return None
         import json as _json
         user = _json.loads(params.get("user", "{}"))
         uid = user.get("id")
@@ -1151,6 +1171,9 @@ async def _api_player_tracks(request: aiohttp_web.Request) -> aiohttp_web.Respon
     user_id = _validate_tg_init_data(init_data)
     if not user_id:
         return aiohttp_web.Response(status=401, text='{"error":"unauthorized"}',
+                                    content_type="application/json")
+    if _check_player_rl(user_id):
+        return aiohttp_web.Response(status=429, text='{"error":"rate_limited"}',
                                     content_type="application/json")
     try:
         limit = min(int(request.query.get("limit", 500)), 1000)
@@ -1254,6 +1277,8 @@ async def _api_player_delete(request: aiohttp_web.Request) -> aiohttp_web.Respon
     user_id = _validate_tg_init_data(init_data)
     if not user_id:
         return aiohttp_web.Response(status=401, text='{"error":"unauthorized"}', content_type='application/json')
+    if _check_player_rl(user_id):
+        return aiohttp_web.Response(status=429, text='{"error":"rate_limited"}', content_type='application/json')
     file_id = request.match_info['file_id']
     await db.delete_track_from_history(user_id, file_id)
     return aiohttp_web.Response(text='{"ok":true}', content_type='application/json')
@@ -1266,6 +1291,8 @@ async def _api_player_update_meta(request: aiohttp_web.Request) -> aiohttp_web.R
     user_id = _validate_tg_init_data(init_data)
     if not user_id:
         return aiohttp_web.Response(status=401, text='{"error":"unauthorized"}', content_type="application/json")
+    if _check_player_rl(user_id):
+        return aiohttp_web.Response(status=429, text='{"error":"rate_limited"}', content_type="application/json")
     file_id = request.match_info["file_id"]
     custom_title: str | None = None
     custom_artist: str | None = None
@@ -1278,14 +1305,23 @@ async def _api_player_update_meta(request: aiohttp_web.Request) -> aiohttp_web.R
         reader = await request.multipart()
         async for part in reader:
             name = part.name or ""
+            _MAX_FIELD = 500
+            _MAX_COVER = 5 * 1024 * 1024  # 5 MB
             if name == "title":
                 raw = await part.read(decode=True)
-                custom_title = raw.decode("utf-8", errors="replace").strip() or None
+                custom_title = raw.decode("utf-8", errors="replace").strip()[:_MAX_FIELD] or None
             elif name == "artist":
                 raw = await part.read(decode=True)
-                custom_artist = raw.decode("utf-8", errors="replace").strip() or None
+                custom_artist = raw.decode("utf-8", errors="replace").strip()[:_MAX_FIELD] or None
             elif name == "cover":
                 data = await part.read(decode=False)
+                if len(data) > _MAX_COVER:
+                    log.warning("cover upload too large: %d bytes from user %s", len(data), user_id)
+                    continue
+                # Validate magic bytes: JPEG = FF D8 FF, PNG = 89 50 4E 47
+                if not (data[:3] == b'\xff\xd8\xff' or data[:4] == b'\x89PNG'):
+                    log.warning("cover upload rejected (invalid magic bytes) from user %s", user_id)
+                    continue
                 safe_fid = file_id[:20].replace("/", "_").replace("\\", "_").replace(".", "_")
                 fname = f"{user_id}_{safe_fid}_{uuid.uuid4().hex[:8]}.jpg"
                 (covers_dir / fname).write_bytes(data)
@@ -1296,12 +1332,13 @@ async def _api_player_update_meta(request: aiohttp_web.Request) -> aiohttp_web.R
             body = await request.json()
         except Exception:
             body = {}
+        _MAX_FIELD = 500
         v = body.get("title")
         if v is not None:
-            custom_title = str(v).strip() or None
+            custom_title = str(v).strip()[:_MAX_FIELD] or None
         v = body.get("artist")
         if v is not None:
-            custom_artist = str(v).strip() or None
+            custom_artist = str(v).strip()[:_MAX_FIELD] or None
     await db.update_track_custom_meta(
         user_id, file_id,
         custom_title=custom_title,
@@ -1318,16 +1355,16 @@ async def _api_player_thumb(request: aiohttp_web.Request) -> aiohttp_web.Respons
     """Proxy thumbnail image for a track by file_id."""
     init_data = (request.headers.get("X-Tg-Init-Data", "")
                  or request.query.get("tma", ""))
-    if not _validate_tg_init_data(init_data):
+    _uid_cover = _validate_tg_init_data(init_data)
+    if not _uid_cover:
         return aiohttp_web.Response(status=401)
     file_id = request.match_info["file_id"]
     # Serve custom cover if the user uploaded one for this track
-    _uid_cover = _validate_tg_init_data(init_data)
     if _uid_cover:
         _custom = await db.get_track_custom_cover(_uid_cover, file_id)
         if _custom:
             import pathlib as _pl
-            _cf = _pl.Path("/app/miniapp_dist/covers") / _custom
+            _cf = _pl.Path("/app/miniapp_dist/covers") / _pl.Path(_custom).name
             if _cf.exists():
                 return aiohttp_web.Response(
                     body=_cf.read_bytes(),
