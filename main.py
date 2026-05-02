@@ -1266,9 +1266,29 @@ async def _api_player_stream(request: aiohttp_web.Request) -> aiohttp_web.Stream
         except Exception as e:
             log.warning("player stream local proxy failed: %s", e)
 
-    # Regular Telegram CDN: redirect to temporary URL
+    # Regular Telegram CDN: proxy through server — fetch() in Web Audio API cannot
+    # follow cross-origin 302 redirects (CORS: api.telegram.org has no ACAO header).
     cdn_url = f"https://api.telegram.org/file/bot{settings.BOT_TOKEN}/{file_path}"
-    raise aiohttp_web.HTTPFound(cdn_url)
+    import aiohttp as _aiohttp
+    try:
+        async with _aiohttp.ClientSession() as sess:
+            async with sess.get(cdn_url) as upstream:
+                if upstream.status == 200:
+                    resp = aiohttp_web.StreamResponse(headers={
+                        "Content-Type": upstream.headers.get("Content-Type", "audio/mpeg"),
+                        "Accept-Ranges": "bytes",
+                        "Cache-Control": "no-cache",
+                    })
+                    if "Content-Length" in upstream.headers:
+                        resp.headers["Content-Length"] = upstream.headers["Content-Length"]
+                    await resp.prepare(request)
+                    async for chunk in upstream.content.iter_chunked(65536):
+                        await resp.write(chunk)
+                    return resp
+                log.warning("player stream CDN returned %s", upstream.status)
+    except Exception as e:
+        log.warning("player stream CDN proxy failed: %s", e)
+    return aiohttp_web.Response(status=502)
 
 
 
