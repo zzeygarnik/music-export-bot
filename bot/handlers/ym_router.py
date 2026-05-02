@@ -211,7 +211,7 @@ async def on_faq_contact_message(message: Message, state: FSMContext) -> None:
 
     user_id, username = _get_user_info(message)
 
-    active = db.get_active_contact(user_id)
+    active = await db.get_active_contact(user_id)
     if active:
         remaining = (active["sent_at"] + timedelta(hours=24)) - datetime.now(timezone.utc)
         total_sec = max(0, int(remaining.total_seconds()))
@@ -240,7 +240,7 @@ async def on_faq_contact_message(message: Message, state: FSMContext) -> None:
         except Exception:
             log.warning("Failed to forward contact message to admin")
 
-    db.create_contact_message(user_id, username)
+    await db.create_contact_message(user_id, username)
     msg = await message.answer(
         "✅ Сообщение отправлено администрации. Ответим в ближайшее время!",
         reply_markup=faq_keyboard(),
