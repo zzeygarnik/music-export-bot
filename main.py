@@ -1644,12 +1644,22 @@ async def main() -> None:
 
         if settings.WEBHOOK_URL:
             webhook_path = "/bot/webhook"
-            await bot.set_webhook(
-                url=f"{settings.WEBHOOK_URL.rstrip('/')}{webhook_path}",
-                secret_token=settings.WEBHOOK_SECRET or None,
-                allowed_updates=["message", "callback_query", "inline_query", "chosen_inline_result"],
-                drop_pending_updates=True,
-            )
+            for _wh_attempt in range(6):
+                try:
+                    await bot.set_webhook(
+                        url=f"{settings.WEBHOOK_URL.rstrip('/')}{webhook_path}",
+                        secret_token=settings.WEBHOOK_SECRET or None,
+                        allowed_updates=["message", "callback_query", "inline_query", "chosen_inline_result"],
+                        drop_pending_updates=True,
+                    )
+                    break
+                except Exception as _wh_err:
+                    if _wh_attempt < 5:
+                        log.warning("set_webhook attempt %d failed: %s — retry in 10s", _wh_attempt + 1, _wh_err)
+                        await asyncio.sleep(10)
+                    else:
+                        log.error("set_webhook failed after 6 attempts: %s", _wh_err)
+                        raise
             SimpleRequestHandler(
                 dispatcher=dp,
                 bot=bot,
