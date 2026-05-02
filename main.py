@@ -1228,9 +1228,8 @@ async def _api_player_stream(request: aiohttp_web.Request) -> aiohttp_web.Stream
 
     file_path = tg_file.file_path or ""
 
-    # Local Bot API: absolute disk path — only when no HTTP proxy available.
-    # If LOCAL_API_URL is set, botuser may lack fs perms on the host mount; use HTTP proxy instead.
-    if file_path.startswith("/") and os.path.exists(file_path) and not settings.LOCAL_API_URL:
+    # Local Bot API: absolute disk path
+    if file_path.startswith("/") and os.path.exists(file_path):
         import aiofiles
         stat = os.stat(file_path)
         resp = aiohttp_web.StreamResponse(headers={
