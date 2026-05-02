@@ -1644,22 +1644,25 @@ async def main() -> None:
 
         if settings.WEBHOOK_URL:
             webhook_path = "/bot/webhook"
-            for _wh_attempt in range(6):
-                try:
-                    await bot.set_webhook(
-                        url=f"{settings.WEBHOOK_URL.rstrip('/')}{webhook_path}",
-                        secret_token=settings.WEBHOOK_SECRET or None,
-                        allowed_updates=["message", "callback_query", "inline_query", "chosen_inline_result"],
-                        drop_pending_updates=True,
-                    )
-                    break
-                except Exception as _wh_err:
-                    if _wh_attempt < 5:
-                        log.warning("set_webhook attempt %d failed: %s — retry in 10s", _wh_attempt + 1, _wh_err)
-                        await asyncio.sleep(10)
-                    else:
-                        log.error("set_webhook failed after 6 attempts: %s", _wh_err)
-                        raise
+
+            async def _set_webhook_with_retry() -> None:
+                wh_url = f"{settings.WEBHOOK_URL.rstrip('/')}{webhook_path}"
+                for attempt in range(12):
+                    try:
+                        await bot.set_webhook(
+                            url=wh_url,
+                            secret_token=settings.WEBHOOK_SECRET or None,
+                            allowed_updates=["message", "callback_query", "inline_query", "chosen_inline_result"],
+                            drop_pending_updates=(attempt == 0),
+                        )
+                        log.info("Webhook set: %s (attempt %d)", wh_url, attempt + 1)
+                        return
+                    except Exception as _err:
+                        log.warning("set_webhook attempt %d failed: %s — retry in 15s", attempt + 1, _err)
+                        await asyncio.sleep(15)
+                log.error("set_webhook failed after 12 attempts — bot will not receive webhook updates")
+
+            asyncio.create_task(_set_webhook_with_retry())
             SimpleRequestHandler(
                 dispatcher=dp,
                 bot=bot,
