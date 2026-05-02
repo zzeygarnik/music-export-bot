@@ -142,6 +142,9 @@ async def _create_tables() -> None:
         """)
         await conn.execute("ALTER TABLE user_track_history ADD COLUMN IF NOT EXISTS thumb_id TEXT")
         await conn.execute("ALTER TABLE user_track_history ADD COLUMN IF NOT EXISTS message_id BIGINT")
+        await conn.execute("ALTER TABLE user_track_history ADD COLUMN IF NOT EXISTS custom_title TEXT")
+        await conn.execute("ALTER TABLE user_track_history ADD COLUMN IF NOT EXISTS custom_artist TEXT")
+        await conn.execute("ALTER TABLE user_track_history ADD COLUMN IF NOT EXISTS custom_cover_path TEXT")
 
 
 async def save_track_to_history(
@@ -167,7 +170,8 @@ async def get_user_track_history(user_id: int, limit: int = 50) -> list[dict]:
     try:
         async with _pool.acquire() as conn:
             rows = await conn.fetch("""
-                SELECT file_id, artist, title, source, duration, thumb_id, sent_at
+                SELECT file_id, artist, title, source, duration, thumb_id, sent_at,
+                       custom_title, custom_artist, custom_cover_path
                 FROM user_track_history
                 WHERE user_id = $1
                 ORDER BY sent_at DESC
@@ -175,13 +179,16 @@ async def get_user_track_history(user_id: int, limit: int = 50) -> list[dict]:
             """, user_id, limit)
             return [
                 {
-                    "file_id":  r["file_id"],
-                    "artist":   r["artist"] or "",
-                    "title":    r["title"] or "",
-                    "source":   r["source"] or "",
-                    "duration": r["duration"],
-                    "thumb_id": r["thumb_id"] or "",
-                    "sent_at":  r["sent_at"].isoformat() if r["sent_at"] else None,
+                    "file_id":           r["file_id"],
+                    "artist":            r["artist"] or "",
+                    "title":             r["title"] or "",
+                    "source":            r["source"] or "",
+                    "duration":          r["duration"],
+                    "thumb_id":          r["thumb_id"] or "",
+                    "sent_at":           r["sent_at"].isoformat() if r["sent_at"] else None,
+                    "custom_title":      r["custom_title"] or "",
+                    "custom_artist":     r["custom_artist"] or "",
+                    "custom_cover_path": r["custom_cover_path"] or "",
                 }
                 for r in rows
             ]
@@ -201,6 +208,49 @@ async def get_track_message_id(user_id: int, file_id: str) -> int | None:
             return row["message_id"] if row else None
     except Exception as e:
         log.warning("get_track_message_id failed: %s", e)
+        return None
+
+
+async def update_track_custom_meta(
+    user_id: int,
+    file_id: str,
+    *,
+    custom_title: str | None = None,
+    custom_artist: str | None = None,
+    custom_cover_path: str | None = None,
+) -> None:
+    parts: list[str] = []
+    params: list = [user_id, file_id]
+    if custom_title is not None:
+        params.append(custom_title)
+        parts.append(f"custom_title = ${len(params)}")
+    if custom_artist is not None:
+        params.append(custom_artist)
+        parts.append(f"custom_artist = ${len(params)}")
+    if custom_cover_path is not None:
+        params.append(custom_cover_path)
+        parts.append(f"custom_cover_path = ${len(params)}")
+    if not parts:
+        return
+    try:
+        async with _pool.acquire() as conn:
+            await conn.execute(
+                f"UPDATE user_track_history SET {', '.join(parts)} WHERE user_id = $1 AND file_id = $2",
+                *params,
+            )
+    except Exception as e:
+        log.warning("update_track_custom_meta failed: %s", e)
+
+
+async def get_track_custom_cover(user_id: int, file_id: str) -> str | None:
+    try:
+        async with _pool.acquire() as conn:
+            return await conn.fetchval(
+                "SELECT custom_cover_path FROM user_track_history WHERE user_id = $1 AND file_id = $2",
+                user_id, file_id,
+            )
+    except Exception as e:
+        log.warning("get_track_custom_cover failed: %s", e)
         return None
 
 

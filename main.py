@@ -1259,6 +1259,61 @@ async def _api_player_delete(request: aiohttp_web.Request) -> aiohttp_web.Respon
     return aiohttp_web.Response(text='{"ok":true}', content_type='application/json')
 
 
+async def _api_player_update_meta(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    """Update custom title, artist, or cover for a track in the Mini App player."""
+    import uuid, pathlib, time as _time
+    init_data = request.headers.get("X-Tg-Init-Data", "")
+    user_id = _validate_tg_init_data(init_data)
+    if not user_id:
+        return aiohttp_web.Response(status=401, text='{"error":"unauthorized"}', content_type="application/json")
+    file_id = request.match_info["file_id"]
+    custom_title: str | None = None
+    custom_artist: str | None = None
+    custom_cover_path: str | None = None
+    ts: int | None = None
+    content_type = request.content_type or ""
+    if "multipart" in content_type:
+        covers_dir = pathlib.Path("/app/miniapp_dist/covers")
+        covers_dir.mkdir(parents=True, exist_ok=True)
+        reader = await request.multipart()
+        async for part in reader:
+            name = part.name or ""
+            if name == "title":
+                raw = await part.read(decode=True)
+                custom_title = raw.decode("utf-8", errors="replace").strip() or None
+            elif name == "artist":
+                raw = await part.read(decode=True)
+                custom_artist = raw.decode("utf-8", errors="replace").strip() or None
+            elif name == "cover":
+                data = await part.read(decode=False)
+                safe_fid = file_id[:20].replace("/", "_").replace("\\", "_").replace(".", "_")
+                fname = f"{user_id}_{safe_fid}_{uuid.uuid4().hex[:8]}.jpg"
+                (covers_dir / fname).write_bytes(data)
+                custom_cover_path = fname
+                ts = int(_time.time())
+    else:
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        v = body.get("title")
+        if v is not None:
+            custom_title = str(v).strip() or None
+        v = body.get("artist")
+        if v is not None:
+            custom_artist = str(v).strip() or None
+    await db.update_track_custom_meta(
+        user_id, file_id,
+        custom_title=custom_title,
+        custom_artist=custom_artist,
+        custom_cover_path=custom_cover_path,
+    )
+    result: dict = {"ok": True}
+    if ts is not None:
+        result["ts"] = ts
+    return aiohttp_web.Response(text=json.dumps(result), content_type="application/json")
+
+
 async def _api_player_thumb(request: aiohttp_web.Request) -> aiohttp_web.Response:
     """Proxy thumbnail image for a track by file_id."""
     init_data = (request.headers.get("X-Tg-Init-Data", "")
@@ -1266,6 +1321,19 @@ async def _api_player_thumb(request: aiohttp_web.Request) -> aiohttp_web.Respons
     if not _validate_tg_init_data(init_data):
         return aiohttp_web.Response(status=401)
     file_id = request.match_info["file_id"]
+    # Serve custom cover if the user uploaded one for this track
+    _uid_cover = _validate_tg_init_data(init_data)
+    if _uid_cover:
+        _custom = await db.get_track_custom_cover(_uid_cover, file_id)
+        if _custom:
+            import pathlib as _pl
+            _cf = _pl.Path("/app/miniapp_dist/covers") / _custom
+            if _cf.exists():
+                return aiohttp_web.Response(
+                    body=_cf.read_bytes(),
+                    content_type="image/jpeg",
+                    headers={"Cache-Control": "no-store, no-cache"},
+                )
     bot: Bot = request.app["bot"]
     try:
         tg_file = await bot.get_file(file_id)
@@ -1514,6 +1582,7 @@ async def main() -> None:
         web_app.router.add_get("/api/player/stream/{file_id}", _api_player_stream)
         web_app.router.add_get("/api/player/thumb/{file_id}",  _api_player_thumb)
         web_app.router.add_delete("/api/player/tracks/{file_id}", _api_player_delete)
+        web_app.router.add_post("/api/player/tracks/{file_id}/meta", _api_player_update_meta)
         log.info("Mini App player registered at /player")
 
         if settings.WEBHOOK_URL:
