@@ -19,6 +19,7 @@ services:
         condition: service_healthy
     volumes:
       - ./logs:/app/logs
+      - covers_data:/app/miniapp_dist/covers
     environment:
       REDIS_URL: redis://redis:6379/0
 
@@ -34,3 +35,4 @@ services:
 
 volumes:
   redis_data:
+  covers_data:
