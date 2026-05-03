@@ -1199,20 +1199,48 @@ async def _api_player_stream(request: aiohttp_web.Request) -> aiohttp_web.Stream
         tg_file = await bot.get_file(file_id)
     except Exception as e:
         log.warning("player stream get_file failed: %s", e)
-        # Fallback: Pyrogram proxy for migrated tracks with expired file_reference
+        import aiohttp as _aiohttp
+        # Fallback 1: cloud Telegram API getFile → CDN stream (local Bot API may not have file cached)
+        try:
+            async with _aiohttp.ClientSession() as sess:
+                async with sess.get(
+                    f"https://api.telegram.org/bot{settings.BOT_TOKEN}/getFile?file_id={file_id}"
+                ) as r:
+                    if r.status == 200:
+                        data = await r.json()
+                        if data.get("ok") and data["result"].get("file_path"):
+                            cloud_path = data["result"]["file_path"]
+                            cdn_url = f"https://api.telegram.org/file/bot{settings.BOT_TOKEN}/{cloud_path}"
+                            async with sess.get(cdn_url) as upstream:
+                                if upstream.status == 200:
+                                    resp = aiohttp_web.StreamResponse(headers={
+                                        "Content-Type": upstream.headers.get("Content-Type", "audio/mpeg"),
+                                        "Accept-Ranges": "bytes",
+                                        "Cache-Control": "no-cache",
+                                    })
+                                    if "Content-Length" in upstream.headers:
+                                        resp.headers["Content-Length"] = upstream.headers["Content-Length"]
+                                    await resp.prepare(request)
+                                    async for chunk in upstream.content.iter_chunked(65536):
+                                        await resp.write(chunk)
+                                    return resp
+                                log.warning("player stream cloud CDN returned %s", upstream.status)
+        except Exception as ce:
+            log.warning("player stream cloud fallback failed: %s", ce)
+        # Fallback 2: Pyrogram proxy for migrated tracks
         user_id = _validate_tg_init_data(init_data)
         if user_id:
             msg_id = await db.get_track_message_id(user_id, file_id)
             proxy_url = f"http://127.0.0.1:8991/stream/{file_id}"
             if msg_id:
                 proxy_url += f"?msg={msg_id}&chat={user_id}"
-            import aiohttp as _aiohttp
             try:
                 async with _aiohttp.ClientSession() as sess:
                     async with sess.get(proxy_url) as upstream:
-                        if upstream.status == 200:
+                        ct = upstream.headers.get("Content-Type", "")
+                        if upstream.status == 200 and ct.startswith("audio/"):
                             resp = aiohttp_web.StreamResponse(headers={
-                                "Content-Type": upstream.headers.get("Content-Type", "audio/mpeg"),
+                                "Content-Type": ct,
                                 "Accept-Ranges": "bytes",
                                 "Cache-Control": "no-cache",
                             })
