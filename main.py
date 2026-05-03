@@ -1407,9 +1407,11 @@ async def _api_player_thumb(request: aiohttp_web.Request) -> aiohttp_web.Respons
     if not _uid_cover:
         return aiohttp_web.Response(status=401)
     file_id = request.match_info["file_id"]
+    # fid query param carries the audio file_id when thumb_id is used as the path segment
+    audio_file_id = request.query.get("fid") or file_id
     # Serve custom cover if the user uploaded one for this track
     if _uid_cover:
-        _custom = await db.get_track_custom_cover(_uid_cover, file_id)
+        _custom = await db.get_track_custom_cover(_uid_cover, audio_file_id)
         if _custom:
             import pathlib as _pl
             _cf = _pl.Path("/app/miniapp_dist/covers") / _pl.Path(_custom).name
