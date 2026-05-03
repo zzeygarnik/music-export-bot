@@ -1421,6 +1421,8 @@ async def _api_player_thumb(request: aiohttp_web.Request) -> aiohttp_web.Respons
                     content_type="image/jpeg",
                     headers={"Cache-Control": "no-store, no-cache"},
                 )
+            else:
+                log.warning("Custom cover file missing on disk: %s (user=%s track=%s)", _cf, _uid_cover, audio_file_id)
     bot: Bot = request.app["bot"]
     try:
         tg_file = await bot.get_file(file_id)
