@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg curl ca-certificates gnupg && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg curl ca-certificates gnupg gosu && rm -rf /var/lib/apt/lists/*
 
 RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
     && apt-get install -y nodejs \
@@ -12,6 +12,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
+RUN chmod +x /app/entrypoint.sh
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8889/health', timeout=8)" 2>/dev/null || exit 1
@@ -19,5 +20,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
 RUN groupadd -r botuser && useradd -r -g botuser botuser \
     && mkdir -p /app/miniapp_dist/covers \
     && chown -R botuser:botuser /app
-USER botuser
-CMD ["python", "main.py"]
+
+ENTRYPOINT ["/app/entrypoint.sh"]
