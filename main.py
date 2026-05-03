@@ -1426,7 +1426,8 @@ async def _api_player_thumb(request: aiohttp_web.Request) -> aiohttp_web.Respons
         log.warning("player thumb get_file failed: %s", e)
         user_id = _validate_tg_init_data(init_data)
         if user_id:
-            msg_id = await db.get_track_message_id(user_id, file_id)
+            audio_file_id = request.query.get("fid") or file_id
+            msg_id = await db.get_track_message_id(user_id, audio_file_id)
             proxy_url = f"http://127.0.0.1:8991/thumb/{file_id}"
             if msg_id:
                 proxy_url += f"?msg={msg_id}&chat={user_id}"
