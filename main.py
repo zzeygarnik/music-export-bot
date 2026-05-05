@@ -1257,7 +1257,9 @@ async def _api_player_stream(request: aiohttp_web.Request) -> aiohttp_web.Stream
     file_path = tg_file.file_path or ""
 
     # Local Bot API: absolute disk path
-    if file_path.startswith("/") and os.path.exists(file_path):
+    # os.access check: tg-bot-api may create files with 640 perms (not readable by botuser)
+    # → fall through to LOCAL_API_URL proxy which the tg-bot-api server can serve itself
+    if file_path.startswith("/") and os.path.exists(file_path) and os.access(file_path, os.R_OK):
         import aiofiles
         stat = os.stat(file_path)
         resp = aiohttp_web.StreamResponse(headers={
@@ -1448,7 +1450,7 @@ async def _api_player_thumb(request: aiohttp_web.Request) -> aiohttp_web.Respons
                 log.warning("player thumb pyrogram proxy failed: %s", pe)
         return aiohttp_web.Response(status=404)
     file_path = tg_file.file_path or ""
-    if file_path.startswith("/") and os.path.exists(file_path):
+    if file_path.startswith("/") and os.path.exists(file_path) and os.access(file_path, os.R_OK):
         import aiofiles
         async with aiofiles.open(file_path, "rb") as f:
             data = await f.read()
