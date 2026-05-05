@@ -38,3 +38,15 @@ env/
 # OS
 .DS_Store
 Thumbs.db
+
+# Cookies
+sc_cookies.txt
+yt_cookies.txt
+*_cookies.txt
+
+# Build artifacts
+miniapp_dist/
+covers/
+
+# Claude context
+CLAUDE.md
