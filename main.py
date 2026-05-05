@@ -1456,7 +1456,8 @@ async def _api_player_thumb(request: aiohttp_web.Request) -> aiohttp_web.Respons
             data = await f.read()
         return aiohttp_web.Response(body=data, content_type="image/jpeg",
             headers={"Cache-Control": "public, max-age=86400"})
-    if settings.LOCAL_API_URL and file_path:
+    # LOCAL_API_URL proxy only works for relative paths (absolute = local FS path, proxy can't serve it)
+    if settings.LOCAL_API_URL and file_path and not file_path.startswith("/"):
         local_url = f"{settings.LOCAL_API_URL}/file/bot{settings.BOT_TOKEN}/{file_path}"
         import aiohttp as _aiohttp
         try:
@@ -1469,8 +1470,24 @@ async def _api_player_thumb(request: aiohttp_web.Request) -> aiohttp_web.Respons
                             headers={"Cache-Control": "public, max-age=86400"})
         except Exception as e:
             log.warning("player thumb proxy failed: %s", e)
-    cdn_url = f"https://api.telegram.org/file/bot{settings.BOT_TOKEN}/{file_path}"
-    raise aiohttp_web.HTTPFound(cdn_url)
+    # Cloud API fallback: get relative file_path → CDN redirect (handles unreadable local files)
+    import aiohttp as _aiohttp
+    try:
+        async with _aiohttp.ClientSession() as sess:
+            async with sess.get(
+                f"https://api.telegram.org/bot{settings.BOT_TOKEN}/getFile?file_id={file_id}"
+            ) as r:
+                if r.status == 200:
+                    jdata = await r.json()
+                    rel_path = jdata.get("result", {}).get("file_path", "")
+                    if rel_path:
+                        cdn_url = f"https://api.telegram.org/file/bot{settings.BOT_TOKEN}/{rel_path}"
+                        raise aiohttp_web.HTTPFound(cdn_url)
+    except aiohttp_web.HTTPFound:
+        raise
+    except Exception as e:
+        log.warning("player thumb cloud getFile failed: %s", e)
+    return aiohttp_web.Response(status=404)
 
 # ── System API ────────────────────────────────────────────────────────────
 
