@@ -1185,8 +1185,40 @@ async def _api_player_tracks(request: aiohttp_web.Request) -> aiohttp_web.Respon
     )
 
 
+def _mime_from_path(path: str) -> str:
+    """Detect audio MIME type from file extension."""
+    ext = os.path.splitext(path)[1].lower()
+    return {
+        ".ogg": "audio/ogg",
+        ".oga": "audio/ogg",
+        ".opus": "audio/ogg; codecs=opus",
+        ".mp3": "audio/mpeg",
+        ".m4a": "audio/mp4",
+        ".aac": "audio/aac",
+        ".flac": "audio/flac",
+        ".wav": "audio/wav",
+        ".webm": "audio/webm",
+    }.get(ext, "audio/mpeg")
+
+
+def _proxy_stream_headers(upstream_headers: "dict", fallback_mime: str, range_header: str) -> dict:
+    """Build response headers for a proxied stream, preserving 206 semantics."""
+    ct = upstream_headers.get("Content-Type", fallback_mime)
+    headers: dict = {
+        "Content-Type": ct,
+        "Accept-Ranges": "bytes",
+        "Cache-Control": "no-cache",
+    }
+    for h in ("Content-Length", "Content-Range"):
+        if h in upstream_headers:
+            headers[h] = upstream_headers[h]
+    return headers
+
+
 async def _api_player_stream(request: aiohttp_web.Request) -> aiohttp_web.StreamResponse:
-    """Stream audio file by file_id. Resolves via Local Bot API or Telegram CDN."""
+    """Stream audio file by file_id. Resolves via Local Bot API or Telegram CDN.
+    Supports HTTP Range requests (required by Safari/WebKit on iOS).
+    """
     init_data = (request.headers.get("X-Tg-Init-Data", "")
                  or request.query.get("tma", ""))
     if not _validate_tg_init_data(init_data):
@@ -1194,14 +1226,17 @@ async def _api_player_stream(request: aiohttp_web.Request) -> aiohttp_web.Stream
 
     file_id = request.match_info["file_id"]
     bot: Bot = request.app["bot"]
+    range_header = request.headers.get("Range", "")
+
+    import aiohttp as _aiohttp
 
     try:
         tg_file = await bot.get_file(file_id)
     except Exception as e:
         log.warning("player stream get_file failed: %s", e)
-        import aiohttp as _aiohttp
         # Fallback 1: cloud Telegram API getFile → CDN stream (local Bot API may not have file cached)
         try:
+            req_headers = {"Range": range_header} if range_header else {}
             async with _aiohttp.ClientSession() as sess:
                 async with sess.get(
                     f"https://api.telegram.org/bot{settings.BOT_TOKEN}/getFile?file_id={file_id}"
@@ -1211,15 +1246,13 @@ async def _api_player_stream(request: aiohttp_web.Request) -> aiohttp_web.Stream
                         if data.get("ok") and data["result"].get("file_path"):
                             cloud_path = data["result"]["file_path"]
                             cdn_url = f"https://api.telegram.org/file/bot{settings.BOT_TOKEN}/{cloud_path}"
-                            async with sess.get(cdn_url) as upstream:
-                                if upstream.status == 200:
-                                    resp = aiohttp_web.StreamResponse(headers={
-                                        "Content-Type": upstream.headers.get("Content-Type", "audio/mpeg"),
-                                        "Accept-Ranges": "bytes",
-                                        "Cache-Control": "no-cache",
-                                    })
-                                    if "Content-Length" in upstream.headers:
-                                        resp.headers["Content-Length"] = upstream.headers["Content-Length"]
+                            async with sess.get(cdn_url, headers=req_headers) as upstream:
+                                if upstream.status in (200, 206):
+                                    mime = _mime_from_path(cloud_path)
+                                    resp = aiohttp_web.StreamResponse(
+                                        status=upstream.status,
+                                        headers=_proxy_stream_headers(upstream.headers, mime, range_header),
+                                    )
                                     await resp.prepare(request)
                                     async for chunk in upstream.content.iter_chunked(65536):
                                         await resp.write(chunk)
@@ -1235,17 +1268,15 @@ async def _api_player_stream(request: aiohttp_web.Request) -> aiohttp_web.Stream
             if msg_id:
                 proxy_url += f"?msg={msg_id}&chat={user_id}"
             try:
+                req_headers = {"Range": range_header} if range_header else {}
                 async with _aiohttp.ClientSession() as sess:
-                    async with sess.get(proxy_url) as upstream:
+                    async with sess.get(proxy_url, headers=req_headers) as upstream:
                         ct = upstream.headers.get("Content-Type", "")
-                        if upstream.status == 200 and ct.startswith("audio/"):
-                            resp = aiohttp_web.StreamResponse(headers={
-                                "Content-Type": ct,
-                                "Accept-Ranges": "bytes",
-                                "Cache-Control": "no-cache",
-                            })
-                            if "Content-Length" in upstream.headers:
-                                resp.headers["Content-Length"] = upstream.headers["Content-Length"]
+                        if upstream.status in (200, 206) and ct.startswith("audio/"):
+                            resp = aiohttp_web.StreamResponse(
+                                status=upstream.status,
+                                headers=_proxy_stream_headers(upstream.headers, ct, range_header),
+                            )
                             await resp.prepare(request)
                             async for chunk in upstream.content.iter_chunked(65536):
                                 await resp.write(chunk)
@@ -1261,10 +1292,44 @@ async def _api_player_stream(request: aiohttp_web.Request) -> aiohttp_web.Stream
     # → fall through to LOCAL_API_URL proxy which the tg-bot-api server can serve itself
     if file_path.startswith("/") and os.path.exists(file_path) and os.access(file_path, os.R_OK):
         import aiofiles
-        stat = os.stat(file_path)
+        mime = _mime_from_path(file_path)
+        file_size = os.stat(file_path).st_size
+
+        # Parse Range header for iOS Safari / WebKit
+        if range_header and range_header.startswith("bytes="):
+            range_spec = range_header[6:]
+            start_str, _, end_str = range_spec.partition("-")
+            try:
+                start = int(start_str) if start_str else 0
+                end = int(end_str) if end_str else file_size - 1
+            except ValueError:
+                return aiohttp_web.Response(status=416)
+            end = min(end, file_size - 1)
+            if start > end or start < 0:
+                return aiohttp_web.Response(status=416)
+            length = end - start + 1
+            resp = aiohttp_web.StreamResponse(status=206, headers={
+                "Content-Type": mime,
+                "Content-Length": str(length),
+                "Content-Range": f"bytes {start}-{end}/{file_size}",
+                "Accept-Ranges": "bytes",
+                "Cache-Control": "no-cache",
+            })
+            await resp.prepare(request)
+            async with aiofiles.open(file_path, "rb") as f:
+                await f.seek(start)
+                remaining = length
+                while remaining > 0:
+                    chunk = await f.read(min(65536, remaining))
+                    if not chunk:
+                        break
+                    await resp.write(chunk)
+                    remaining -= len(chunk)
+            return resp
+
         resp = aiohttp_web.StreamResponse(headers={
-            "Content-Type": "audio/mpeg",
-            "Content-Length": str(stat.st_size),
+            "Content-Type": mime,
+            "Content-Length": str(file_size),
             "Accept-Ranges": "bytes",
             "Cache-Control": "no-cache",
         })
@@ -1277,18 +1342,16 @@ async def _api_player_stream(request: aiohttp_web.Request) -> aiohttp_web.Stream
     # Local Bot API: relative path — proxy via local API HTTP server
     if settings.LOCAL_API_URL and file_path:
         local_url = f"{settings.LOCAL_API_URL}/file/bot{settings.BOT_TOKEN}/{file_path}"
-        import aiohttp as _aiohttp
         try:
+            req_headers = {"Range": range_header} if range_header else {}
             async with _aiohttp.ClientSession() as sess:
-                async with sess.get(local_url) as upstream:
-                    if upstream.status == 200:
-                        resp = aiohttp_web.StreamResponse(headers={
-                            "Content-Type": upstream.headers.get("Content-Type", "audio/mpeg"),
-                            "Accept-Ranges": "bytes",
-                            "Cache-Control": "no-cache",
-                        })
-                        if "Content-Length" in upstream.headers:
-                            resp.headers["Content-Length"] = upstream.headers["Content-Length"]
+                async with sess.get(local_url, headers=req_headers) as upstream:
+                    if upstream.status in (200, 206):
+                        mime = _mime_from_path(file_path)
+                        resp = aiohttp_web.StreamResponse(
+                            status=upstream.status,
+                            headers=_proxy_stream_headers(upstream.headers, mime, range_header),
+                        )
                         await resp.prepare(request)
                         async for chunk in upstream.content.iter_chunked(65536):
                             await resp.write(chunk)
@@ -1299,18 +1362,16 @@ async def _api_player_stream(request: aiohttp_web.Request) -> aiohttp_web.Stream
     # Regular Telegram CDN: proxy through server — fetch() in Web Audio API cannot
     # follow cross-origin 302 redirects (CORS: api.telegram.org has no ACAO header).
     cdn_url = f"https://api.telegram.org/file/bot{settings.BOT_TOKEN}/{file_path}"
-    import aiohttp as _aiohttp
     try:
+        req_headers = {"Range": range_header} if range_header else {}
         async with _aiohttp.ClientSession() as sess:
-            async with sess.get(cdn_url) as upstream:
-                if upstream.status == 200:
-                    resp = aiohttp_web.StreamResponse(headers={
-                        "Content-Type": upstream.headers.get("Content-Type", "audio/mpeg"),
-                        "Accept-Ranges": "bytes",
-                        "Cache-Control": "no-cache",
-                    })
-                    if "Content-Length" in upstream.headers:
-                        resp.headers["Content-Length"] = upstream.headers["Content-Length"]
+            async with sess.get(cdn_url, headers=req_headers) as upstream:
+                if upstream.status in (200, 206):
+                    mime = _mime_from_path(file_path)
+                    resp = aiohttp_web.StreamResponse(
+                        status=upstream.status,
+                        headers=_proxy_stream_headers(upstream.headers, mime, range_header),
+                    )
                     await resp.prepare(request)
                     async for chunk in upstream.content.iter_chunked(65536):
                         await resp.write(chunk)
