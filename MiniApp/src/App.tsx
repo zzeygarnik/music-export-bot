@@ -61,7 +61,7 @@ function buildStreamUrl(trackId: string): string {
   return `/api/player/stream/${encodeURIComponent(trackId)}?tma=${encodeURIComponent(initData)}`;
 }
 
-// build:29
+// build:35
 export default function App() {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [loading, setLoading] = useState(true);
@@ -427,7 +427,7 @@ export default function App() {
           ZGRNK Music
         </div>
         <div className="w-10 flex justify-end">
-          <span className="text-[10px] font-mono text-white/20 select-none">b29</span>
+          <span className="text-[10px] font-mono text-white/20 select-none">b35</span>
         </div>
       </header>
 
