@@ -1330,6 +1330,15 @@ async def _api_player_stream(request: aiohttp_web.Request) -> aiohttp_web.Stream
     # Local Bot API: absolute disk path
     # os.access check: tg-bot-api may create files with 640 perms (not readable by botuser)
     # → fall through to LOCAL_API_URL proxy which the tg-bot-api server can serve itself
+    # Local Bot API with is_local=True returns absolute disk path.
+    # Extract relative part so proxy/CDN URLs are built correctly.
+    _rel_path = file_path
+    if file_path.startswith("/"):
+        _token_prefix = f"/var/lib/telegram-bot-api/{settings.BOT_TOKEN}/"
+        if file_path.startswith(_token_prefix):
+            _rel_path = file_path[len(_token_prefix):]
+            log.info("player stream: rel_path=%r", _rel_path)
+
     if file_path.startswith("/") and os.path.exists(file_path) and os.access(file_path, os.R_OK):
         import aiofiles
         mime = _mime_from_path(file_path)
@@ -1381,7 +1390,7 @@ async def _api_player_stream(request: aiohttp_web.Request) -> aiohttp_web.Stream
 
     # Local Bot API: relative path — proxy via local API HTTP server
     if settings.LOCAL_API_URL and file_path:
-        local_url = f"{settings.LOCAL_API_URL}/file/bot{settings.BOT_TOKEN}/{file_path}"
+        local_url = f"{settings.LOCAL_API_URL}/file/bot{settings.BOT_TOKEN}/{_rel_path}"
         try:
             req_headers = {"Range": range_header} if range_header else {}
             async with _aiohttp.ClientSession() as sess:
@@ -1401,7 +1410,7 @@ async def _api_player_stream(request: aiohttp_web.Request) -> aiohttp_web.Stream
 
     # Regular Telegram CDN: proxy through server — fetch() in Web Audio API cannot
     # follow cross-origin 302 redirects (CORS: api.telegram.org has no ACAO header).
-    cdn_url = f"https://api.telegram.org/file/bot{settings.BOT_TOKEN}/{file_path}"
+    cdn_url = f"https://api.telegram.org/file/bot{settings.BOT_TOKEN}/{_rel_path}"
     try:
         req_headers = {"Range": range_header} if range_header else {}
         async with _aiohttp.ClientSession() as sess:
