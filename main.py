@@ -1315,12 +1315,16 @@ async def _api_player_stream(request: aiohttp_web.Request) -> aiohttp_web.Stream
         return aiohttp_web.Response(status=404)
 
     file_path = tg_file.file_path or ""
+    log.info("player stream: file_id=%s file_path=%r local_api_url=%r", file_id, file_path, settings.LOCAL_API_URL)
 
     # Resolve relative Local Bot API path (e.g. "music/file_49.mp3") to absolute
     # via mounted tg-bot-api data volume — avoids CDN URL expiry and broken HTTP file serving.
     if file_path and not file_path.startswith("/"):
         _abs = f"/var/lib/telegram-bot-api/{settings.BOT_TOKEN}/{file_path}"
-        if os.path.exists(_abs):
+        _exists = os.path.exists(_abs)
+        _readable = os.access(_abs, os.R_OK) if _exists else False
+        log.info("player stream: abs_path=%r exists=%s readable=%s", _abs, _exists, _readable)
+        if _exists:
             file_path = _abs
 
     # Local Bot API: absolute disk path
@@ -1646,6 +1650,46 @@ async def _daily_digest_task(bot: Bot) -> None:
             log.warning("daily_digest_task failed: %s", e)
 
 
+_AUDIO_EXTENSIONS = frozenset({".mp3", ".ogg", ".oga", ".opus", ".m4a", ".aac", ".flac", ".wav", ".webm"})
+_GC_MAX_AGE_SECONDS = 86400   # 24 h
+_GC_INTERVAL_SECONDS = 21600  # 6 h
+
+
+async def _audio_gc_task() -> None:
+    """Delete Local Bot API audio files older than 24 h every 6 h to prevent disk exhaustion."""
+    gc_root = f"/var/lib/telegram-bot-api/{settings.BOT_TOKEN}"
+    await asyncio.sleep(300)  # wait 5 min after startup before first run
+    while True:
+        if not os.path.isdir(gc_root):
+            log.info("audio_gc: root dir not found (%s) — skipping", gc_root)
+            await asyncio.sleep(_GC_INTERVAL_SECONDS)
+            continue
+        now = time.time()
+        deleted = 0
+        freed = 0
+        errors = 0
+        try:
+            for dirpath, _dirs, files in os.walk(gc_root):
+                for fname in files:
+                    if os.path.splitext(fname)[1].lower() not in _AUDIO_EXTENSIONS:
+                        continue
+                    fpath = os.path.join(dirpath, fname)
+                    try:
+                        st = os.stat(fpath)
+                        age = now - st.st_mtime
+                        if age > _GC_MAX_AGE_SECONDS:
+                            freed += st.st_size
+                            os.remove(fpath)
+                            deleted += 1
+                    except Exception as e:
+                        log.warning("audio_gc: failed to remove %s: %s", fpath, e)
+                        errors += 1
+        except Exception as e:
+            log.warning("audio_gc: walk error: %s", e)
+        log.info("audio_gc: deleted=%d freed=%.1fMB errors=%d", deleted, freed / 1_048_576, errors)
+        await asyncio.sleep(_GC_INTERVAL_SECONDS)
+
+
 def _build_storage():
     """Connect to Redis for FSM storage. Raises on failure — no silent fallback."""
     import redis as redis_sync
@@ -1813,6 +1857,7 @@ async def main() -> None:
         await db.cleanup_old_batch_live()
     asyncio.create_task(_check_sc_cookies_task(bot))
     asyncio.create_task(_daily_digest_task(bot))
+    asyncio.create_task(_audio_gc_task())
     log.info("Bot started")
     if settings.WEBHOOK_URL:
         await asyncio.Event().wait()
