@@ -1070,6 +1070,25 @@ async def _api_batch_requests_resolve(request: aiohttp_web.Request) -> aiohttp_w
 
 # Cookie API handlers
 
+def _json_cookies_to_netscape(raw: str) -> str:
+    """Convert JSON cookie array (browser extension export) to Netscape HTTP Cookie File format."""
+    import json as _json
+    data = _json.loads(raw)
+    if not isinstance(data, list):
+        data = [data]
+    lines = ["# Netscape HTTP Cookie File", ""]
+    for c in data:
+        domain = c.get("domain", "")
+        flag = "TRUE" if domain.startswith(".") else "FALSE"
+        path = c.get("path", "/")
+        secure = "TRUE" if c.get("secure", False) else "FALSE"
+        expiry = int(c.get("expirationDate", c.get("expires", 0)) or 0)
+        name = c.get("name", "")
+        value = c.get("value", "")
+        lines.append(f"{domain}\t{flag}\t{path}\t{secure}\t{expiry}\t{name}\t{value}")
+    return "\n".join(lines) + "\n"
+
+
 async def _api_cookies_get(request: aiohttp_web.Request) -> aiohttp_web.Response:
     if not _check_auth(request):
         return aiohttp_web.Response(status=401)
@@ -1109,17 +1128,27 @@ async def _api_cookies_post(request: aiohttp_web.Request) -> aiohttp_web.Respons
         new_content = body.get("content", "")
     except Exception:
         return aiohttp_web.Response(status=400, text="Invalid JSON")
+    # Auto-convert JSON cookie arrays (browser extension exports) to Netscape format
+    stripped = new_content.strip()
+    converted = False
+    if stripped.startswith("[") or stripped.startswith("{"):
+        try:
+            new_content = _json_cookies_to_netscape(stripped)
+            converted = True
+            log.info("Cookie file: JSON format detected, auto-converted to Netscape: source=%s", source)
+        except Exception as e:
+            return aiohttp_web.Response(status=400, text=f"Failed to parse JSON cookies: {e}")
     try:
         with open(path, "w", encoding="utf-8", newline="") as fh:
             fh.write(new_content)
         mtime = datetime.fromtimestamp(
             os.path.getmtime(path), tz=timezone.utc
         ).isoformat(timespec="seconds")
-        log.info("Cookie file updated via dashboard: source=%s path=%s", source, path)
+        log.info("Cookie file updated via dashboard: source=%s path=%s converted_from_json=%s", source, path, converted)
     except Exception as e:
         return aiohttp_web.Response(status=500, text=f"Failed to write cookie file: {e}")
     return aiohttp_web.Response(
-        text=json.dumps({"ok": True, "path": path, "mtime": mtime}),
+        text=json.dumps({"ok": True, "path": path, "mtime": mtime, "converted_from_json": converted}),
         content_type="application/json",
     )
 
@@ -1286,6 +1315,13 @@ async def _api_player_stream(request: aiohttp_web.Request) -> aiohttp_web.Stream
         return aiohttp_web.Response(status=404)
 
     file_path = tg_file.file_path or ""
+
+    # Resolve relative Local Bot API path (e.g. "music/file_49.mp3") to absolute
+    # via mounted tg-bot-api data volume — avoids CDN URL expiry and broken HTTP file serving.
+    if file_path and not file_path.startswith("/"):
+        _abs = f"/var/lib/telegram-bot-api/{settings.BOT_TOKEN}/{file_path}"
+        if os.path.exists(_abs):
+            file_path = _abs
 
     # Local Bot API: absolute disk path
     # os.access check: tg-bot-api may create files with 640 perms (not readable by botuser)
@@ -1517,8 +1553,7 @@ async def _api_player_thumb(request: aiohttp_web.Request) -> aiohttp_web.Respons
             data = await f.read()
         return aiohttp_web.Response(body=data, content_type="image/jpeg",
             headers={"Cache-Control": "public, max-age=86400"})
-    # LOCAL_API_URL proxy only works for relative paths (absolute = local FS path, proxy can't serve it)
-    if settings.LOCAL_API_URL and file_path and not file_path.startswith("/"):
+    if settings.LOCAL_API_URL and file_path:
         local_url = f"{settings.LOCAL_API_URL}/file/bot{settings.BOT_TOKEN}/{file_path}"
         import aiohttp as _aiohttp
         try:
@@ -1531,24 +1566,8 @@ async def _api_player_thumb(request: aiohttp_web.Request) -> aiohttp_web.Respons
                             headers={"Cache-Control": "public, max-age=86400"})
         except Exception as e:
             log.warning("player thumb proxy failed: %s", e)
-    # Cloud API fallback: get relative file_path → CDN redirect (handles unreadable local files)
-    import aiohttp as _aiohttp
-    try:
-        async with _aiohttp.ClientSession() as sess:
-            async with sess.get(
-                f"https://api.telegram.org/bot{settings.BOT_TOKEN}/getFile?file_id={file_id}"
-            ) as r:
-                if r.status == 200:
-                    jdata = await r.json()
-                    rel_path = jdata.get("result", {}).get("file_path", "")
-                    if rel_path:
-                        cdn_url = f"https://api.telegram.org/file/bot{settings.BOT_TOKEN}/{rel_path}"
-                        raise aiohttp_web.HTTPFound(cdn_url)
-    except aiohttp_web.HTTPFound:
-        raise
-    except Exception as e:
-        log.warning("player thumb cloud getFile failed: %s", e)
-    return aiohttp_web.Response(status=404)
+    cdn_url = f"https://api.telegram.org/file/bot{settings.BOT_TOKEN}/{file_path}"
+    raise aiohttp_web.HTTPFound(cdn_url)
 
 # ── System API ────────────────────────────────────────────────────────────
 
