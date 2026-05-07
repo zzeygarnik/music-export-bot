@@ -20,10 +20,13 @@ services:
     volumes:
       - /mnt/Storage/zgrnk_data/music-bot/music-export-bot/logs:/app/logs
       - /mnt/Storage/zgrnk_data/music-bot/music-export-bot/sc_cookies.txt:/app/sc_cookies.txt:ro
+      # Local Bot API file storage — required for audio streaming
+      - /var/lib/telegram-bot-api:/var/lib/telegram-bot-api:ro
     environment:
       BOT_TOKEN: ${BOT_TOKEN}
       REDIS_URL: redis://redis:6379/0
       SC_COOKIE_FILE: /app/sc_cookies.txt
+      LOCAL_API_URL: ${LOCAL_API_URL:-}
 
   dashboard:
     image: music-export-bot:latest
