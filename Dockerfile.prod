@@ -19,6 +19,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
 
 RUN groupadd -r botuser && useradd -r -g botuser botuser \
     && mkdir -p /app/miniapp_dist/covers \
+    && touch /app/sc_cookies.txt /app/yt_cookies.txt \
     && chown -R botuser:botuser /app
 
 ENTRYPOINT ["/app/entrypoint.sh"]
