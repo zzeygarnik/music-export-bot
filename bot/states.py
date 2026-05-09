@@ -74,3 +74,7 @@ class VKSearchFlow(StatesGroup):
     vk_search_query   = State()   # waiting for search query
     vk_search_results = State()   # showing top-5 results, waiting for pick
 
+
+class ImportFlow(StatesGroup):
+    waiting_for_tracks = State()  # accepting audio files uploaded by user
+

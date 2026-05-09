@@ -10,6 +10,7 @@ from .inline_router import router as inline_router
 from .audio_tag_router import router as audio_tag_router
 from .vk_router import router as vk_router
 from .url_router import router as url_router
+from .import_router import router as import_router
 from .fallback import router as fallback_router  # must be last
 
 router = Router()
@@ -22,6 +23,7 @@ router.include_router(inline_router)
 router.include_router(audio_tag_router)
 router.include_router(vk_router)
 router.include_router(url_router)
+router.include_router(import_router)
 router.include_router(fallback_router)
 
 __all__ = ["router"]

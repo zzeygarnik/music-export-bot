@@ -5,7 +5,7 @@ from aiogram import Router
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
-from bot.states import ExportFlow, SCSearchFlow, SCBatchFlow, YMShareFlow, AudioTagFlow, VKSearchFlow
+from bot.states import ExportFlow, SCSearchFlow, SCBatchFlow, YMShareFlow, AudioTagFlow, VKSearchFlow, ImportFlow
 
 router = Router()
 log = logging.getLogger(__name__)
@@ -44,6 +44,7 @@ _STATE_HINTS = {
     AudioTagFlow.waiting_for_audio:  "Пришли аудио-файл или нажми «← Назад».",
     AudioTagFlow.waiting_for_title:  "Введи название трека или нажми «← Назад».",
     AudioTagFlow.waiting_for_artist: "Введи имя исполнителя или нажми «← Назад».",
+    ImportFlow.waiting_for_tracks:   "Отправляй аудиофайлы или нажми «✅ Finish import».",
 }
 
 
