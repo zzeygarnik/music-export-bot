@@ -33,5 +33,8 @@ $SSH "chmod 666 $REMOTE_DIR/yt_cookies.txt $REMOTE_DIR/sc_cookies.txt"
 echo "[6/6] Sync miniapp_dist into container..."
 $SSH "docker cp $REMOTE_DIR/miniapp_dist/. $CONTAINER:/app/miniapp_dist/"
 
+echo "[6b] Fix miniapp_dist permissions (docker cp sets root:700)..."
+$SSH "docker exec $CONTAINER chmod -R 755 /app/miniapp_dist"
+
 echo "Done. Container status:"
 $SSH "docker ps --filter name=$CONTAINER --format 'Status: {{.Status}}'"
