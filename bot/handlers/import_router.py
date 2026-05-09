@@ -53,15 +53,19 @@ async def _api_player_import_start(request: _web.Request) -> _web.Response:
                              content_type="application/json")
     try:
         key = StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id)
+        started_at = datetime.now(timezone.utc).isoformat()
         await storage.set_state(key=key, state=ImportFlow.waiting_for_tracks)
-        await storage.set_data(key=key, data={"import_started_at": datetime.now(timezone.utc).isoformat()})
-        await bot.send_message(
+        sent = await bot.send_message(
             user_id,
             "\U0001f4e5 <b>Режим импорта активирован!</b>\n\n"
             "Отправляй или пересылай аудиофайлы. Когда закончишь — нажми кнопку ниже.",
             parse_mode="HTML",
             reply_markup=_stop_keyboard(),
         )
+        await storage.set_data(key=key, data={
+            "import_started_at": started_at,
+            "activation_msg_id": sent.message_id,
+        })
         return _web.Response(status=200, text='{"ok":true}', content_type="application/json")
     except Exception as e:
         log.warning("_api_player_import_start error: %s", e)
@@ -81,14 +85,15 @@ def _stop_keyboard() -> InlineKeyboardMarkup:
 @router.message(F.web_app_data.data == "import")
 async def start_import(message: Message, state: FSMContext) -> None:
     """Triggered when user taps the import button in Mini App."""
+    started_at = datetime.now(timezone.utc).isoformat()
     await state.set_state(ImportFlow.waiting_for_tracks)
-    await state.update_data(import_started_at=datetime.now(timezone.utc).isoformat())
-    await message.answer(
+    sent = await message.answer(
         "\U0001f4e5 <b>Режим импорта активирован!</b>\n\n"
         "Отправляй или пересылай аудиофайлы. Когда закончишь — нажми кнопку ниже.",
         parse_mode="HTML",
         reply_markup=_stop_keyboard(),
     )
+    await state.update_data(import_started_at=started_at, activation_msg_id=sent.message_id)
 
 
 @router.message(ImportFlow.waiting_for_tracks, F.audio | F.voice | F.document)
@@ -120,6 +125,23 @@ async def handle_import_audio(message: Message, state: FSMContext) -> None:
         thumb_id = thumb.file_id
 
     await log_track_sent(user_id, file_id, artist, title, 'upload', duration, thumb_id)
+
+    data = await state.get_data()
+    started_at = data.get("import_started_at", "")
+    activation_msg_id = data.get("activation_msg_id")
+    if started_at and activation_msg_id:
+        count = await db.count_uploaded_since(user_id, started_at)
+        try:
+            await message.bot.edit_message_text(
+                chat_id=message.chat.id,
+                message_id=activation_msg_id,
+                text=f"\U0001f4e5 <b>Режим импорта:</b> получено {count} трек(ов)\n\n"
+                     "Когда закончишь — нажми кнопку ниже.",
+                parse_mode="HTML",
+                reply_markup=_stop_keyboard(),
+            )
+        except Exception:
+            pass
 
 
 @router.message(ImportFlow.waiting_for_tracks)

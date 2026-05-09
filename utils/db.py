@@ -169,11 +169,13 @@ async def save_track_to_history(
 async def count_uploaded_since(user_id: int, since_iso: str) -> int:
     """Count tracks with source='upload' added by user since given ISO timestamp."""
     try:
+        from datetime import datetime
+        since_dt = datetime.fromisoformat(since_iso)
         async with _pool.acquire() as conn:
             return await conn.fetchval(
                 "SELECT COUNT(*) FROM user_track_history "
-                "WHERE user_id=$1 AND source='upload' AND sent_at >= $2::timestamptz",
-                user_id, since_iso,
+                "WHERE user_id=$1 AND source='upload' AND sent_at >= $2",
+                user_id, since_dt,
             ) or 0
     except Exception as e:
         log.warning("count_uploaded_since failed: %s", e)
