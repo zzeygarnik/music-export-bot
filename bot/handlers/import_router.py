@@ -1,15 +1,70 @@
 """Import flow — lets users upload audio files directly to their library via Mini App button."""
 import logging
 
+from aiohttp import web as _web
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
+from aiogram.fsm.storage.base import StorageKey
 
 from bot.states import ImportFlow
 from bot.handlers.common import log_track_sent
+from config import settings
 
 router = Router()
 log = logging.getLogger(__name__)
+
+
+def _validate_init_data(init_data: str) -> int | None:
+    """Validate Telegram WebApp initData HMAC. Returns user_id or None."""
+    import hashlib, hmac as _hmac, json as _json
+    from urllib.parse import parse_qsl
+    try:
+        params = dict(parse_qsl(init_data, strict_parsing=True))
+        hash_value = params.pop("hash", None)
+        if not hash_value:
+            return None
+        data_check = "\n".join(f"{k}={v}" for k, v in sorted(params.items()))
+        secret = _hmac.new(b"WebAppData", settings.BOT_TOKEN.encode(), hashlib.sha256).digest()
+        computed = _hmac.new(secret, data_check.encode(), hashlib.sha256).hexdigest()
+        if not _hmac.compare_digest(computed, hash_value):
+            return None
+        user = _json.loads(params.get("user", "{}"))
+        uid = user.get("id")
+        return int(uid) if uid else None
+    except Exception as e:
+        log.warning("_validate_init_data error: %s", e)
+        return None
+
+
+async def _api_player_import_start(request: _web.Request) -> _web.Response:
+    """POST /api/player/import/start — activate ImportFlow FSM for the Mini App user."""
+    init_data = request.headers.get("X-Tg-Init-Data", "")
+    user_id = _validate_init_data(init_data)
+    if not user_id:
+        return _web.Response(status=401, text='{"error":"unauthorized"}',
+                             content_type="application/json")
+    bot = request.app["bot"]
+    storage = request.app.get("storage")
+    if storage is None:
+        return _web.Response(status=503, text='{"error":"storage unavailable"}',
+                             content_type="application/json")
+    try:
+        key = StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id)
+        await storage.set_state(key=key, state=ImportFlow.waiting_for_tracks)
+        await storage.set_data(key=key, data={"import_count": 0})
+        await bot.send_message(
+            user_id,
+            "\U0001f4e5 <b>Import mode activated!</b>\n\n"
+            "Send or forward audio files. When done — press the button below.",
+            parse_mode="HTML",
+            reply_markup=_stop_keyboard(),
+        )
+        return _web.Response(status=200, text='{"ok":true}', content_type="application/json")
+    except Exception as e:
+        log.warning("_api_player_import_start error: %s", e)
+        return _web.Response(status=500, text='{"error":"internal"}',
+                             content_type="application/json")
 
 _ALLOWED_AUDIO_MIME = {'audio/mpeg', 'audio/ogg', 'audio/mp3', 'audio/x-mp3', 'audio/m4a', 'audio/aac'}
 _ALLOWED_AUDIO_EXT  = {'.mp3', '.ogg', '.m4a', '.flac', '.wav', '.aac', '.opus'}
