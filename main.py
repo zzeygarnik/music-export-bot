@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import json
 import logging
 import os
@@ -17,6 +17,7 @@ from aiogram.webhook.aiohttp_server import SimpleRequestHandler
 
 from config import settings
 from bot.handlers import router
+from bot.handlers.import_router import _api_player_import_start
 from bot.handlers.common import _pending_spotify_codes, detect_and_store_server_ip
 from bot.tracker import set_active_msg
 from bot.middleware import BanMiddleware, ThrottlingMiddleware, StaleButtonMiddleware, CallbackAnswerMiddleware, DeduplicateUpdateMiddleware
@@ -1763,6 +1764,7 @@ async def main() -> None:
         web_app = aiohttp_web.Application()
         web_app["bot"]   = bot
         web_app["redis"] = _redis
+        web_app["storage"] = dp.storage
 
         if settings.SPOTIFY_CLIENT_ID and settings.SPOTIFY_CALLBACK_PORT:
             web_app.router.add_get("/spotify/callback", _make_spotify_callback(bot))
@@ -1825,6 +1827,7 @@ async def main() -> None:
         web_app.router.add_get("/api/player/thumb/{file_id}",  _api_player_thumb)
         web_app.router.add_delete("/api/player/tracks/{file_id}", _api_player_delete)
         web_app.router.add_post("/api/player/tracks/{file_id}/meta", _api_player_update_meta)
+        web_app.router.add_post("/api/player/import/start",         _api_player_import_start)
         log.info("Mini App player registered at /player")
 
         if settings.WEBHOOK_URL:
