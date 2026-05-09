@@ -1,5 +1,6 @@
 """Import flow — lets users upload audio files directly to their library via Mini App button."""
 import logging
+from datetime import datetime, timezone
 
 from aiohttp import web as _web
 from aiogram import Router, F
@@ -10,6 +11,7 @@ from aiogram.fsm.storage.base import StorageKey
 from bot.states import ImportFlow
 from bot.handlers.common import log_track_sent
 from config import settings
+from utils import db
 
 router = Router()
 log = logging.getLogger(__name__)
@@ -52,7 +54,7 @@ async def _api_player_import_start(request: _web.Request) -> _web.Response:
     try:
         key = StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id)
         await storage.set_state(key=key, state=ImportFlow.waiting_for_tracks)
-        await storage.set_data(key=key, data={"import_count": 0})
+        await storage.set_data(key=key, data={"import_started_at": datetime.now(timezone.utc).isoformat()})
         await bot.send_message(
             user_id,
             "\U0001f4e5 <b>Режим импорта активирован!</b>\n\n"
@@ -80,7 +82,7 @@ def _stop_keyboard() -> InlineKeyboardMarkup:
 async def start_import(message: Message, state: FSMContext) -> None:
     """Triggered when user taps the import button in Mini App."""
     await state.set_state(ImportFlow.waiting_for_tracks)
-    await state.update_data(import_count=0)
+    await state.update_data(import_started_at=datetime.now(timezone.utc).isoformat())
     await message.answer(
         "\U0001f4e5 <b>Режим импорта активирован!</b>\n\n"
         "Отправляй или пересылай аудиофайлы. Когда закончишь — нажми кнопку ниже.",
@@ -119,10 +121,6 @@ async def handle_import_audio(message: Message, state: FSMContext) -> None:
 
     await log_track_sent(user_id, file_id, artist, title, 'upload', duration, thumb_id)
 
-    data  = await state.get_data()
-    count = data.get('import_count', 0) + 1
-    await state.update_data(import_count=count)
-
 
 @router.message(ImportFlow.waiting_for_tracks)
 async def import_non_audio(message: Message) -> None:
@@ -141,9 +139,11 @@ async def stop_import(call: CallbackQuery, state: FSMContext) -> None:
         await call.answer("Импорт не активен.", show_alert=False)
         return
 
-    data  = await state.get_data()
-    count = data.get('import_count', 0)
+    data = await state.get_data()
+    started_at = data.get("import_started_at", "")
+    user_id = call.from_user.id
     await state.clear()
+    count = await db.count_uploaded_since(user_id, started_at) if started_at else 0
     await call.answer()
     await call.message.edit_text(
         f"✅ <b>Импорт завершён.</b> Добавлено треков: {count}.",
