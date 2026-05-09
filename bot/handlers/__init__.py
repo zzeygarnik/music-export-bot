@@ -20,10 +20,10 @@ router.include_router(sc_router)
 router.include_router(yms_router)
 router.include_router(spotify_router)
 router.include_router(inline_router)
+router.include_router(import_router)
 router.include_router(audio_tag_router)
 router.include_router(vk_router)
 router.include_router(url_router)
-router.include_router(import_router)
 router.include_router(fallback_router)
 
 __all__ = ["router"]

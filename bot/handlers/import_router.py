@@ -55,8 +55,8 @@ async def _api_player_import_start(request: _web.Request) -> _web.Response:
         await storage.set_data(key=key, data={"import_count": 0})
         await bot.send_message(
             user_id,
-            "\U0001f4e5 <b>Import mode activated!</b>\n\n"
-            "Send or forward audio files. When done — press the button below.",
+            "\U0001f4e5 <b>Режим импорта активирован!</b>\n\n"
+            "Отправляй или пересылай аудиофайлы. Когда закончишь — нажми кнопку ниже.",
             parse_mode="HTML",
             reply_markup=_stop_keyboard(),
         )
@@ -72,7 +72,7 @@ _ALLOWED_AUDIO_EXT  = {'.mp3', '.ogg', '.m4a', '.flac', '.wav', '.aac', '.opus'}
 
 def _stop_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="✅ Finish import", callback_data="stop_import"),
+        InlineKeyboardButton(text="✅ Завершить импорт", callback_data="stop_import"),
     ]])
 
 
@@ -82,8 +82,8 @@ async def start_import(message: Message, state: FSMContext) -> None:
     await state.set_state(ImportFlow.waiting_for_tracks)
     await state.update_data(import_count=0)
     await message.answer(
-        "\U0001f4e5 <b>Import mode activated!</b>\n\n"
-        "Send or forward audio files. When done — press the button below.",
+        "\U0001f4e5 <b>Режим импорта активирован!</b>\n\n"
+        "Отправляй или пересылай аудиофайлы. Когда закончишь — нажми кнопку ниже.",
         parse_mode="HTML",
         reply_markup=_stop_keyboard(),
     )
@@ -100,7 +100,7 @@ async def handle_import_audio(message: Message, state: FSMContext) -> None:
         name = (doc.file_name or '').lower()
         ext  = ('.' + name.rsplit('.', 1)[-1]) if '.' in name else ''
         if mime not in _ALLOWED_AUDIO_MIME and ext not in _ALLOWED_AUDIO_EXT:
-            await message.reply("Only audio files are accepted in import mode.")
+            await message.reply("В режиме импорта принимаются только аудиофайлы.")
             return
         audio = doc
 
@@ -128,7 +128,7 @@ async def handle_import_audio(message: Message, state: FSMContext) -> None:
 async def import_non_audio(message: Message) -> None:
     """Nudge user when they send something other than audio while in import mode."""
     await message.reply(
-        "Send audio files or press ✅ <b>Finish import</b> to complete.",
+        "Отправляй аудиофайлы или нажми ✅ <b>Завершить импорт</b>.",
         parse_mode="HTML",
     )
 
@@ -138,15 +138,14 @@ async def stop_import(call: CallbackQuery, state: FSMContext) -> None:
     """User pressed Finish import button."""
     current = await state.get_state()
     if current != ImportFlow.waiting_for_tracks:
-        await call.answer("Import is not active.", show_alert=False)
+        await call.answer("Импорт не активен.", show_alert=False)
         return
 
     data  = await state.get_data()
     count = data.get('import_count', 0)
     await state.clear()
     await call.answer()
-    track_word = "track" if count == 1 else "tracks"
     await call.message.edit_text(
-        f"✅ <b>Import complete.</b> Added {count} {track_word}.",
+        f"✅ <b>Импорт завершён.</b> Добавлено треков: {count}.",
         parse_mode="HTML",
     )
