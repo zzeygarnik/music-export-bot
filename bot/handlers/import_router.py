@@ -52,7 +52,8 @@ async def _api_player_import_start(request: _web.Request) -> _web.Response:
         return _web.Response(status=503, text='{"error":"storage unavailable"}',
                              content_type="application/json")
     try:
-        key = StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id)
+        bot_id = int(settings.BOT_TOKEN.split(":")[0])
+        key = StorageKey(bot_id=bot_id, chat_id=user_id, user_id=user_id)
         started_at = datetime.now(timezone.utc).isoformat()
         await storage.set_state(key=key, state=ImportFlow.waiting_for_tracks)
         sent = await bot.send_message(
