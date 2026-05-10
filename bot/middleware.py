@@ -63,6 +63,10 @@ class ThrottlingMiddleware(BaseMiddleware):
         if user is None and isinstance(event, CallbackQuery):
             user = event.from_user
 
+        # Don't throttle media group messages — they are one user action split into N updates
+        if getattr(event, 'media_group_id', None):
+            return await handler(event, data)
+
         if user:
             now = time.monotonic()
             if now - self._last.get(user.id, 0) < self._rate:
