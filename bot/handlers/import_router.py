@@ -100,6 +100,7 @@ async def start_import(message: Message, state: FSMContext) -> None:
 @router.message(ImportFlow.waiting_for_tracks, F.audio | F.voice | F.document)
 async def handle_import_audio(message: Message, state: FSMContext) -> None:
     """Accept audio/voice/document messages while in import mode."""
+    log.info("handle_import_audio called: user=%s media_group=%s", message.from_user.id, message.media_group_id)
     audio = message.audio or message.voice
     doc   = message.document
 
@@ -126,6 +127,7 @@ async def handle_import_audio(message: Message, state: FSMContext) -> None:
         thumb_id = thumb.file_id
 
     await log_track_sent(user_id, file_id, artist, title, 'upload', duration, thumb_id)
+    log.info("handle_import_audio saved: user=%s file_id=%s title=%s", user_id, file_id[:20], title)
 
     data = await state.get_data()
     started_at = data.get("import_started_at", "")
