@@ -16,6 +16,79 @@ from utils import db
 router = Router()
 log = logging.getLogger(__name__)
 
+# In-memory set of user_ids currently in import mode.
+# Checked by audio_tag_router to redirect audio that arrives
+# with a mismatched FSM StorageKey (e.g. forwarded album messages).
+importing_users: set[int] = set()
+
+_ALLOWED_AUDIO_MIME = {'audio/mpeg', 'audio/ogg', 'audio/mp3', 'audio/x-mp3', 'audio/m4a', 'audio/aac'}
+_ALLOWED_AUDIO_EXT  = {'.mp3', '.ogg', '.m4a', '.flac', '.wav', '.aac', '.opus'}
+
+
+def _stop_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="✅ Завершить импорт", callback_data="stop_import"),
+    ]])
+
+
+async def _save_imported_audio(message, state_storage=None) -> None:
+    """Save one audio/voice/document as an import upload.
+
+    Called from handle_import_audio (FSM path) and from audio_tag_router
+    when a forwarded album message bypasses the FSM filter (mismatched StorageKey).
+    state_storage: FSMContext.storage — used to read activation_msg_id for live counter.
+    """
+    audio = message.audio or message.voice
+    doc   = message.document
+
+    if not audio and doc:
+        mime = (doc.mime_type or '').lower()
+        name = (doc.file_name or '').lower()
+        ext  = ('.' + name.rsplit('.', 1)[-1]) if '.' in name else ''
+        if mime not in _ALLOWED_AUDIO_MIME and ext not in _ALLOWED_AUDIO_EXT:
+            return
+        audio = doc
+
+    if not audio:
+        return
+
+    user_id  = message.from_user.id
+    file_id  = audio.file_id
+    artist   = getattr(audio, 'performer', '') or ''
+    title    = getattr(audio, 'title', '') or ''
+    duration = getattr(audio, 'duration', None)
+    thumb_id = None
+    thumb    = getattr(audio, 'thumbnail', None) or getattr(audio, 'thumb', None)
+    if thumb:
+        thumb_id = thumb.file_id
+
+    await log_track_sent(user_id, file_id, artist, title, 'upload', duration, thumb_id)
+    log.info("_save_imported_audio saved: user=%s file_id=%s title=%s", user_id, file_id[:20], title)
+
+    if state_storage is None:
+        return
+    try:
+        bot_id = int(settings.BOT_TOKEN.split(":")[0])
+        key = StorageKey(bot_id=bot_id, chat_id=user_id, user_id=user_id)
+        data = await state_storage.get_data(key=key)
+        started_at = data.get("import_started_at", "")
+        activation_msg_id = data.get("activation_msg_id")
+        if started_at and activation_msg_id:
+            count = await db.count_uploaded_since(user_id, started_at)
+            try:
+                await message.bot.edit_message_text(
+                    chat_id=user_id,
+                    message_id=activation_msg_id,
+                    text=f"\U0001f4e5 <b>Режим импорта:</b> получено {count} трек(ов)\n\n"
+                         "Когда закончишь — нажми кнопку ниже.",
+                    parse_mode="HTML",
+                    reply_markup=_stop_keyboard(),
+                )
+            except Exception:
+                pass
+    except Exception as e:
+        log.warning("_save_imported_audio counter update failed: %s", e)
+
 
 def _validate_init_data(init_data: str) -> int | None:
     """Validate Telegram WebApp initData HMAC. Returns user_id or None."""
@@ -55,6 +128,7 @@ async def _api_player_import_start(request: _web.Request) -> _web.Response:
         bot_id = int(settings.BOT_TOKEN.split(":")[0])
         key = StorageKey(bot_id=bot_id, chat_id=user_id, user_id=user_id)
         started_at = datetime.now(timezone.utc).isoformat()
+        importing_users.add(user_id)
         await storage.set_state(key=key, state=ImportFlow.waiting_for_tracks)
         sent = await bot.send_message(
             user_id,
@@ -73,20 +147,12 @@ async def _api_player_import_start(request: _web.Request) -> _web.Response:
         return _web.Response(status=500, text='{"error":"internal"}',
                              content_type="application/json")
 
-_ALLOWED_AUDIO_MIME = {'audio/mpeg', 'audio/ogg', 'audio/mp3', 'audio/x-mp3', 'audio/m4a', 'audio/aac'}
-_ALLOWED_AUDIO_EXT  = {'.mp3', '.ogg', '.m4a', '.flac', '.wav', '.aac', '.opus'}
-
-
-def _stop_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="✅ Завершить импорт", callback_data="stop_import"),
-    ]])
-
 
 @router.message(F.web_app_data.data == "import")
 async def start_import(message: Message, state: FSMContext) -> None:
     """Triggered when user taps the import button in Mini App."""
     started_at = datetime.now(timezone.utc).isoformat()
+    importing_users.add(message.from_user.id)
     await state.set_state(ImportFlow.waiting_for_tracks)
     sent = await message.answer(
         "\U0001f4e5 <b>Режим импорта активирован!</b>\n\n"
@@ -100,57 +166,16 @@ async def start_import(message: Message, state: FSMContext) -> None:
 @router.message(ImportFlow.waiting_for_tracks, F.audio | F.voice | F.document)
 async def handle_import_audio(message: Message, state: FSMContext) -> None:
     """Accept audio/voice/document messages while in import mode."""
-    log.info("handle_import_audio called: user=%s media_group=%s content_type=%s", message.from_user.id, message.media_group_id, message.content_type)
-    audio = message.audio or message.voice
-    doc   = message.document
-
-    if not audio and doc:
-        mime = (doc.mime_type or '').lower()
-        name = (doc.file_name or '').lower()
-        ext  = ('.' + name.rsplit('.', 1)[-1]) if '.' in name else ''
-        if mime not in _ALLOWED_AUDIO_MIME and ext not in _ALLOWED_AUDIO_EXT:
-            await message.reply("В режиме импорта принимаются только аудиофайлы.")
-            return
-        audio = doc
-
-    if not audio:
-        return
-
-    user_id  = message.from_user.id
-    file_id  = audio.file_id
-    artist   = getattr(audio, 'performer', '') or ''
-    title    = getattr(audio, 'title', '') or ''
-    duration = getattr(audio, 'duration', None)
-    thumb_id = None
-    thumb    = getattr(audio, 'thumbnail', None) or getattr(audio, 'thumb', None)
-    if thumb:
-        thumb_id = thumb.file_id
-
-    await log_track_sent(user_id, file_id, artist, title, 'upload', duration, thumb_id)
-    log.info("handle_import_audio saved: user=%s file_id=%s title=%s", user_id, file_id[:20], title)
-
-    data = await state.get_data()
-    started_at = data.get("import_started_at", "")
-    activation_msg_id = data.get("activation_msg_id")
-    if started_at and activation_msg_id:
-        count = await db.count_uploaded_since(user_id, started_at)
-        try:
-            await message.bot.edit_message_text(
-                chat_id=message.chat.id,
-                message_id=activation_msg_id,
-                text=f"\U0001f4e5 <b>Режим импорта:</b> получено {count} трек(ов)\n\n"
-                     "Когда закончишь — нажми кнопку ниже.",
-                parse_mode="HTML",
-                reply_markup=_stop_keyboard(),
-            )
-        except Exception:
-            pass
+    log.info("handle_import_audio called: user=%s media_group=%s content_type=%s",
+             message.from_user.id, message.media_group_id, message.content_type)
+    await _save_imported_audio(message, state.storage)
 
 
 @router.message(ImportFlow.waiting_for_tracks)
 async def import_non_audio(message: Message) -> None:
     """Nudge user when they send something other than audio while in import mode."""
-    log.info("import_non_audio: user=%s content_type=%s media_group=%s", message.from_user.id, message.content_type, message.media_group_id)
+    log.info("import_non_audio: user=%s content_type=%s media_group=%s",
+             message.from_user.id, message.content_type, message.media_group_id)
     await message.reply(
         "Отправляй аудиофайлы или нажми ✅ <b>Завершить импорт</b>.",
         parse_mode="HTML",
@@ -168,6 +193,7 @@ async def stop_import(call: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
     started_at = data.get("import_started_at", "")
     user_id = call.from_user.id
+    importing_users.discard(user_id)
     await state.clear()
     count = await db.count_uploaded_since(user_id, started_at) if started_at else 0
     await call.answer()

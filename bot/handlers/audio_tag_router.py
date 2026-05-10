@@ -419,6 +419,13 @@ async def handle_audio_in_flow(message: Message, state: FSMContext) -> None:
 
 @router.message(F.audio | (F.document & F.document.mime_type.in_(_AUDIO_MIME)))
 async def handle_audio_received(message: Message, state: FSMContext) -> None:
+    # Redirect to import flow if user is currently importing
+    if message.from_user:
+        from bot.handlers.import_router import importing_users, _save_imported_audio
+        if message.from_user.id in importing_users:
+            await _save_imported_audio(message, state.storage)
+            return
+
     """User attached or forwarded audio without going through the menu button."""
     file_id, filename, orig_title, orig_artist, duration = _extract_audio_meta(message)
     await state.update_data(
