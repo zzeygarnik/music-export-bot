@@ -62,6 +62,20 @@ async def _save_imported_audio(message, state_storage=None) -> None:
     if thumb:
         thumb_id = thumb.file_id
 
+    # Dedup: two webhook sources (cloud + local bot-api) deliver same update with different update_ids.
+    # Redis SETNX is atomic — only the first concurrent delivery wins.
+    try:
+        import redis.asyncio as _aioredis
+        _redis = _aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+        _dedup_key = f"import_dedup:{user_id}:{file_id[-20:]}"
+        _is_new = await _redis.set(_dedup_key, "1", nx=True, ex=5)
+        await _redis.aclose()
+        if not _is_new:
+            log.info("_save_imported_audio skip dup: user=%s fid=...%s", user_id, file_id[-8:])
+            return
+    except Exception as _e:
+        log.warning("_save_imported_audio redis dedup failed: %s", _e)
+
     await log_track_sent(user_id, file_id, artist, title, 'upload', duration, thumb_id)
     log.info("_save_imported_audio saved: user=%s file_id=%s title=%s", user_id, file_id[:20], title)
 
