@@ -100,7 +100,7 @@ async def start_import(message: Message, state: FSMContext) -> None:
 @router.message(ImportFlow.waiting_for_tracks, F.audio | F.voice | F.document)
 async def handle_import_audio(message: Message, state: FSMContext) -> None:
     """Accept audio/voice/document messages while in import mode."""
-    log.info("handle_import_audio called: user=%s media_group=%s", message.from_user.id, message.media_group_id)
+    log.info("handle_import_audio called: user=%s media_group=%s content_type=%s", message.from_user.id, message.media_group_id, message.content_type)
     audio = message.audio or message.voice
     doc   = message.document
 
@@ -150,6 +150,7 @@ async def handle_import_audio(message: Message, state: FSMContext) -> None:
 @router.message(ImportFlow.waiting_for_tracks)
 async def import_non_audio(message: Message) -> None:
     """Nudge user when they send something other than audio while in import mode."""
+    log.info("import_non_audio: user=%s content_type=%s media_group=%s", message.from_user.id, message.content_type, message.media_group_id)
     await message.reply(
         "Отправляй аудиофайлы или нажми ✅ <b>Завершить импорт</b>.",
         parse_mode="HTML",
