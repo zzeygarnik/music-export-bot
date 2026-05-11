@@ -16,9 +16,9 @@ docker run -d \
   -v /root/tg-bot-api-data:/var/lib/telegram-bot-api \
   -e TELEGRAM_API_ID="$TELEGRAM_API_ID" \
   -e TELEGRAM_API_HASH="$TELEGRAM_API_HASH" \
-  aiogram/telegram-bot-api:latest \
-  --local \
-  --http-port=8082
+  -e TELEGRAM_LOCAL=1 \
+  -e TELEGRAM_HTTP_PORT=8082 \
+  aiogram/telegram-bot-api:latest
 
 echo "tg-bot-api started. Waiting for ready..."
 sleep 3
