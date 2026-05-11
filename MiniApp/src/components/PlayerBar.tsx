@@ -133,6 +133,7 @@ export function PlayerBar({
           <div className="w-14 h-14 rounded-lg overflow-hidden border border-white/10 shrink-0">
             {track.coverUrl && !imgErr ? (
               <img
+                key={track.id}
                 src={track.coverUrl}
                 alt={track.title}
                 className="w-full h-full object-cover"

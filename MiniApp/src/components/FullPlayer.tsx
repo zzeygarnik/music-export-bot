@@ -278,6 +278,7 @@ export function FullPlayer({
         >
           {track.coverUrl && !imgErr ? (
             <img
+              key={track.id}
               src={track.coverUrl}
               alt={track.title}
               className="w-full h-full object-cover pointer-events-none"
