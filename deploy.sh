@@ -3,7 +3,7 @@
 # Usage: ./deploy.sh
 set -euo pipefail
 
-SSH="ssh -p 2222 aeza-vps"
+SSH="ssh -i ~/.ssh/id_ed25519 -p 2222 root@2.26.97.248"
 REMOTE_DIR="/root/music-export-bot"
 IMAGE="music-export-bot:latest"
 CONTAINER="music-bot"
