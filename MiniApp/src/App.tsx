@@ -61,7 +61,7 @@ function buildStreamUrl(trackId: string): string {
   return `/api/player/stream/${encodeURIComponent(trackId)}?tma=${encodeURIComponent(initData)}`;
 }
 
-// build:36
+// build:38
 export default function App() {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [loading, setLoading] = useState(true);

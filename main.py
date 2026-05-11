@@ -1325,6 +1325,20 @@ async def _api_player_stream(request: aiohttp_web.Request) -> aiohttp_web.Stream
         _exists = os.path.exists(_abs)
         _readable = os.access(_abs, os.R_OK) if _exists else False
         log.info("player stream: abs_path=%r exists=%s readable=%s", _abs, _exists, _readable)
+        if not _exists:
+            # bot.get_file() triggers Local Bot API to download the file from Telegram cloud.
+            # The file may not be on disk immediately — poll until it appears or timeout.
+            _deadline = asyncio.get_event_loop().time() + 10.0
+            log.info("player stream: cold-start wait begin for %r", _abs)
+            while asyncio.get_event_loop().time() < _deadline:
+                await asyncio.sleep(0.5)
+                if os.path.exists(_abs) and os.access(_abs, os.R_OK):
+                    _exists = True
+                    _readable = True
+                    log.info("player stream: cold-start wait resolved %r", _abs)
+                    break
+            if not _exists:
+                log.warning("player stream: cold-start timeout waiting for %r", _abs)
         if _exists:
             file_path = _abs
 
