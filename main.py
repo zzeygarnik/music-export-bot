@@ -1262,9 +1262,12 @@ async def _api_player_stream(request: aiohttp_web.Request) -> aiohttp_web.Stream
 
     tg_file = None
     e = None
+    log.info("DIAG stream request: file_id=%s range=%r", file_id, range_header)
     for _attempt in range(6):
         try:
+            log.info("DIAG calling bot.get_file attempt %d/6: file_id=%s", _attempt + 1, file_id)
             tg_file = await bot.get_file(file_id)
+            log.info("DIAG bot.get_file returned: file_path=%r file_size=%r", tg_file.file_path if tg_file else None, tg_file.file_size if tg_file else None)
             break
         except Exception as _ge:
             e = _ge
@@ -1348,10 +1351,11 @@ async def _api_player_stream(request: aiohttp_web.Request) -> aiohttp_web.Stream
                 if os.path.exists(_abs) and os.access(_abs, os.R_OK):
                     _exists = True
                     _readable = True
-                    log.info("player stream: cold-start wait resolved %r", _abs)
+                    _sz = os.path.getsize(_abs) if os.path.exists(_abs) else -1
+                    log.info("DIAG cold-start resolved: path=%r size_bytes=%d", _abs, _sz)
                     break
             if not _exists:
-                log.warning("player stream: cold-start timeout waiting for %r", _abs)
+                log.warning("DIAG cold-start TIMEOUT: path=%r — file never appeared after 30s", _abs)
         if _exists:
             file_path = _abs
 

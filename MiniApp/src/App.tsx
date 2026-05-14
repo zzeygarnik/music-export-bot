@@ -61,7 +61,7 @@ function buildStreamUrl(trackId: string): string {
   return `/api/player/stream/${encodeURIComponent(trackId)}?tma=${encodeURIComponent(initData)}`;
 }
 
-// build:44
+// build:45
 export default function App() {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [loading, setLoading] = useState(true);
@@ -395,19 +395,35 @@ export default function App() {
       }
     };
     const onVisible = () => {
+      console.log('[DIAG visibilitychange]', {
+        state: document.visibilityState,
+        innerHeight: window.innerHeight,
+        innerWidth: window.innerWidth,
+        ts: Date.now(),
+      });
       if (document.visibilityState !== 'visible') return;
       // Force compositor tile repaint to clear gray/white artifact rectangles
       const _mel = document.getElementById('track-scroll'); if (_mel) { _mel.style.transform = 'translateZ(0)'; requestAnimationFrame(() => { _mel.style.transform = ''; }); }
       doFetch();
       tryResume();
     };
+    const onViewportChanged = (params: unknown) => {
+      console.log('[DIAG viewportChanged]', {
+        innerHeight: window.innerHeight,
+        innerWidth: window.innerWidth,
+        params,
+        ts: Date.now(),
+      });
+    };
     document.addEventListener('visibilitychange', onVisible);
     window.Telegram?.WebApp?.onEvent?.('activated', onVisible);
+    window.Telegram?.WebApp?.onEvent?.('viewportChanged', onViewportChanged);
     window.addEventListener('focus', tryResume);
     window.addEventListener('pageshow', tryResume);
     return () => {
       document.removeEventListener('visibilitychange', onVisible);
       window.Telegram?.WebApp?.offEvent?.('activated', onVisible);
+      window.Telegram?.WebApp?.offEvent?.('viewportChanged', onViewportChanged);
       window.removeEventListener('focus', tryResume);
       window.removeEventListener('pageshow', tryResume);
     };
@@ -458,7 +474,7 @@ export default function App() {
     <div className="min-h-screen flex flex-col bg-surface overflow-x-hidden">
       <header className="fixed top-0 w-full z-50 flex items-center justify-between px-4 h-16 bg-[#0d0d14]/80 backdrop-blur-xl border-b border-white/5">
         <div className="w-10">
-          <span className="text-[10px] font-mono text-white/20 select-none">b44</span>
+          <span className="text-[10px] font-mono text-white/20 select-none">b45</span>
         </div>
         <div className="text-2xl font-black bg-gradient-to-r from-primary to-secondary-container bg-clip-text text-transparent tracking-tight">
           ZGRNK Music
