@@ -6,14 +6,14 @@ import { PlayerBar } from './components/PlayerBar';
 import { BottomNav } from './components/BottomNav';
 import { FullPlayer } from './components/FullPlayer';
 import { Snowflakes } from './components/Snowflakes';
-import { Search, X } from 'lucide-react';
+import { Search, X, ListPlus } from 'lucide-react';
 import { audioEngine } from './lib/audioEngine';
 
 type RepeatMode = 0 | 1 | 2 | 3 | 'inf';
 
 declare global {
   interface Window {
-    Telegram?: { WebApp: { initData: string; ready: () => void; expand: () => void } };
+    Telegram?: { WebApp: { initData: string; ready: () => void; expand: () => void; sendData: (data: string) => void; close: () => void } };
   }
 }
 
@@ -61,7 +61,7 @@ function buildStreamUrl(trackId: string): string {
   return `/api/player/stream/${encodeURIComponent(trackId)}?tma=${encodeURIComponent(initData)}`;
 }
 
-// build:39
+// build:40
 export default function App() {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [loading, setLoading] = useState(true);
@@ -268,6 +268,36 @@ export default function App() {
     }
   }, [volume]);
 
+  const handleImportClick = useCallback(async () => {
+    const tg = window.Telegram?.WebApp;
+    const initData = getInitData();
+    if (!initData) {
+      alert('Debug: initData is empty — not inside Telegram?');
+      tg?.close();
+      return;
+    }
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 8000);
+    try {
+      const res = await fetch('/api/player/import/start', {
+        method: 'POST',
+        headers: { 'X-Tg-Init-Data': initData },
+        signal: ctrl.signal,
+      });
+      clearTimeout(timer);
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        alert(`Server error ${res.status}: ${body}`);
+        return;
+      }
+      tg?.close();
+    } catch (e: unknown) {
+      clearTimeout(timer);
+      const msg = e instanceof Error ? e.message : String(e);
+      alert(`Import error: ${msg}`);
+    }
+  }, []);
+
   const handleToggleShuffle = useCallback(() => setIsShuffle(v => !v), []);
   const handleToggleRepeat = useCallback(() => {
     setRepeatMode(cur => {
@@ -329,7 +359,8 @@ export default function App() {
       if (tg) { tg.ready(); tg.expand(); }
       if (!initData) return;
 
-      setLoading(true);
+      // Only show skeleton on first load; subsequent refreshes (visibility restore) are silent
+      if (tracksRef.current.length === 0) setLoading(true);
       fetch('/api/player/tracks?limit=500', { headers: { 'X-Tg-Init-Data': initData } })
         .then(r => r.ok ? r.json() : Promise.reject(r.status))
         .then((data: ApiTrack[]) => {
@@ -422,12 +453,20 @@ export default function App() {
   return (
     <div className="min-h-screen flex flex-col bg-surface overflow-x-hidden">
       <header className="fixed top-0 w-full z-50 flex items-center justify-between px-4 h-16 bg-[#0d0d14]/80 backdrop-blur-xl border-b border-white/5">
-        <div className="w-10" />
+        <div className="w-10">
+          <span className="text-[10px] font-mono text-white/20 select-none">b40</span>
+        </div>
         <div className="text-2xl font-black bg-gradient-to-r from-primary to-secondary-container bg-clip-text text-transparent tracking-tight">
           ZGRNK Music
         </div>
         <div className="w-10 flex justify-end">
-          <span className="text-[10px] font-mono text-white/20 select-none">b36</span>
+          <button
+            onClick={handleImportClick}
+            title="Add tracks"
+            className="w-8 h-8 rounded-full bg-primary/15 hover:bg-primary/30 active:scale-95 flex items-center justify-center transition-all"
+          >
+            <ListPlus className="w-4 h-4 text-primary" />
+          </button>
         </div>
       </header>
 
@@ -452,7 +491,7 @@ export default function App() {
             </p>
           </div>
         )}
-        {activeTab === 'library' && (
+        {activeTab === 'library' && !loading && (
           <div className="relative mb-4 max-w-2xl mx-auto">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-on-surface-variant pointer-events-none" />
             <input
@@ -534,8 +573,8 @@ export default function App() {
 
       <Snowflakes />
       <div className="fixed inset-0 pointer-events-none -z-10 overflow-hidden">
-        <div className="absolute top-[-10%] right-[-5%] w-[60vw] h-[60vw] bg-primary/10 rounded-full blur-[120px]" />
-        <div className="absolute bottom-[-10%] left-[-5%] w-[80vw] h-[80vw] bg-secondary-container/10 rounded-full blur-[150px]" />
+        <div className="absolute top-[-10%] right-[-5%] w-[60vw] h-[60vw] bg-primary/10 rounded-full blur-[120px] will-change-transform" />
+        <div className="absolute bottom-[-10%] left-[-5%] w-[80vw] h-[80vw] bg-secondary-container/10 rounded-full blur-[150px] will-change-transform" />
       </div>
     </div>
   );

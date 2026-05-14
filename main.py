@@ -1267,7 +1267,7 @@ async def _api_player_stream(request: aiohttp_web.Request) -> aiohttp_web.Stream
         # Fallback 1: cloud Telegram API getFile → CDN stream (local Bot API may not have file cached)
         try:
             req_headers = {"Range": range_header} if range_header else {}
-            async with _aiohttp.ClientSession() as sess:
+            async with _aiohttp.ClientSession(timeout=_aiohttp.ClientTimeout(total=60)) as sess:
                 async with sess.get(
                     f"https://api.telegram.org/bot{settings.BOT_TOKEN}/getFile?file_id={file_id}"
                 ) as r:
@@ -1299,7 +1299,7 @@ async def _api_player_stream(request: aiohttp_web.Request) -> aiohttp_web.Stream
                 proxy_url += f"?msg={msg_id}&chat={user_id}"
             try:
                 req_headers = {"Range": range_header} if range_header else {}
-                async with _aiohttp.ClientSession() as sess:
+                async with _aiohttp.ClientSession(timeout=_aiohttp.ClientTimeout(total=60)) as sess:
                     async with sess.get(proxy_url, headers=req_headers) as upstream:
                         ct = upstream.headers.get("Content-Type", "")
                         if upstream.status in (200, 206) and ct.startswith("audio/"):
@@ -1328,8 +1328,8 @@ async def _api_player_stream(request: aiohttp_web.Request) -> aiohttp_web.Stream
         if not _exists:
             # bot.get_file() triggers Local Bot API to download the file from Telegram cloud.
             # The file may not be on disk immediately — poll until it appears or timeout.
-            _deadline = asyncio.get_event_loop().time() + 10.0
-            log.info("player stream: cold-start wait begin for %r", _abs)
+            _deadline = asyncio.get_event_loop().time() + 30.0
+            log.info("player stream: cold-start wait begin for %r (30s timeout)", _abs)
             while asyncio.get_event_loop().time() < _deadline:
                 await asyncio.sleep(0.5)
                 if os.path.exists(_abs) and os.access(_abs, os.R_OK):
@@ -1408,7 +1408,7 @@ async def _api_player_stream(request: aiohttp_web.Request) -> aiohttp_web.Stream
         local_url = f"{settings.LOCAL_API_URL}/file/bot{settings.BOT_TOKEN}/{_rel_path}"
         try:
             req_headers = {"Range": range_header} if range_header else {}
-            async with _aiohttp.ClientSession() as sess:
+            async with _aiohttp.ClientSession(timeout=_aiohttp.ClientTimeout(total=60)) as sess:
                 async with sess.get(local_url, headers=req_headers) as upstream:
                     if upstream.status in (200, 206):
                         mime = _mime_from_path(file_path)
@@ -1428,7 +1428,7 @@ async def _api_player_stream(request: aiohttp_web.Request) -> aiohttp_web.Stream
     cdn_url = f"https://api.telegram.org/file/bot{settings.BOT_TOKEN}/{_rel_path}"
     try:
         req_headers = {"Range": range_header} if range_header else {}
-        async with _aiohttp.ClientSession() as sess:
+        async with _aiohttp.ClientSession(timeout=_aiohttp.ClientTimeout(total=60)) as sess:
             async with sess.get(cdn_url, headers=req_headers) as upstream:
                 if upstream.status in (200, 206):
                     mime = _mime_from_path(file_path)
@@ -1564,7 +1564,7 @@ async def _api_player_thumb(request: aiohttp_web.Request) -> aiohttp_web.Respons
                 proxy_url += f"?msg={msg_id}&chat={user_id}"
             import aiohttp as _aiohttp
             try:
-                async with _aiohttp.ClientSession() as sess:
+                async with _aiohttp.ClientSession(timeout=_aiohttp.ClientTimeout(total=60)) as sess:
                     async with sess.get(proxy_url) as upstream:
                         if upstream.status == 200:
                             data = await upstream.read()
@@ -1585,7 +1585,7 @@ async def _api_player_thumb(request: aiohttp_web.Request) -> aiohttp_web.Respons
         local_url = f"{settings.LOCAL_API_URL}/file/bot{settings.BOT_TOKEN}/{file_path}"
         import aiohttp as _aiohttp
         try:
-            async with _aiohttp.ClientSession() as sess:
+            async with _aiohttp.ClientSession(timeout=_aiohttp.ClientTimeout(total=60)) as sess:
                 async with sess.get(local_url) as upstream:
                     if upstream.status == 200:
                         data = await upstream.read()
