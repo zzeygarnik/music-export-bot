@@ -207,6 +207,7 @@ async def _process_and_send(message: Message, state: FSMContext, cover_bytes: by
 
     tmp_in = tmp_out = None
     sent = None
+    _tags_ok = True
     try:
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
             tmp_in = f.name
@@ -239,7 +240,8 @@ async def _process_and_send(message: Message, state: FSMContext, cover_bytes: by
         import shutil
         shutil.copy(tmp_in, tmp_out)
         log.info("AudioTag applying: user=%s title=%r artist=%r file=%s", message.chat.id, title, artist, original_filename)
-        if not _apply_metadata(tmp_out, title, artist, cover_bytes):
+        _tags_ok = await asyncio.to_thread(_apply_metadata, tmp_out, title, artist, cover_bytes)
+        if not _tags_ok:
             log.warning("_apply_metadata failed user=%s file=%s title=%r artist=%r", message.chat.id, original_filename, title, artist)
 
         sent = await message.answer_audio(
@@ -294,7 +296,8 @@ async def _process_and_send(message: Message, state: FSMContext, cover_bytes: by
             await progress.delete()
         except Exception:
             pass
-        done = await message.answer("Готово! Что дальше?", reply_markup=audio_tag_done_keyboard())
+        _done_text = "Готово! Что дальше?" if _tags_ok else "⚠️ File sent, but embedded tag writing failed (ffmpeg/mutagen error). Что дальше?"
+        done = await message.answer(_done_text, reply_markup=audio_tag_done_keyboard())
         set_active_msg(message.chat.id, done.message_id)
         _actor = from_user or message.from_user
         await db.log_rename(
