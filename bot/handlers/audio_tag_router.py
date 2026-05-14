@@ -553,10 +553,22 @@ async def audio_tag_back_from_cover(call: CallbackQuery, state: FSMContext) -> N
 @router.message(StateFilter(AudioTagFlow.waiting_for_cover), F.photo)
 async def audio_tag_got_cover(message: Message, state: FSMContext) -> None:
     import base64
-    photo = message.photo[-1]  # highest resolution
-    cover_bytes_io = await message.bot.download(photo.file_id)
-    cover_bytes = cover_bytes_io.read()
-    await state.update_data(cover_b64=base64.b64encode(cover_bytes).decode())
+    try:
+        photo = message.photo[-1]
+        cover_bytes_io = await message.bot.download(photo.file_id)
+        cover_bytes = cover_bytes_io.read()
+        if not cover_bytes:
+            await message.answer("❌ Cover download returned empty. Try again.")
+            return
+        await state.update_data(
+            cover_b64=base64.b64encode(cover_bytes).decode(),
+            field_msg_id=None,  # Force new message so user sees acknowledgment
+        )
+        log.info("AudioTag cover saved: user=%s size=%d bytes", message.chat.id, len(cover_bytes))
+    except Exception as exc:
+        log.exception("AudioTag cover download failed user=%s: %s", message.chat.id, exc)
+        await message.answer("❌ Cover download failed. Try again.")
+        return
     await _show_field_selection_answer(message, state)
 
 
