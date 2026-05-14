@@ -1313,6 +1313,11 @@ async def _api_player_stream(request: aiohttp_web.Request) -> aiohttp_web.Stream
                     log.warning("file_id recovery: forward failed: %s", _re)
             else:
                 log.warning("file_id recovery: no message_id in DB for file_id=%s", file_id)
+            # Both recovery paths failed — track is permanently gone; purge from DB
+            if tg_file is None:
+                await db.delete_track_from_history(_recovery_user, file_id)
+                log.info("dead track purged from DB: user=%s file_id=%s", _recovery_user, file_id)
+                return aiohttp_web.Response(status=410, text="Track permanently unavailable")
 
     if tg_file is None:
         # Fallback 1: cloud Telegram API getFile → CDN stream (local Bot API may not have file cached)

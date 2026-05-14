@@ -5,7 +5,6 @@ import { TrackItem } from './components/TrackItem';
 import { PlayerBar } from './components/PlayerBar';
 import { BottomNav } from './components/BottomNav';
 import { FullPlayer } from './components/FullPlayer';
-import { Snowflakes } from './components/Snowflakes';
 import { Search, X, ListPlus } from 'lucide-react';
 import { audioEngine } from './lib/audioEngine';
 
@@ -61,7 +60,7 @@ function buildStreamUrl(trackId: string): string {
   return `/api/player/stream/${encodeURIComponent(trackId)}?tma=${encodeURIComponent(initData)}`;
 }
 
-// build:47
+// build:48
 export default function App() {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [loading, setLoading] = useState(true);
@@ -191,9 +190,15 @@ export default function App() {
       await audioEngine.playBuffer(buffer);
       // Set duration from buffer (precise, no metadata parsing needed)
       setTotalDuration(buffer.duration);
-    } catch (_) {
+    } catch (err) {
       setIsPlaying(false);
       userWantsPlayRef.current = false;
+      // 410 = track permanently deleted server-side; 404 = also unrecoverable
+      if (String(err).includes('HTTP 410') || String(err).includes('HTTP 404')) {
+        const deadId = track.id;
+        setTracks(prev => prev.filter(t => t.id !== deadId));
+        setTimeout(() => { handleNextRef.current(); }, 150);
+      }
     } finally {
       setBuffering(false);
     }
@@ -476,7 +481,7 @@ export default function App() {
     <div className="h-full flex flex-col bg-surface overflow-x-hidden">
       <header className="fixed top-0 w-full z-50 flex items-center justify-between px-4 h-16 bg-[#0d0d14]/95 border-b border-white/5">
         <div className="w-10">
-          <span className="text-[10px] font-mono text-white/20 select-none">b47</span>
+          <span className="text-[10px] font-mono text-white/20 select-none">b48</span>
         </div>
         <div className="text-2xl font-black bg-gradient-to-r from-primary to-secondary-container bg-clip-text text-transparent tracking-tight">
           ZGRNK Music
@@ -593,7 +598,6 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      <Snowflakes />
       <div className="fixed inset-0 pointer-events-none -z-10 overflow-hidden">
         <div className="absolute top-[-10%] right-[-5%] w-[60vw] h-[60vw] bg-primary/10 rounded-full" />
         <div className="absolute bottom-[-10%] left-[-5%] w-[80vw] h-[80vw] bg-secondary-container/10 rounded-full" />
