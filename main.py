@@ -1315,7 +1315,7 @@ async def _api_player_stream(request: aiohttp_web.Request) -> aiohttp_web.Stream
                         ct = upstream.headers.get("Content-Type", "")
                         _cl = int(upstream.headers.get("Content-Length", "0") or "0")
                         log.info("player stream pyrogram proxy: status=%s ct=%r cl=%s", upstream.status, ct, _cl)
-                        if upstream.status in (200, 206) and ct.startswith("audio/") and _cl > 4096:
+                        if upstream.status in (200, 206) and ct.startswith("audio/"):
                             resp = aiohttp_web.StreamResponse(
                                 status=upstream.status,
                                 headers=_proxy_stream_headers(upstream.headers, ct, range_header),
