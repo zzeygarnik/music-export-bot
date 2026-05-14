@@ -1271,7 +1271,7 @@ async def _api_player_stream(request: aiohttp_web.Request) -> aiohttp_web.Stream
             break
         except Exception as _ge:
             e = _ge
-            if "temporarily unavailable" in str(_ge).lower() and _attempt < 5:
+            if "temporarily unavailable" in str(_ge).lower() and "wrong file_id" not in str(_ge).lower() and _attempt < 5:
                 log.info("player stream get_file temporarily unavailable, retry %d/5", _attempt + 1)
                 await asyncio.sleep(2)
             else:

@@ -1,0 +1,86 @@
+@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Be Vietnam Pro", ui-sans-serif, system-ui, sans-serif;
+  
+  --color-surface: #13131a;
+  --color-surface-dim: #13131a;
+  --color-surface-bright: #393840;
+  --color-surface-container-lowest: #0e0e15;
+  --color-surface-container-low: #1b1b22;
+  --color-surface-container: #1f1f26;
+  --color-surface-container-high: #2a2931;
+  --color-surface-container-highest: #34343c;
+  --color-on-surface: #e4e1ec;
+  --color-on-surface-variant: #cfc2d6;
+  --color-outline: #988d9f;
+  --color-outline-variant: #4d4354;
+  --color-primary: #ddb7ff;
+  --color-on-primary: #490080;
+  --color-primary-container: #b76dff;
+  --color-on-primary-container: #400071;
+  --color-secondary: #c0c1ff;
+  --color-secondary-container: #3131c0;
+  --color-on-secondary-container: #b0b2ff;
+  --color-tertiary: #ffb0cd;
+  --color-tertiary-container: #f751a1;
+  
+  --radius-xl: 1.5rem;
+  --radius-lg: 1rem;
+  --radius-md: 0.75rem;
+  
+  --animate-pulse-slow: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@utility glass {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-top-color: rgba(255, 255, 255, 0.2);
+  border-left-color: rgba(255, 255, 255, 0.2);
+}
+
+@utility active-glass {
+  background: rgba(221, 183, 255, 0.08);
+  border: 1px solid rgba(221, 183, 255, 0.3);
+  border-top-color: rgba(221, 183, 255, 0.5);
+  border-left-color: rgba(221, 183, 255, 0.5);
+  box-shadow: 0 0 20px rgba(183, 109, 255, 0.1);
+}
+
+@layer base {
+  html, body {
+    height: var(--tg-viewport-height, 100dvh);
+    overflow: hidden;
+    background-color: #0d0d14;
+  }
+  body {
+    @apply bg-surface text-on-surface font-sans antialiased;
+    background-color: #0d0d14;
+  }
+  #root {
+    height: var(--tg-viewport-height, 100dvh);
+    overflow: hidden;
+    background-color: #0d0d14;
+  }
+}
+
+@keyframes marquee-scroll {
+  0%, 20% { transform: translateX(0); }
+  60%, 80% { transform: translateX(var(--marquee-offset)); }
+  100% { transform: translateX(0); }
+}
+
+@keyframes snowfall {
+  0% {
+    transform: translateY(-10px) translateX(0);
+    opacity: 0;
+  }
+  10% { opacity: 1; }
+  90% { opacity: 0.7; }
+  100% {
+    transform: translateY(100vh) translateX(var(--drift, 30px));
+    opacity: 0;
+  }
+}
+
