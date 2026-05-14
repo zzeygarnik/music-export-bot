@@ -1256,18 +1256,38 @@ async def _api_player_stream(request: aiohttp_web.Request) -> aiohttp_web.Stream
 
     file_id = request.match_info["file_id"]
 
-    # Fast path: if track is in MinIO, redirect to presigned URL
+    # Fast path: stream directly from MinIO if object_key exists
     try:
         from utils.db import get_object_key as _get_obj_key
         from utils import s3 as _s3
         _obj_key = await _get_obj_key(file_id)
         if _obj_key:
-            _presign_url = await _s3.get_presigned_url(_obj_key)
-            raise aiohttp_web.HTTPFound(_presign_url)
-    except aiohttp_web.HTTPFound:
-        raise
+            _range = request.headers.get("Range", "")
+            _get_kwargs = {"Bucket": _s3.settings.MINIO_BUCKET, "Key": _obj_key}
+            if _range:
+                _get_kwargs["Range"] = _range
+            _s3_resp = await asyncio.to_thread(_s3._client().get_object, **_get_kwargs)
+            _status = 206 if _range else 200
+            _hdrs = {
+                "Content-Type": "audio/mpeg",
+                "Accept-Ranges": "bytes",
+                "Cache-Control": "no-cache",
+            }
+            if "ContentRange" in _s3_resp:
+                _hdrs["Content-Range"] = _s3_resp["ContentRange"]
+            if "ContentLength" in _s3_resp:
+                _hdrs["Content-Length"] = str(_s3_resp["ContentLength"])
+            _stream_resp = aiohttp_web.StreamResponse(status=_status, headers=_hdrs)
+            await _stream_resp.prepare(request)
+            _body = _s3_resp["Body"]
+            while True:
+                _chunk = await asyncio.to_thread(_body.read, 65536)
+                if not _chunk:
+                    break
+                await _stream_resp.write(_chunk)
+            return _stream_resp
     except Exception as _s3_err:
-        log.warning("S3 presign check failed for file_id=%s: %s", file_id, _s3_err)
+        log.warning("MinIO stream failed for file_id=%s: %s — falling back", file_id, _s3_err)
 
     bot: Bot = request.app["bot"]
     range_header = request.headers.get("Range", "")
