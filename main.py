@@ -1255,6 +1255,20 @@ async def _api_player_stream(request: aiohttp_web.Request) -> aiohttp_web.Stream
         return aiohttp_web.Response(status=401)
 
     file_id = request.match_info["file_id"]
+
+    # Fast path: if track is in MinIO, redirect to presigned URL
+    try:
+        from utils.db import get_object_key as _get_obj_key
+        from utils import s3 as _s3
+        _obj_key = await _get_obj_key(file_id)
+        if _obj_key:
+            _presign_url = await _s3.get_presigned_url(_obj_key)
+            raise aiohttp_web.HTTPFound(_presign_url)
+    except aiohttp_web.HTTPFound:
+        raise
+    except Exception as _s3_err:
+        log.warning("S3 presign check failed for file_id=%s: %s", file_id, _s3_err)
+
     bot: Bot = request.app["bot"]
     range_header = request.headers.get("Range", "")
 
@@ -1829,6 +1843,10 @@ async def main() -> None:
 
     # Initialise SC proxy list from Redis (seeds from env SC_PROXIES on first run)
     await _init_sc_proxies(_redis)
+
+    # Initialize MinIO bucket + CORS
+    from utils import s3 as _s3_startup
+    await _s3_startup.setup()
 
     need_server = bool(
         (settings.SPOTIFY_CLIENT_ID and settings.SPOTIFY_CALLBACK_PORT)
