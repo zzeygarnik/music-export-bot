@@ -214,7 +214,22 @@ async def _process_and_send(message: Message, state: FSMContext, cover_bytes: by
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
             tmp_out = f.name
 
-        await message.bot.download(file_id, destination=tmp_in)
+        import aiohttp as _aio2
+        _bot_tok2 = os.environ.get("BOT_TOKEN", "")
+        async with _aio2.ClientSession() as _sess2:
+            async with _sess2.get(
+                f"https://api.telegram.org/bot{_bot_tok2}/getFile?file_id={file_id}"
+            ) as _r2:
+                _fdata2 = await _r2.json()
+            if not _fdata2.get("ok"):
+                raise RuntimeError(f"cloud getFile for audio failed: {_fdata2}")
+            _cpath2 = _fdata2["result"]["file_path"]
+            async with _sess2.get(
+                f"https://api.telegram.org/file/bot{_bot_tok2}/{_cpath2}"
+            ) as _r2:
+                _abytes = await _r2.read()
+        with open(tmp_in, "wb") as _af:
+            _af.write(_abytes)
 
         # Fallback: read duration from file if Telegram didn't provide it (e.g. document)
         if not duration:
