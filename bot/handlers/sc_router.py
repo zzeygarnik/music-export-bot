@@ -39,7 +39,8 @@ from core.ym_source import YandexMusicSource
 from core import sc_downloader
 from core.sc_downloader import SCResult
 from utils.event_log import log_event, update_batch_live
-from utils.db import get_cached_file_id, save_cached_file_id, delete_cached_file_id, search_cache_fuzzy, is_batch_allowed
+from utils.db import get_cached_file_id, save_cached_file_id, delete_cached_file_id, search_cache_fuzzy, is_batch_allowed, save_object_key
+from utils import s3 as _s3
 from config import settings
 from rapidfuzz import fuzz
 from . import common as _hcommon
@@ -1780,6 +1781,13 @@ async def _sc_download_and_send(
 
     cover_path = meta.pop("cover_path", "") or None
 
+    # Upload to MinIO (MD5 dedup)
+    _s3_key: str | None = None
+    try:
+        _s3_key = await _s3.upload_if_needed(path)
+    except Exception as _s3_err:
+        log.warning("S3 upload failed path=%r: %s", path, _s3_err)
+
     try:
         await msg.edit_text(
             f"⏳ Выгружаю трек: <b>{result.artist} — {result.title}</b>…",
@@ -1799,6 +1807,8 @@ async def _sc_download_and_send(
         if sent_msg and sent_msg.audio and cache_key:
             await save_cached_file_id(cache_key, sent_msg.audio.file_id, "manual",
                                 artist=result.artist, title=result.title)
+        if _s3_key and sent_msg and sent_msg.audio:
+            asyncio.create_task(save_object_key(sent_msg.audio.file_id, _s3_key))
         if sent_msg and sent_msg.audio:
             asyncio.create_task(log_track_sent(user_id, sent_msg.audio.file_id, result.artist, result.title, source,
                 meta.get("duration") or result.duration,
@@ -2034,6 +2044,13 @@ async def _run_batch_download(
                             continue
 
                 # r.path is set — send downloaded file
+                # Upload to MinIO before file is deleted in finally
+                _s3_key_batch: str | None = None
+                if r.path:
+                    try:
+                        _s3_key_batch = await _s3.upload_if_needed(r.path)
+                    except Exception as _s3_be:
+                        log.warning("S3 batch upload failed: %s", _s3_be)
                 sent = False
                 try:
                     sent_msg = await progress_msg.answer_audio(
@@ -2054,6 +2071,8 @@ async def _run_batch_download(
                         asyncio.create_task(log_track_sent(user_id, sent_msg.audio.file_id, r.artist, r.title, "sc",
                             r.meta.get("duration") or r.duration,
                             sent_msg.audio.thumbnail.file_id if sent_msg.audio.thumbnail else None))
+                    if _s3_key_batch and sent_msg and sent_msg.audio:
+                        asyncio.create_task(save_object_key(sent_msg.audio.file_id, _s3_key_batch))
                 except Exception as e:
                     log.warning("SC batch send_audio failed '%s — %s': %s", r.artist, r.title, e)
                     not_found.append(f"{r.artist} — {r.title}")

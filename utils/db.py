@@ -145,6 +145,7 @@ async def _create_tables() -> None:
         await conn.execute("ALTER TABLE user_track_history ADD COLUMN IF NOT EXISTS custom_title TEXT")
         await conn.execute("ALTER TABLE user_track_history ADD COLUMN IF NOT EXISTS custom_artist TEXT")
         await conn.execute("ALTER TABLE user_track_history ADD COLUMN IF NOT EXISTS custom_cover_path TEXT")
+        await conn.execute("ALTER TABLE user_track_history ADD COLUMN IF NOT EXISTS object_key TEXT")
 
 
 async def save_track_to_history(
@@ -1179,6 +1180,31 @@ async def cleanup_old_batch_live() -> int:
     except Exception as e:
         log.warning("cleanup_old_batch_live failed: %s", e)
         return 0
+
+async def get_object_key(file_id: str) -> str | None:
+    """Return the S3 object_key for a given Telegram file_id, or None if not stored."""
+    try:
+        async with _pool.acquire() as conn:
+            return await conn.fetchval(
+                "SELECT object_key FROM user_track_history WHERE file_id = $1 AND object_key IS NOT NULL LIMIT 1",
+                file_id,
+            )
+    except Exception as e:
+        log.warning("get_object_key failed: %s", e)
+        return None
+
+
+async def save_object_key(file_id: str, object_key: str) -> None:
+    """Attach an S3 object_key to all user_track_history rows with the given file_id."""
+    try:
+        async with _pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE user_track_history SET object_key = $1 WHERE file_id = $2",
+                object_key, file_id,
+            )
+    except Exception as e:
+        log.warning("save_object_key failed: %s", e)
+
 
 async def delete_track_from_history(user_id: int, file_id: str) -> None:
     try:

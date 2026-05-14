@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     DASHBOARD_TOKEN: str = ""                         # secret token for web dashboard access (set to enable)
     VK_TOKEN: str = ""                               # VK Kate Mobile token (vkpymusic) for VK music search/download
     LOCAL_API_URL: str = ""                          # e.g. http://localhost:8081 — Telegram Local Bot API server (removes 50 MB file size limit)
+    MINIO_ENDPOINT: str = "minio:9000"              # internal Docker endpoint for boto3 (host:port, no scheme)
+    MINIO_ACCESS_KEY: str = "minioadmin"
+    MINIO_SECRET_KEY: str = "minioadmin"
+    MINIO_BUCKET: str = "music-library"
+    MINIO_SECURE: bool = False                       # True = use https for internal endpoint
+    MINIO_PUBLIC_URL: str = ""                       # public-facing URL for presigned links, e.g. http://2.26.97.248:9000
 
     def is_batch_allowed(self, user_id: int, username: str | None) -> bool:
         val = self.BATCH_ALLOWED_USERS.strip()
