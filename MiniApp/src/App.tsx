@@ -61,7 +61,7 @@ function buildStreamUrl(trackId: string): string {
   return `/api/player/stream/${encodeURIComponent(trackId)}?tma=${encodeURIComponent(initData)}`;
 }
 
-// build:45
+// build:46
 export default function App() {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [loading, setLoading] = useState(true);
@@ -472,9 +472,9 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col bg-surface overflow-x-hidden">
-      <header className="fixed top-0 w-full z-50 flex items-center justify-between px-4 h-16 bg-[#0d0d14]/80 backdrop-blur-xl border-b border-white/5">
+      <header className="fixed top-0 w-full z-50 flex items-center justify-between px-4 h-16 bg-[#0d0d14]/95 border-b border-white/5">
         <div className="w-10">
-          <span className="text-[10px] font-mono text-white/20 select-none">b45</span>
+          <span className="text-[10px] font-mono text-white/20 select-none">b46</span>
         </div>
         <div className="text-2xl font-black bg-gradient-to-r from-primary to-secondary-container bg-clip-text text-transparent tracking-tight">
           ZGRNK Music
@@ -499,7 +499,7 @@ export default function App() {
         </div>
       )}
 
-      <main id="track-scroll" className="flex-1 pt-20 pb-44 px-4 overflow-y-auto [will-change:scroll-position]">
+      <main id="track-scroll" className="flex-1 pt-20 pb-44 px-4 overflow-y-auto">
         {loading && (
           <p className="text-center text-on-surface-variant text-sm pt-8">Загружаем треки…</p>
         )}
@@ -593,8 +593,8 @@ export default function App() {
 
       <Snowflakes />
       <div className="fixed inset-0 pointer-events-none -z-10 overflow-hidden">
-        <div className="absolute top-[-10%] right-[-5%] w-[60vw] h-[60vw] bg-primary/10 rounded-full blur-[120px] will-change-transform" />
-        <div className="absolute bottom-[-10%] left-[-5%] w-[80vw] h-[80vw] bg-secondary-container/10 rounded-full blur-[150px] will-change-transform" />
+        <div className="absolute top-[-10%] right-[-5%] w-[60vw] h-[60vw] bg-primary/10 rounded-full" />
+        <div className="absolute bottom-[-10%] left-[-5%] w-[80vw] h-[80vw] bg-secondary-container/10 rounded-full" />
       </div>
     </div>
   );

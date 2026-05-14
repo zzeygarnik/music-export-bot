@@ -227,6 +227,19 @@ async def get_track_message_id(user_id: int, file_id: str) -> int | None:
         return None
 
 
+async def update_track_file_id(user_id: int, old_file_id: str, new_file_id: str) -> None:
+    """Replace a stale file_id with a freshly obtained one from Telegram."""
+    try:
+        async with _pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE user_track_history SET file_id=$1 WHERE user_id=$2 AND file_id=$3",
+                new_file_id, user_id, old_file_id,
+            )
+            log.info("update_track_file_id: user=%s old=%s new=%s", user_id, old_file_id, new_file_id)
+    except Exception as e:
+        log.warning("update_track_file_id failed: %s", e)
+
+
 async def update_track_custom_meta(
     user_id: int,
     file_id: str,

@@ -1277,6 +1277,43 @@ async def _api_player_stream(request: aiohttp_web.Request) -> aiohttp_web.Stream
             else:
                 log.warning("player stream get_file failed after %d attempts: %s", _attempt + 1, _ge)
                 break
+    # Recovery: if Local Bot API rejected the file_id as stale, forward the original
+    # message to obtain a fresh file_id, update the DB, and retry.
+    if tg_file is None and "wrong file_id" in str(e).lower():
+        _recovery_user = _validate_tg_init_data(init_data)
+        if _recovery_user:
+            _msg_id = await db.get_track_message_id(_recovery_user, file_id)
+            if _msg_id:
+                log.info("file_id recovery: forwarding msg_id=%s user=%s", _msg_id, _recovery_user)
+                try:
+                    _fwd = await bot.forward_message(
+                        chat_id=_recovery_user,
+                        from_chat_id=_recovery_user,
+                        message_id=_msg_id,
+                    )
+                    _audio_obj = _fwd.audio or _fwd.document or _fwd.voice or None
+                    _new_fid = _audio_obj.file_id if _audio_obj else None
+                    if _new_fid:
+                        await db.update_track_file_id(_recovery_user, file_id, _new_fid)
+                        file_id = _new_fid
+                        log.info("file_id recovery: new file_id=%s, retrying get_file", file_id)
+                        try:
+                            tg_file = await bot.get_file(file_id)
+                            log.info("file_id recovery: get_file OK file_path=%r", tg_file.file_path)
+                        except Exception as _re:
+                            log.warning("file_id recovery: get_file still failed: %s", _re)
+                            tg_file = None
+                    else:
+                        log.warning("file_id recovery: forwarded message has no audio/document")
+                    try:
+                        await bot.delete_message(chat_id=_recovery_user, message_id=_fwd.message_id)
+                    except Exception:
+                        pass
+                except Exception as _re:
+                    log.warning("file_id recovery: forward failed: %s", _re)
+            else:
+                log.warning("file_id recovery: no message_id in DB for file_id=%s", file_id)
+
     if tg_file is None:
         # Fallback 1: cloud Telegram API getFile → CDN stream (local Bot API may not have file cached)
         try:
@@ -1318,7 +1355,7 @@ async def _api_player_stream(request: aiohttp_web.Request) -> aiohttp_web.Stream
                         ct = upstream.headers.get("Content-Type", "")
                         _cl = int(upstream.headers.get("Content-Length", "0") or "0")
                         log.info("player stream pyrogram proxy: status=%s ct=%r cl=%s", upstream.status, ct, _cl)
-                        if upstream.status in (200, 206) and ct.startswith("audio/"):
+                        if upstream.status in (200, 206) and ct.startswith("audio/") and _cl > 0:
                             resp = aiohttp_web.StreamResponse(
                                 status=upstream.status,
                                 headers=_proxy_stream_headers(upstream.headers, ct, range_header),
@@ -1327,6 +1364,8 @@ async def _api_player_stream(request: aiohttp_web.Request) -> aiohttp_web.Stream
                             async for chunk in upstream.content.iter_chunked(65536):
                                 await resp.write(chunk)
                             return resp
+                        if _cl == 0:
+                            log.warning("player stream pyrogram proxy: empty body (cl=0), skipping")
             except Exception as pe:
                 log.warning("player stream pyrogram proxy failed: %s", pe)
         return aiohttp_web.Response(status=404)
