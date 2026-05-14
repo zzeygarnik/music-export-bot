@@ -61,7 +61,7 @@ function buildStreamUrl(trackId: string): string {
   return `/api/player/stream/${encodeURIComponent(trackId)}?tma=${encodeURIComponent(initData)}`;
 }
 
-// build:40
+// build:41
 export default function App() {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [loading, setLoading] = useState(true);
@@ -396,6 +396,8 @@ export default function App() {
     };
     const onVisible = () => {
       if (document.visibilityState !== 'visible') return;
+      // Force compositor tile repaint to clear gray/white artifact rectangles
+      requestAnimationFrame(() => { window.scrollBy(0, 1); window.scrollBy(0, -1); });
       doFetch();
       tryResume();
     };
@@ -454,7 +456,7 @@ export default function App() {
     <div className="min-h-screen flex flex-col bg-surface overflow-x-hidden">
       <header className="fixed top-0 w-full z-50 flex items-center justify-between px-4 h-16 bg-[#0d0d14]/80 backdrop-blur-xl border-b border-white/5">
         <div className="w-10">
-          <span className="text-[10px] font-mono text-white/20 select-none">b40</span>
+          <span className="text-[10px] font-mono text-white/20 select-none">b41</span>
         </div>
         <div className="text-2xl font-black bg-gradient-to-r from-primary to-secondary-container bg-clip-text text-transparent tracking-tight">
           ZGRNK Music
@@ -479,7 +481,7 @@ export default function App() {
         </div>
       )}
 
-      <main className="flex-1 pt-20 pb-44 px-4 overflow-y-auto">
+      <main className="flex-1 pt-20 pb-44 px-4 overflow-y-auto transform-gpu">
         {loading && (
           <p className="text-center text-on-surface-variant text-sm pt-8">Загружаем треки…</p>
         )}
