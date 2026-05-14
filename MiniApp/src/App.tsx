@@ -61,7 +61,7 @@ function buildStreamUrl(trackId: string): string {
   return `/api/player/stream/${encodeURIComponent(trackId)}?tma=${encodeURIComponent(initData)}`;
 }
 
-// build:42
+// build:43
 export default function App() {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [loading, setLoading] = useState(true);
@@ -456,7 +456,7 @@ export default function App() {
     <div className="min-h-screen flex flex-col bg-surface overflow-x-hidden">
       <header className="fixed top-0 w-full z-50 flex items-center justify-between px-4 h-16 bg-[#0d0d14]/80 backdrop-blur-xl border-b border-white/5">
         <div className="w-10">
-          <span className="text-[10px] font-mono text-white/20 select-none">b42</span>
+          <span className="text-[10px] font-mono text-white/20 select-none">b43</span>
         </div>
         <div className="text-2xl font-black bg-gradient-to-r from-primary to-secondary-container bg-clip-text text-transparent tracking-tight">
           ZGRNK Music
@@ -481,7 +481,7 @@ export default function App() {
         </div>
       )}
 
-      <main id="track-scroll" className="flex-1 pt-20 pb-44 px-4 overflow-y-auto">
+      <main id="track-scroll" className="flex-1 pt-20 pb-44 px-4 overflow-y-auto [will-change:scroll-position]">
         {loading && (
           <p className="text-center text-on-surface-variant text-sm pt-8">Загружаем треки…</p>
         )}

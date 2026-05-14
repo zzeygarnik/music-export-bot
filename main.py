@@ -1260,10 +1260,21 @@ async def _api_player_stream(request: aiohttp_web.Request) -> aiohttp_web.Stream
 
     import aiohttp as _aiohttp
 
-    try:
-        tg_file = await bot.get_file(file_id)
-    except Exception as e:
-        log.warning("player stream get_file failed: %s", e)
+    tg_file = None
+    e = None
+    for _attempt in range(6):
+        try:
+            tg_file = await bot.get_file(file_id)
+            break
+        except Exception as _ge:
+            e = _ge
+            if "temporarily unavailable" in str(_ge).lower() and _attempt < 5:
+                log.info("player stream get_file temporarily unavailable, retry %d/5", _attempt + 1)
+                await asyncio.sleep(2)
+            else:
+                log.warning("player stream get_file failed after %d attempts: %s", _attempt + 1, _ge)
+                break
+    if tg_file is None:
         # Fallback 1: cloud Telegram API getFile → CDN stream (local Bot API may not have file cached)
         try:
             req_headers = {"Range": range_header} if range_header else {}
