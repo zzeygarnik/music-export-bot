@@ -1,4 +1,4 @@
-"""AudioTagFlow — user sends an audio file, bot re-tags it and returns."""
+﻿"""AudioTagFlow — user sends an audio file, bot re-tags it and returns."""
 import html as _html
 import logging
 import os
@@ -555,8 +555,20 @@ async def audio_tag_got_cover(message: Message, state: FSMContext) -> None:
     import base64
     try:
         photo = message.photo[-1]
-        cover_bytes_io = await message.bot.download(photo.file_id)
-        cover_bytes = cover_bytes_io.read()
+        import aiohttp as _aio
+        _bot_token = os.environ.get("BOT_TOKEN", "")
+        async with _aio.ClientSession() as _sess:
+            async with _sess.get(
+                f"https://api.telegram.org/bot{_bot_token}/getFile?file_id={photo.file_id}"
+            ) as _r:
+                _fdata = await _r.json()
+            if not _fdata.get("ok"):
+                raise ValueError(f"cloud getFile failed: {_fdata}")
+            _cloud_path = _fdata["result"]["file_path"]
+            async with _sess.get(
+                f"https://api.telegram.org/file/bot{_bot_token}/{_cloud_path}"
+            ) as _r:
+                cover_bytes = await _r.read()
         if not cover_bytes:
             await message.answer("❌ Cover download returned empty. Try again.")
             return
