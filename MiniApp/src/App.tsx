@@ -61,7 +61,7 @@ function buildStreamUrl(trackId: string): string {
   return `/api/player/stream/${encodeURIComponent(trackId)}?tma=${encodeURIComponent(initData)}`;
 }
 
-// build:46
+// build:47
 export default function App() {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [loading, setLoading] = useState(true);
@@ -356,7 +356,12 @@ export default function App() {
     function doFetch() {
       const initData = getInitData();
       const tg = window.Telegram?.WebApp;
-      if (tg) { tg.ready(); tg.expand(); }
+      if (tg) {
+        tg.ready();
+        tg.expand();
+        const h = tg.viewportHeight;
+        if (h) document.documentElement.style.setProperty('--tg-viewport-height', `${h}px`);
+      }
       if (!initData) return;
 
       // Only show skeleton on first load; subsequent refreshes (visibility restore) are silent
@@ -408,12 +413,9 @@ export default function App() {
       tryResume();
     };
     const onViewportChanged = (params: unknown) => {
-      console.log('[DIAG viewportChanged]', {
-        innerHeight: window.innerHeight,
-        innerWidth: window.innerWidth,
-        params,
-        ts: Date.now(),
-      });
+      const h = window.Telegram?.WebApp?.viewportHeight;
+      if (h) document.documentElement.style.setProperty('--tg-viewport-height', `${h}px`);
+      console.log('[DIAG viewportChanged]', { innerHeight: window.innerHeight, tgH: h, params, ts: Date.now() });
     };
     document.addEventListener('visibilitychange', onVisible);
     window.Telegram?.WebApp?.onEvent?.('activated', onVisible);
@@ -471,10 +473,10 @@ export default function App() {
   }, [tracks, searchQuery]);
 
   return (
-    <div className="min-h-screen flex flex-col bg-surface overflow-x-hidden">
+    <div className="h-full flex flex-col bg-surface overflow-x-hidden">
       <header className="fixed top-0 w-full z-50 flex items-center justify-between px-4 h-16 bg-[#0d0d14]/95 border-b border-white/5">
         <div className="w-10">
-          <span className="text-[10px] font-mono text-white/20 select-none">b46</span>
+          <span className="text-[10px] font-mono text-white/20 select-none">b47</span>
         </div>
         <div className="text-2xl font-black bg-gradient-to-r from-primary to-secondary-container bg-clip-text text-transparent tracking-tight">
           ZGRNK Music
