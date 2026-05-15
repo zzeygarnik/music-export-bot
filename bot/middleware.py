@@ -67,6 +67,15 @@ class ThrottlingMiddleware(BaseMiddleware):
         if getattr(event, 'media_group_id', None):
             return await handler(event, data)
 
+        # Don't throttle audio/voice/document while user is in import mode
+        if isinstance(event, Message) and (event.audio or event.voice or event.document):
+            try:
+                from bot.handlers.import_router import importing_users as _iu
+                if user and user.id in _iu:
+                    return await handler(event, data)
+            except Exception:
+                pass
+
         if user:
             now = time.monotonic()
             if now - self._last.get(user.id, 0) < self._rate:
