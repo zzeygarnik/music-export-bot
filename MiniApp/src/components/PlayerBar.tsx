@@ -1,8 +1,36 @@
-import { useState, useEffect, useRef } from 'react';
-import { motion } from 'motion/react';
+import { memo, useState, useEffect, useRef } from 'react';
 import { Track } from '../types';
 import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX } from 'lucide-react';
 import { MarqueeText } from './MarqueeText';
+
+// Isolated from currentTime updates — only re-renders on track/play-state change
+const TrackMeta = memo(function TrackMeta({ track, isPlaying }: { track: Track; isPlaying: boolean }) {
+  const [imgErr, setImgErr] = useState(false);
+  useEffect(() => { setImgErr(false); }, [track.id, track.coverUrl]);
+  return (
+    <>
+      <div className="w-14 h-14 rounded-lg overflow-hidden border border-white/10 shrink-0">
+        {track.coverUrl && !imgErr ? (
+          <img
+            key={track.id}
+            src={track.coverUrl}
+            alt={track.title}
+            className="w-full h-full object-cover"
+            onError={() => setImgErr(true)}
+          />
+        ) : (
+          <div className="w-full h-full bg-gradient-to-br from-primary-container/50 to-secondary-container/50 flex items-center justify-center">
+            <span className="text-xl">🎵</span>
+          </div>
+        )}
+      </div>
+      <div className="flex-1 min-w-0">
+        <MarqueeText text={track.title} isPlaying={isPlaying} className="text-base font-bold text-on-surface" />
+        <p className="text-sm text-on-surface-variant truncate">{track.artist}</p>
+      </div>
+    </>
+  );
+});
 
 function fmt(sec: number): string {
   const m = Math.floor(sec / 60);
@@ -31,8 +59,6 @@ export function PlayerBar({
   onTogglePlay, onPrev, onNext, onSeek, onOpenPlayer, buffering,
   volume, onVolumeChange, onToggleMute,
 }: PlayerBarProps) {
-  const [imgErr, setImgErr] = useState(false);
-  useEffect(() => { setImgErr(false); }, [track.id, track.coverUrl]);
 
   // During drag show local position; null means use engine time
   const [dragProgress, setDragProgress] = useState<number | null>(null);
@@ -100,9 +126,10 @@ export function PlayerBar({
   };
 
   return (
-    <motion.div
-      layoutId="player-container"
+    // Plain div — no framer-motion layout tracking (was causing MarqueeText CSS animation resets)
+    <div
       className="fixed bottom-24 left-4 right-4 z-40"
+      style={{ transform: 'translateZ(0)', backfaceVisibility: 'hidden' }}
     >
       <div style={{ backgroundColor: 'var(--color-surface)' }} className="glass rounded-2xl p-4 shadow-2xl shadow-black/50" onClick={onOpenPlayer}>
         <div className="flex flex-col gap-2 mb-3">
@@ -130,26 +157,7 @@ export function PlayerBar({
         </div>
 
         <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-lg overflow-hidden border border-white/10 shrink-0">
-            {track.coverUrl && !imgErr ? (
-              <img
-                key={track.id}
-                src={track.coverUrl}
-                alt={track.title}
-                className="w-full h-full object-cover"
-                onError={() => setImgErr(true)}
-              />
-            ) : (
-              <div className="w-full h-full bg-gradient-to-br from-primary-container/50 to-secondary-container/50 flex items-center justify-center">
-                <span className="text-xl">🎵</span>
-              </div>
-            )}
-          </div>
-
-          <div className="flex-1 min-w-0">
-            <MarqueeText text={track.title} isPlaying={isPlaying} className="text-base font-bold text-on-surface" />
-            <p className="text-sm text-on-surface-variant truncate">{track.artist}</p>
-          </div>
+          <TrackMeta track={track} isPlaying={isPlaying} />
 
           <div className="flex flex-col items-center gap-1 shrink-0">
             <div className="flex items-center gap-2">
@@ -201,6 +209,6 @@ export function PlayerBar({
           </div>
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 }
