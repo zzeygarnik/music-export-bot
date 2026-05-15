@@ -6,7 +6,10 @@
 ![Dashboard](https://img.shields.io/badge/Dashboard-Web%20UI-7c3aed?logo=aiohttp&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Database-336791?logo=postgresql&logoColor=white)
 
-Telegram bot with four main sections: **export your music library to `.txt` / `.csv`** (Yandex Music and Spotify), **download tracks from SoundCloud / YouTube / VK as `.mp3`**, **load any shared playlist or album by link** (YM, Spotify, SoundCloud, YouTube), and **fix audio file tags** (title, artist, cover). Self-hosted, containerized, ready for any Linux VPS or TrueNAS.
+Telegram bot with four main sections: **export your music library to `.txt` / `.csv`** (Yandex Music and Spotify), **download tracks from SoundCloud / YouTube / VK as `.mp3`**, **load any shared playlist or album by link** (YM, Spotify, SoundCloud, YouTube), and **fix audio file tags** (title, artist, cover). Self-hosted, containerized, ready for any Linux VPS.
+
+Bot is currently available on Telegram: @FvckCensxrship_bot
+Бот доступен в Telegram: @FvckCensxrship_bot
 
 [ 🇬🇧 English](#-english) | [ 🇷🇺 Русский](#-русский)
 
