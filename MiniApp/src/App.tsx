@@ -1,5 +1,6 @@
 ﻿import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { AnimatePresence } from 'motion/react';
+import { Virtuoso } from 'react-virtuoso';
 import { Track } from './types';
 import { TrackItem } from './components/TrackItem';
 import { PlayerBar } from './components/PlayerBar';
@@ -60,7 +61,7 @@ function buildStreamUrl(trackId: string): string {
   return `/api/player/stream/${encodeURIComponent(trackId)}?tma=${encodeURIComponent(initData)}`;
 }
 
-// build:49
+// build:50
 export default function App() {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [loading, setLoading] = useState(true);
@@ -226,10 +227,10 @@ export default function App() {
     }
   }, [currentTrack, currentIdx, playTrack]);
 
-  const handleTrackClick = (track: Track, idx: number) => {
+  const handleTrackClick = useCallback((track: Track, idx: number) => {
     if (idx === currentIdx && audioEngine.isPlaying) { togglePlay(); }
     else { playTrack(idx); }
-  };
+  }, [currentIdx, togglePlay, playTrack]);
 
   const handlePrev = useCallback(() => {
     playTrack(currentIdx > 0 ? currentIdx - 1 : tracksRef.current.length - 1);
@@ -481,7 +482,7 @@ export default function App() {
     <div className="h-full flex flex-col bg-surface overflow-x-hidden">
       <header className="fixed top-0 w-full z-50 flex items-center justify-between px-4 h-16 bg-[#0d0d14]/95 border-b border-white/5">
         <div className="w-10">
-          <span className="text-[10px] font-mono text-white/20 select-none">b49</span>
+          <span className="text-[10px] font-mono text-white/20 select-none">b50</span>
         </div>
         <div className="text-2xl font-black bg-gradient-to-r from-primary to-secondary-container bg-clip-text text-transparent tracking-tight">
           ZGRNK Music
@@ -506,7 +507,7 @@ export default function App() {
         </div>
       )}
 
-      <main id="track-scroll" className="flex-1 pt-20 pb-44 px-4 overflow-y-auto">
+      <main id="track-scroll" className="flex-1 flex flex-col pt-20 pb-44 overflow-hidden">
         {loading && (
           <p className="text-center text-on-surface-variant text-sm pt-8">Загружаем треки…</p>
         )}
@@ -519,7 +520,7 @@ export default function App() {
           </div>
         )}
         {activeTab === 'library' && !loading && (
-          <div className="relative mb-4 max-w-2xl mx-auto">
+          <div className="relative mb-2 mx-4 max-w-2xl md:mx-auto flex-shrink-0">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-on-surface-variant pointer-events-none" />
             <input
               type="text"
@@ -535,20 +536,24 @@ export default function App() {
             )}
           </div>
         )}
-        <AnimatePresence>
-          <div className="flex flex-col gap-2 max-w-2xl mx-auto">
-            {filteredTracks.map(({ track, idx }) => (
-              <TrackItem
-                key={track.id}
-                track={track}
-                index={idx}
-                isActive={currentIdx === idx && isPlaying}
-                onClick={() => handleTrackClick(track, idx)}
-                onDelete={handleDelete}
-              />
-            ))}
-          </div>
-        </AnimatePresence>
+        {/* Virtuoso handles its own scroll — only visible items are in the DOM */}
+        <div className="flex-1 min-h-0">
+          <Virtuoso
+            style={{ height: '100%' }}
+            data={filteredTracks}
+            itemContent={(_, { track, idx }) => (
+              <div className="px-4 pb-2 max-w-2xl mx-auto">
+                <TrackItem
+                  track={track}
+                  index={idx}
+                  isActive={currentIdx === idx && isPlaying}
+                  onPlay={handleTrackClick}
+                  onDelete={handleDelete}
+                />
+              </div>
+            )}
+          />
+        </div>
       </main>
 
       {!isPlayerOpen && currentTrack && (
