@@ -82,16 +82,27 @@ async def _save_imported_audio(message, state_storage=None) -> None:
     # Download thumbnail to persistent miniapp_dist/covers so GC cannot evict it.
     if thumb_id:
         try:
-            import io
+            import aiohttp as _aiohttp
             import pathlib as _pathlib
             _covers_dir = _pathlib.Path("/app/miniapp_dist/covers")
             _covers_dir.mkdir(parents=True, exist_ok=True)
             _cover_fname = f"import_{file_id[-24:].replace('-', '_').replace('=', '')}.jpg"
             _cover_path = _covers_dir / _cover_fname
             if not _cover_path.exists():
-                _buf = io.BytesIO()
-                await message.bot.download(thumb_id, destination=_buf)
-                _cover_path.write_bytes(_buf.getvalue())
+                _tok = settings.BOT_TOKEN
+                async with _aiohttp.ClientSession() as _sess:
+                    async with _sess.get(
+                        f"https://api.telegram.org/bot{_tok}/getFile",
+                        params={"file_id": thumb_id},
+                    ) as _r:
+                        _fdata = await _r.json()
+                    if _fdata.get("ok"):
+                        _fpath = _fdata["result"]["file_path"]
+                        async with _sess.get(
+                            f"https://api.telegram.org/file/bot{_tok}/{_fpath}"
+                        ) as _r2:
+                            if _r2.status == 200:
+                                _cover_path.write_bytes(await _r2.read())
             await db.update_track_custom_meta(user_id, file_id, custom_cover_path=_cover_fname)
             log.info("_save_imported_audio cover saved: %s", _cover_fname)
         except Exception as _ce:
