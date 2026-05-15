@@ -61,7 +61,7 @@ function buildStreamUrl(trackId: string): string {
   return `/api/player/stream/${encodeURIComponent(trackId)}?tma=${encodeURIComponent(initData)}`;
 }
 
-// build:50
+// build:51
 export default function App() {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [loading, setLoading] = useState(true);
@@ -482,7 +482,7 @@ export default function App() {
     <div className="h-full flex flex-col bg-surface overflow-x-hidden">
       <header className="fixed top-0 w-full z-50 flex items-center justify-between px-4 h-16 bg-[#0d0d14]/95 border-b border-white/5">
         <div className="w-10">
-          <span className="text-[10px] font-mono text-white/20 select-none">b50</span>
+          <span className="text-[10px] font-mono text-white/20 select-none">b51</span>
         </div>
         <div className="text-2xl font-black bg-gradient-to-r from-primary to-secondary-container bg-clip-text text-transparent tracking-tight">
           ZGRNK Music
@@ -537,9 +537,10 @@ export default function App() {
           </div>
         )}
         {/* Virtuoso handles its own scroll — only visible items are in the DOM */}
-        <div className="flex-1 min-h-0">
+        <div className="flex-1 min-h-0" style={{ transform: 'translateZ(0)', backfaceVisibility: 'hidden' }}>
           <Virtuoso
             style={{ height: '100%' }}
+            overscan={800}
             data={filteredTracks}
             itemContent={(_, { track, idx }) => (
               <div className="px-4 pb-2 max-w-2xl mx-auto">
