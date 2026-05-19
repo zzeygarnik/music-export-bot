@@ -1,4 +1,5 @@
 """Import flow — lets users upload audio files directly to their library via Mini App button."""
+import asyncio
 import logging
 from datetime import datetime, timezone
 
@@ -29,6 +30,33 @@ def _stop_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="✅ Завершить импорт", callback_data="stop_import"),
     ]])
+
+
+async def _upload_to_minio_bg(file_id: str, bot) -> None:
+    """Download audio from Telegram and cache in MinIO so the first playback hits the fast-path."""
+    import tempfile
+    import os as _os
+    from utils import s3 as _s3
+    from utils import db as _db
+    _tmp_path: str | None = None
+    try:
+        if await _db.get_object_key(file_id):
+            return  # already cached by a concurrent request
+        tg_file = await bot.get_file(file_id)
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as _tmp:
+            _tmp_path = _tmp.name
+        await bot.download_file(tg_file.file_path, destination=_tmp_path)
+        key = await _s3.upload_if_needed(_tmp_path)
+        await _db.save_object_key(file_id, key)
+        log.info("_upload_to_minio_bg: cached file_id=...%s key=%s", file_id[-8:], key)
+    except Exception as _e:
+        log.warning("_upload_to_minio_bg failed file_id=...%s: %s", file_id[-8:], _e)
+    finally:
+        if _tmp_path:
+            try:
+                _os.unlink(_tmp_path)
+            except Exception:
+                pass
 
 
 async def _save_imported_audio(message, state_storage=None) -> None:
@@ -78,6 +106,9 @@ async def _save_imported_audio(message, state_storage=None) -> None:
 
     await log_track_sent(user_id, file_id, artist, title, 'upload', duration, thumb_id)
     log.info("_save_imported_audio saved: user=%s file_id=%s title=%s", user_id, file_id[:20], title)
+
+    # Pre-warm MinIO cache so first playback in Mini App is instant.
+    asyncio.create_task(_upload_to_minio_bg(file_id, message.bot))
 
     # Download thumbnail to persistent miniapp_dist/covers so GC cannot evict it.
     if thumb_id:
