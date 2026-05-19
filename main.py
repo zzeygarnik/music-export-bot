@@ -1245,6 +1245,40 @@ def _proxy_stream_headers(upstream_headers: "dict", fallback_mime: str, range_he
     return headers
 
 
+async def _bg_upload_to_minio(file_id: str, bot: "Bot", local_path: str | None = None) -> None:
+    """Upload track to MinIO and persist object_key so subsequent streams skip Telegram entirely.
+
+    If local_path is given and exists on disk, uploads directly.
+    Otherwise re-downloads from Telegram into a temp file (works with local bot API cache).
+    """
+    import tempfile as _tmpmod
+    import os as _bos
+    from utils import s3 as _s3
+    from utils import db as _db
+    _tmp_path: str | None = None
+    try:
+        if await _db.get_object_key(file_id):
+            return  # already cached; another concurrent request beat us
+        path_to_upload = local_path if (local_path and _bos.path.exists(local_path)) else None
+        if path_to_upload is None:
+            tg_file = await bot.get_file(file_id)
+            with _tmpmod.NamedTemporaryFile(suffix=".mp3", delete=False) as _tmp:
+                _tmp_path = _tmp.name
+            await bot.download_file(tg_file.file_path, destination=_tmp_path)
+            path_to_upload = _tmp_path
+        key = await _s3.upload_if_needed(path_to_upload)
+        await _db.save_object_key(file_id, key)
+        log.info("bg_upload_to_minio: cached file_id=...%s key=%s", file_id[-8:], key)
+    except Exception as _e:
+        log.warning("bg_upload_to_minio failed file_id=...%s: %s", file_id[-8:], _e)
+    finally:
+        if _tmp_path:
+            try:
+                _bos.unlink(_tmp_path)
+            except Exception:
+                pass
+
+
 async def _api_player_stream(request: aiohttp_web.Request) -> aiohttp_web.StreamResponse:
     """Stream audio file by file_id. Resolves via Local Bot API or Telegram CDN.
     Supports HTTP Range requests (required by Safari/WebKit on iOS).
@@ -1450,6 +1484,7 @@ async def _api_player_stream(request: aiohttp_web.Request) -> aiohttp_web.Stream
             log.info("player stream: rel_path=%r", _rel_path)
 
     if file_path.startswith("/") and os.path.exists(file_path) and os.access(file_path, os.R_OK):
+        asyncio.create_task(_bg_upload_to_minio(file_id, bot, file_path))
         import aiofiles
         mime = _mime_from_path(file_path)
         file_size = os.stat(file_path).st_size
@@ -1514,6 +1549,7 @@ async def _api_player_stream(request: aiohttp_web.Request) -> aiohttp_web.Stream
                         await resp.prepare(request)
                         async for chunk in upstream.content.iter_chunked(65536):
                             await resp.write(chunk)
+                        asyncio.create_task(_bg_upload_to_minio(file_id, bot))
                         return resp
         except Exception as e:
             log.warning("player stream local proxy failed: %s", e)
